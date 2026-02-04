@@ -20,7 +20,7 @@ class TradingBot:
     """Main trading bot orchestrator."""
 
     def __init__(self):
-        """Initialise trading bot."""
+        """Set up trading bot."""
         self.config = None
         self.logger = None
         self.state_store = None
@@ -35,7 +35,7 @@ class TradingBot:
         self.tasks = []
 
     async def startup(self):
-        """Initialise all components."""
+        """Load all components."""
         # Load configuration
         try:
             self.config = load_config()
