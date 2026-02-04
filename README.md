@@ -1,6 +1,6 @@
 # Alpaca Trading Bot
 
-Production-ready, event-driven algorithmic trading bot for Alpaca Markets using WebSocket streaming and Python asyncio.
+Event-driven algorithmic trading bot for Alpaca Markets using WebSocket streaming and Python asyncio.
 
 ## Features
 
