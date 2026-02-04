@@ -1,0 +1,67 @@
+# Editor / IDE
+.vscode/
+.idea/
+.claude/
+
+# Python
+__pycache__/
+*.py[cod]
+*.so
+*.egg-info/
+.eggs/
+pip-log.txt
+pip-delete-this-directory.txt
+
+# Virtual environments
+venv/
+.venv/
+env/
+ENV/
+
+# Environment variables
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# Logs
+logs/
+*.log
+
+# Databases / runtime data
+*.db
+*.sqlite
+*.sqlite3
+data/*
+!data/.gitkeep
+
+# Test artifacts
+.pytest_cache/
+.tox/
+.coverage
+coverage.xml
+htmlcov/
+.hypothesis/
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# OS junk
+*.swp
+*.swo
+*~
+.DS_Store
+Thumbs.db
+*.iml
+*.sublime-project
+*.sublime-workspace
+
+# Runtime safety files
+.kill_switch
+.circuit_breaker_tripped
+
+# Build artifacts
+build/
+dist/
