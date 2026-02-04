@@ -1,6 +1,5 @@
 """Tests for risk manager."""
 import pytest
-import asyncio
 from datetime import datetime, time
 from unittest.mock import AsyncMock, MagicMock, patch
 import pytz

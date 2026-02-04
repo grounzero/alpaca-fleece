@@ -22,7 +22,7 @@ class RiskManager:
         logger: logging.Logger,
     ):
         """
-        Initialize risk manager.
+        Set up risk manager.
 
         Args:
             config: Configuration object
@@ -97,8 +97,8 @@ class RiskManager:
                 return False, f"Position size too large (${position_value:.2f} > ${max_position_value:.2f})"
 
         except Exception as e:
-            self.logger.error(f"Error checking account: {e}", exc_info=e)
-            return False, f"Account check failed: {e}"
+            self.logger.exception("Error checking account")
+            return False, "Account check failed"
 
         return True, "Validated"
 

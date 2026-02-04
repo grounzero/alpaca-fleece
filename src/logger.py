@@ -47,7 +47,7 @@ class JSONFormatter(logging.Formatter):
 class ConsoleFormatter(logging.Formatter):
     """Human-readable console formatter."""
 
-    COLORS = {
+    COLOURS = {
         "DEBUG": "\033[36m",      # Cyan
         "INFO": "\033[32m",       # Green
         "WARNING": "\033[33m",    # Yellow
@@ -58,11 +58,11 @@ class ConsoleFormatter(logging.Formatter):
 
     def format(self, record: logging.LogRecord) -> str:
         """Format the log record for console."""
-        color = self.COLORS.get(record.levelname, self.RESET)
+        colour = self.COLOURS.get(record.levelname, self.RESET)
         timestamp = datetime.utcnow().strftime("%H:%M:%S")
 
         # Base message
-        msg = f"{color}[{timestamp}] {record.levelname:8s}{self.RESET} {record.getMessage()}"
+        msg = f"{colour}[{timestamp}] {record.levelname:8s}{self.RESET} {record.getMessage()}"
 
         # Add exception if present
         if record.exc_info:

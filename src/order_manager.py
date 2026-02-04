@@ -24,7 +24,7 @@ class OrderManager:
         logger: logging.Logger,
     ):
         """
-        Initialize order manager.
+        Set up order manager.
 
         Args:
             config: Configuration object
@@ -236,8 +236,8 @@ class OrderManager:
 
             return order_intent
 
-        except Exception as e:
-            self.logger.error(f"Error processing signal: {e}", exc_info=e, extra={"symbol": symbol})
+        except Exception:
+            self.logger.exception("Error processing signal", extra={"symbol": symbol})
             self.risk_manager.record_failure()
             return None
 

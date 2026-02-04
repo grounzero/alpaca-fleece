@@ -26,7 +26,7 @@ class StreamHandler:
         logger: logging.Logger,
     ):
         """
-        Initialize stream handler.
+        Set up stream handler.
 
         Args:
             config: Configuration object
@@ -84,8 +84,8 @@ class StreamHandler:
             # Publish to event bus
             await self.event_bus.publish(event)
 
-        except Exception as e:
-            self.logger.error(f"Error handling bar: {e}", exc_info=e)
+        except Exception:
+            self.logger.exception("Error handling bar")
 
     async def _backfill_missed_bars(self):
         """Backfill missed bars after reconnection."""
@@ -120,8 +120,8 @@ class StreamHandler:
                     # Update last bar time
                     self.last_bar_times[symbol] = df.index[-1]
 
-            except Exception as e:
-                self.logger.error(f"Error backfilling {symbol}: {e}", exc_info=e)
+            except Exception:
+                self.logger.exception(f"Error backfilling {symbol}")
 
     async def _monitor_connection(self):
         """Monitor connection health and force reconnect if needed."""
@@ -139,8 +139,8 @@ class StreamHandler:
                         # Stop and restart stream
                         await self._reconnect()
 
-            except Exception as e:
-                self.logger.error(f"Error in connection monitor: {e}", exc_info=e)
+            except Exception:
+                self.logger.exception("Error in connection monitor")
 
     async def _reconnect(self):
         """Handle reconnection with exponential backoff."""
@@ -185,8 +185,8 @@ class StreamHandler:
         self.logger.info(f"Starting WebSocket stream for symbols: {self.config.symbols}")
         try:
             await self.stream._run_forever()
-        except Exception as e:
-            self.logger.error(f"Stream error: {e}", exc_info=e)
+        except Exception:
+            self.logger.exception("Stream error")
             if self.running:
                 await self._reconnect()
 
@@ -202,8 +202,8 @@ class StreamHandler:
             # Start stream
             await self._start_stream()
 
-        except Exception as e:
-            self.logger.error(f"Fatal stream error: {e}", exc_info=e)
+        except Exception:
+            self.logger.exception("Fatal stream error")
             raise
 
         finally:

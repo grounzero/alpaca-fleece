@@ -13,7 +13,7 @@ class SMACrossoverStrategy(BaseStrategy):
 
     def __init__(self, fast_period: int, slow_period: int, state_store: StateStore):
         """
-        Initialize SMA crossover strategy.
+        Set up SMA crossover strategy.
 
         Args:
             fast_period: Fast SMA period
