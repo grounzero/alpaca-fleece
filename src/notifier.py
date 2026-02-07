@@ -112,8 +112,8 @@ class AlertNotifier:
         SMTP credentials are NOT logged even on exception (security).
         """
         import smtplib
-        from email.mime.text import MIMEText
         from email.mime.multipart import MIMEMultipart
+        from email.mime.text import MIMEText
 
         try:
             # Use environment variables for SMTP config

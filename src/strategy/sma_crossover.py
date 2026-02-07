@@ -4,8 +4,8 @@ import pandas as pd
 import pandas_ta as ta
 
 from src.event_bus import SignalEvent
-from src.strategy.base import BaseStrategy
 from src.state_store import StateStore
+from src.strategy.base import BaseStrategy
 
 
 class SMACrossover(BaseStrategy):

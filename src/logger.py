@@ -2,10 +2,10 @@
 
 import json
 import logging
+import uuid
+from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from datetime import datetime, timezone
-import uuid
 
 
 def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logger:

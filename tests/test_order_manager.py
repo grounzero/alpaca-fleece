@@ -1,10 +1,11 @@
 """Tests for order manager."""
 
-import pytest
 from datetime import datetime, timezone
 
-from src.order_manager import OrderManager, OrderManagerError
+import pytest
+
 from src.event_bus import SignalEvent
+from src.order_manager import OrderManager, OrderManagerError
 
 
 def test_order_manager_generates_deterministic_client_order_id(

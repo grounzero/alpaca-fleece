@@ -1,8 +1,9 @@
 """Tests for exit manager."""
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
+
+import pytest
 
 from src.exit_manager import ExitManager
 from src.position_tracker import PositionTracker

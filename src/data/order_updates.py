@@ -10,7 +10,7 @@ Publishes to EventBus.
 import logging
 from datetime import datetime, timezone
 
-from src.event_bus import OrderUpdateEvent, EventBus
+from src.event_bus import EventBus, OrderUpdateEvent
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)

@@ -16,8 +16,8 @@ import pandas as pd
 
 from src.alpaca_api.market_data import MarketDataClient
 from src.data.bars import BarsHandler
-from src.data.snapshots import SnapshotsHandler
 from src.data.order_updates import OrderUpdatesHandler
+from src.data.snapshots import SnapshotsHandler
 from src.event_bus import EventBus
 from src.state_store import StateStore
 

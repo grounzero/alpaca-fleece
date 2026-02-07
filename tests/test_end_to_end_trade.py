@@ -1,14 +1,15 @@
 """End-to-end integration test: Signal → Risk Check → Order (deterministic, offline, mocked)."""
 
-import pytest
-import pandas as pd
 from datetime import datetime, timezone
 from unittest.mock import Mock
 
+import pandas as pd
+import pytest
+
 from src.event_bus import EventBus, SignalEvent
-from src.strategy.sma_crossover import SMACrossover
-from src.risk_manager import RiskManager
 from src.order_manager import OrderManager
+from src.risk_manager import RiskManager
+from src.strategy.sma_crossover import SMACrossover
 
 
 @pytest.fixture

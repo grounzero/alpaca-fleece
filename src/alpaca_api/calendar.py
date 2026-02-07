@@ -14,6 +14,7 @@ NOT for:
 """
 
 from datetime import datetime
+
 from alpaca.trading.client import TradingClient
 
 from .base import AlpacaDataClientError

@@ -1,9 +1,10 @@
 """Tests for startup reconciliation."""
 
-import pytest
 from pathlib import Path
 
-from src.reconciliation import reconcile, ReconciliationError
+import pytest
+
+from src.reconciliation import ReconciliationError, reconcile
 
 
 def test_reconciliation_detects_alpaca_order_not_in_sqlite(state_store, mock_broker):

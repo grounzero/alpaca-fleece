@@ -1,10 +1,10 @@
 """Database backup manager - daily SQLite backups (Tier 1)."""
 
-import shutil
-import logging
-from pathlib import Path
-from datetime import datetime, timezone
 import gzip
+import logging
+import shutil
+from datetime import datetime, timezone
+from pathlib import Path
 
 logger = logging.getLogger(__name__)
 

@@ -1,6 +1,7 @@
 """Unit tests for symbol batching in stream.py."""
 
 import pytest
+
 from src.stream import batch_iter
 
 

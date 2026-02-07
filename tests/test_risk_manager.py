@@ -1,12 +1,13 @@
 """Tests for risk manager."""
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import MagicMock
 
-from src.risk_manager import RiskManager, RiskManagerError
-from src.event_bus import SignalEvent
+import pytest
+
 from src.data_handler import DataHandler
+from src.event_bus import SignalEvent
+from src.risk_manager import RiskManager, RiskManagerError
 
 
 @pytest.mark.asyncio

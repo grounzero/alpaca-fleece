@@ -8,9 +8,9 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Callable, List, Optional
 
-from alpaca.data.timeframe import TimeFrame
-from alpaca.data.requests import StockBarsRequest
 from alpaca.data.historical import StockHistoricalDataClient
+from alpaca.data.requests import StockBarsRequest
+from alpaca.data.timeframe import TimeFrame
 
 logger = logging.getLogger(__name__)
 

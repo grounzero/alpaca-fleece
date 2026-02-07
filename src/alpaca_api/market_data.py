@@ -3,9 +3,9 @@
 from datetime import datetime
 from typing import Optional
 
+import pandas as pd
 from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
-import pandas as pd
 
 from .base import AlpacaDataClient, AlpacaDataClientError
 

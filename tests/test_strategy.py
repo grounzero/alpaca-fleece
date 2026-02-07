@@ -1,11 +1,12 @@
 """Tests for strategy signal generation."""
 
-import pytest
-from datetime import datetime, timezone, timedelta
-import pandas as pd
+from datetime import datetime, timedelta, timezone
 
-from src.strategy.sma_crossover import SMACrossover
+import pandas as pd
+import pytest
+
 from src.event_bus import SignalEvent
+from src.strategy.sma_crossover import SMACrossover
 
 
 def create_price_series(prices: list, symbol: str = "AAPL") -> pd.DataFrame:

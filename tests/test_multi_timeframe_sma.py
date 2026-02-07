@@ -1,12 +1,12 @@
 """Tests for multi-timeframe SMA + regime detection (Win #2)."""
 
-import pytest
-import pandas as pd
 import numpy as np
+import pandas as pd
+import pytest
 
-from src.strategy.sma_crossover import SMACrossover
 from src.regime_detector import RegimeDetector
 from src.state_store import StateStore
+from src.strategy.sma_crossover import SMACrossover
 
 
 @pytest.fixture

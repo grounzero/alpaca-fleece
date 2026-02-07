@@ -7,10 +7,10 @@ Tests cover:
 - Backwards compatibility (batch_size=1 works like before)
 """
 
-import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
 from alpaca.data.requests import StockBarsRequest
 
 from src.stream_polling import StreamPolling, batch_iter

@@ -14,7 +14,7 @@ import logging
 from datetime import datetime, timezone
 
 from src.broker import Broker
-from src.event_bus import SignalEvent, OrderIntentEvent, EventBus
+from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)

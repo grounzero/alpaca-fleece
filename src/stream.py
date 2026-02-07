@@ -19,8 +19,8 @@ import time
 from itertools import islice
 from typing import Callable, Optional
 
-from alpaca.data.live import StockDataStream
 from alpaca.data.enums import DataFeed
+from alpaca.data.live import StockDataStream
 from alpaca.trading.stream import TradingStream
 
 from src.rate_limiter import RateLimiter
