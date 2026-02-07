@@ -1,1 +1,1 @@
-"""Test suite for Alpaca trading bot."""
+"""Test suite for alpaca-bot."""

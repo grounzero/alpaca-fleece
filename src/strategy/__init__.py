@@ -1,1 +1,1 @@
-"""Strategy module."""
+"""Trading strategies."""

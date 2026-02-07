@@ -1,47 +1,36 @@
-"""Base strategy interface."""
+"""Base strategy class."""
+
 from abc import ABC, abstractmethod
-from typing import Optional
+from datetime import datetime
+
 import pandas as pd
 
 from src.event_bus import SignalEvent
 
 
 class BaseStrategy(ABC):
-    """Abstract base class for trading strategies."""
-
-    def __init__(self, name: str):
-        """
-        Initialize strategy.
-
-        Args:
-            name: Strategy name
-        """
-        self.name = name
-
+    """Abstract base for all strategies."""
+    
+    @property
+    @abstractmethod
+    def name(self) -> str:
+        """Strategy name."""
+        pass
+    
     @abstractmethod
     def get_required_history(self) -> int:
-        """
-        Get minimum number of bars required for strategy.
-
-        Returns:
-            Minimum number of bars needed
-        """
+        """Minimum bars needed before first signal."""
         pass
-
+    
     @abstractmethod
-    def on_bar(self, symbol: str, df: pd.DataFrame) -> Optional[SignalEvent]:
-        """
-        Process new bar and generate signal if applicable.
-
+    async def on_bar(self, symbol: str, df: pd.DataFrame) -> SignalEvent | None:
+        """Process bar and emit signal if triggered.
+        
         Args:
             symbol: Stock symbol
-            df: DataFrame with OHLCV data (indexed by timestamp)
-
+            df: DataFrame with bars (index=timestamp, columns=open/high/low/close/volume/etc)
+        
         Returns:
-            SignalEvent if signal generated, None otherwise
+            SignalEvent or None
         """
         pass
-
-    def __repr__(self) -> str:
-        """String representation."""
-        return f"{self.__class__.__name__}(name={self.name})"
