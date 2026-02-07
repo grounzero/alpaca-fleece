@@ -77,7 +77,9 @@ class OrderManager:
         Returns:
             16-char hex string
         """
-        data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{side}"
+        # Normalize side to prevent duplicate orders from formatting differences
+        normalized_side = side.strip().lower()
+        data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{normalized_side}"
         hash_val = hashlib.sha256(data.encode()).hexdigest()[:16]
         return hash_val
     
