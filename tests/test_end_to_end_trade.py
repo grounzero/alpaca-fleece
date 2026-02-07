@@ -15,42 +15,50 @@ from src.order_manager import OrderManager
 def mock_broker():
     """Mock broker with deterministic responses."""
     broker = Mock()
-    
+
     # Mock account (always healthy)
-    broker.get_account = Mock(return_value={
-        "equity": 100000.0,
-        "cash": 99000.0,
-        "buying_power": 200000.0,
-    })
-    
+    broker.get_account = Mock(
+        return_value={
+            "equity": 100000.0,
+            "cash": 99000.0,
+            "buying_power": 200000.0,
+        }
+    )
+
     # Mock clock (always market open)
-    broker.get_clock = Mock(return_value={
-        "is_open": True,
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
-    
+    broker.get_clock = Mock(
+        return_value={
+            "is_open": True,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        }
+    )
+
     # Mock positions (none open)
     broker.get_positions = Mock(return_value=[])
-    
+
     # Mock orders (none open)
     broker.get_open_orders = Mock(return_value=[])
-    
+
     # Mock order submission (always succeeds)
-    broker.submit_order = Mock(return_value={
-        "id": "test-order-123",
-        "symbol": "AAPL",
-        "qty": 10,
-        "side": "buy",
-        "status": "pending",
-    })
-    
+    broker.submit_order = Mock(
+        return_value={
+            "id": "test-order-123",
+            "symbol": "AAPL",
+            "qty": 10,
+            "side": "buy",
+            "status": "pending",
+        }
+    )
+
     # Mock snapshot (tight spreads)
-    broker.get_snapshot = Mock(return_value={
-        "bid": 150.0,
-        "ask": 150.1,
-        "mid": 150.05,
-    })
-    
+    broker.get_snapshot = Mock(
+        return_value={
+            "bid": 150.0,
+            "ask": 150.1,
+            "mid": 150.05,
+        }
+    )
+
     return broker
 
 
@@ -62,16 +70,16 @@ def event_bus_fixture():
 
 class TestEndToEndTrade:
     """Deterministic end-to-end: signal → risk → order."""
-    
+
     @pytest.mark.asyncio
     async def test_buy_signal_passes_all_gates_and_submits_order(
         self, state_store, mock_broker, event_bus_fixture
     ):
         """Test: Valid BUY signal passes risk checks and submits order."""
-        
+
         # SETUP: Create components
         SMACrossover(state_store, crypto_symbols=[])
-        
+
         # Create properly mocked data handler
         data_handler = Mock()
         data_handler.get_snapshot = mock_broker.get_snapshot
@@ -79,7 +87,7 @@ class TestEndToEndTrade:
         mock_df = pd.DataFrame({"trade_count": [15, 14, 16, 15]})  # All >= 10
         data_handler.get_dataframe = Mock(return_value=mock_df)
         data_handler.get_last_n_bars = Mock(return_value=mock_df)
-        
+
         risk_manager = RiskManager(
             broker=mock_broker,
             data_handler=data_handler,
@@ -109,7 +117,7 @@ class TestEndToEndTrade:
                 },
             },
         )
-        
+
         order_manager = OrderManager(
             broker=mock_broker,
             state_store=state_store,
@@ -117,7 +125,7 @@ class TestEndToEndTrade:
             config={"execution": {"order_type": "market", "time_in_force": "day"}},
             strategy_name="sma_crossover",
         )
-        
+
         # STEP 1: Create a valid BUY signal
         signal = SignalEvent(
             symbol="AAPL",
@@ -133,18 +141,18 @@ class TestEndToEndTrade:
                 "close": 150.05,
             },
         )
-        
+
         # STEP 2: Risk check should PASS
         risk_passed = await risk_manager.check_signal(signal)
         assert risk_passed, "Risk check failed: BUY signal with 0.9 confidence should pass"
-        
+
         # STEP 3: Submit order should SUCCEED
         order_submitted = await order_manager.submit_order(signal, qty=10.0)
         assert order_submitted, "Order submission failed"
-        
+
         # STEP 4: Verify broker was called
         assert mock_broker.submit_order.called, "Broker.submit_order was not called"
-        
+
         # STEP 5: Verify order was persisted
         order_intent = state_store.get_order_intent(
             order_manager._generate_client_order_id("AAPL", signal.timestamp, "buy")
@@ -153,15 +161,15 @@ class TestEndToEndTrade:
         assert order_intent["symbol"] == "AAPL"
         assert order_intent["side"] == "buy"
         assert order_intent["qty"] == 10.0
-        
+
         print("✅ END-TO-END TEST PASSED: Signal → Risk Check → Order Submission")
-    
+
     @pytest.mark.asyncio
     async def test_low_confidence_signal_filtered_by_risk_manager(
         self, state_store, mock_broker, event_bus_fixture
     ):
         """Test: Low-confidence signal is filtered out (confidence < 0.5)."""
-        
+
         risk_manager = RiskManager(
             broker=mock_broker,
             data_handler=Mock(),
@@ -186,7 +194,7 @@ class TestEndToEndTrade:
                 "filters": {},
             },
         )
-        
+
         # Create low-confidence signal (ranging market)
         signal = SignalEvent(
             symbol="AAPL",
@@ -199,22 +207,20 @@ class TestEndToEndTrade:
                 "sma_period": (10, 30),
             },
         )
-        
+
         # Risk check should FAIL (confidence < 0.5)
         risk_passed = await risk_manager.check_signal(signal)
         assert not risk_passed, "Low-confidence signal should be filtered"
-        
+
         print("✅ FILTER TEST PASSED: Low-confidence signal correctly rejected")
-    
+
     @pytest.mark.asyncio
-    async def test_market_closed_blocks_order(
-        self, state_store, mock_broker, event_bus_fixture
-    ):
+    async def test_market_closed_blocks_order(self, state_store, mock_broker, event_bus_fixture):
         """Test: Order blocked when market is closed."""
-        
+
         # Market CLOSED
         mock_broker.get_clock = Mock(return_value={"is_open": False})
-        
+
         risk_manager = RiskManager(
             broker=mock_broker,
             data_handler=Mock(),
@@ -239,30 +245,31 @@ class TestEndToEndTrade:
                 "filters": {},
             },
         )
-        
+
         signal = SignalEvent(
             symbol="AAPL",
             signal_type="BUY",
             timestamp=datetime.now(timezone.utc),
             metadata={"confidence": 0.9},
         )
-        
+
         # Risk check should FAIL (market closed)
         from src.risk_manager import RiskManagerError
+
         with pytest.raises(RiskManagerError, match="Market not open"):
             await risk_manager.check_signal(signal)
-        
+
         print("✅ MARKET CLOSED TEST PASSED: Order blocked when market closed")
-    
+
     @pytest.mark.asyncio
     async def test_circuit_breaker_blocks_after_5_failures(
         self, state_store, mock_broker, event_bus_fixture
     ):
         """Test: Circuit breaker halts trading after 5 consecutive failures."""
-        
+
         # Set circuit breaker STATE to "tripped" (this is what gets checked)
         state_store.set_state("circuit_breaker_state", "tripped")
-        
+
         risk_manager = RiskManager(
             broker=mock_broker,
             data_handler=Mock(),
@@ -287,30 +294,31 @@ class TestEndToEndTrade:
                 "filters": {},
             },
         )
-        
+
         signal = SignalEvent(
             symbol="AAPL",
             signal_type="BUY",
             timestamp=datetime.now(timezone.utc),
             metadata={"confidence": 0.9},
         )
-        
+
         # Risk check should FAIL (circuit breaker tripped)
         from src.risk_manager import RiskManagerError
+
         with pytest.raises(RiskManagerError, match="Circuit breaker tripped"):
             await risk_manager.check_signal(signal)
-        
+
         print("✅ CIRCUIT BREAKER TEST PASSED: Trading halted when tripped")
-    
+
     @pytest.mark.asyncio
     async def test_daily_loss_limit_blocks_trading(
         self, state_store, mock_broker, event_bus_fixture
     ):
         """Test: Trading blocked when daily loss limit exceeded."""
-        
+
         # Set daily P&L to -$6000 (exceeds 5% limit on $100k)
         state_store.save_daily_pnl(-6000.0)
-        
+
         risk_manager = RiskManager(
             broker=mock_broker,
             data_handler=Mock(),
@@ -335,19 +343,20 @@ class TestEndToEndTrade:
                 "filters": {},
             },
         )
-        
+
         signal = SignalEvent(
             symbol="AAPL",
             signal_type="BUY",
             timestamp=datetime.now(timezone.utc),
             metadata={"confidence": 0.9},
         )
-        
+
         # Risk check should FAIL (daily loss exceeded)
         from src.risk_manager import RiskManagerError
+
         with pytest.raises(RiskManagerError, match="Daily loss limit exceeded"):
             await risk_manager.check_signal(signal)
-        
+
         print("✅ DAILY LOSS LIMIT TEST PASSED: Trading halted on loss limit")
 
 

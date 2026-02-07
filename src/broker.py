@@ -23,6 +23,7 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 
 class AccountInfo(TypedDict, total=False):
     """Account information from broker."""
+
     equity: float
     buying_power: float
     cash: float
@@ -31,6 +32,7 @@ class AccountInfo(TypedDict, total=False):
 
 class PositionInfo(TypedDict, total=False):
     """Position information."""
+
     symbol: str
     qty: float
     avg_entry_price: Optional[float]
@@ -39,6 +41,7 @@ class PositionInfo(TypedDict, total=False):
 
 class OrderInfo(TypedDict, total=False):
     """Order information."""
+
     id: str
     client_order_id: str
     symbol: str
@@ -52,6 +55,7 @@ class OrderInfo(TypedDict, total=False):
 
 class ClockInfo(TypedDict, total=False):
     """Market clock information."""
+
     is_open: bool
     next_open: Optional[str]
     next_close: Optional[str]
@@ -60,15 +64,16 @@ class ClockInfo(TypedDict, total=False):
 
 class BrokerError(Exception):
     """Raised when broker operation fails."""
+
     pass
 
 
 class Broker:
     """Execution-only broker client."""
-    
+
     def __init__(self, api_key: str, secret_key: str, paper: bool = True) -> None:
         """Initialise broker client.
-        
+
         Args:
             api_key: Alpaca API key
             secret_key: Alpaca secret key
@@ -80,10 +85,10 @@ class Broker:
             secret_key=secret_key,
             paper=paper,
         )
-    
+
     def get_account(self) -> AccountInfo:
         """Get account info (equity, buying_power, etc).
-        
+
         Returns:
             Dict with keys: equity, buying_power, cash, etc
         """
@@ -97,10 +102,10 @@ class Broker:
             }
         except Exception as e:
             raise BrokerError(f"Failed to get account: {e}")
-    
+
     def get_positions(self) -> list[PositionInfo]:
         """Get current positions.
-        
+
         Returns:
             List of dicts with keys: symbol, qty, avg_entry_price, current_price
         """
@@ -117,10 +122,10 @@ class Broker:
             ]
         except Exception as e:
             raise BrokerError(f"Failed to get positions: {e}")
-    
+
     def get_open_orders(self) -> list[OrderInfo]:
         """Get all open orders.
-        
+
         Returns:
             List of dicts with keys: id, client_order_id, symbol, side, qty, status, filled_qty, etc
         """
@@ -132,8 +137,13 @@ class Broker:
                 # Older API version doesn't support status parameter
                 orders = self.client.get_orders()
                 # Filter to open orders manually
-                orders = [o for o in orders if o.status and o.status.value not in ["filled", "canceled", "expired", "rejected"]]
-            
+                orders = [
+                    o
+                    for o in orders
+                    if o.status
+                    and o.status.value not in ["filled", "canceled", "expired", "rejected"]
+                ]
+
             return [
                 {
                     "id": str(o.id),
@@ -150,13 +160,13 @@ class Broker:
             ]
         except Exception as e:
             raise BrokerError(f"Failed to get open orders: {e}")
-    
+
     def get_clock(self) -> ClockInfo:
         """Get market clock (FRESH CALL, NEVER CACHED).
-        
+
         This is the authoritative source for whether trading is possible.
         MUST be called fresh immediately before each order submission.
-        
+
         Returns:
             Dict with keys: is_open, next_open, next_close, timestamp
         """
@@ -170,7 +180,7 @@ class Broker:
             }
         except Exception as e:
             raise BrokerError(f"Failed to get clock: {e}")
-    
+
     def submit_order(
         self,
         symbol: str,
@@ -182,7 +192,7 @@ class Broker:
         time_in_force: str = "day",
     ) -> OrderInfo:
         """Submit a market or limit order.
-        
+
         Args:
             symbol: Stock symbol
             side: "buy" or "sell"
@@ -191,7 +201,7 @@ class Broker:
             order_type: "market" or "limit"
             limit_price: Required if order_type="limit"
             time_in_force: "day", "gtc", etc
-        
+
         Returns:
             Dict with order details: id, client_order_id, symbol, status, etc
         """
@@ -217,7 +227,7 @@ class Broker:
                 )
             else:
                 raise BrokerError(f"Invalid order_type: {order_type}")
-            
+
             order = self.client.submit_order(order_data)
             return {
                 "id": str(order.id),
@@ -227,14 +237,16 @@ class Broker:
                 "qty": float(order.qty) if order.qty else None,
                 "status": order.status.value if order.status else None,
                 "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
-                "filled_avg_price": float(order.filled_avg_price) if order.filled_avg_price else None,
+                "filled_avg_price": (
+                    float(order.filled_avg_price) if order.filled_avg_price else None
+                ),
             }
         except Exception as e:
             raise BrokerError(f"Failed to submit order: {e}")
-    
+
     def cancel_order(self, order_id: str) -> None:  # pragma: no cover
         """Cancel an open order.
-        
+
         Args:
             order_id: Alpaca order ID
         """

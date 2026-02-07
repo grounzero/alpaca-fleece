@@ -30,14 +30,14 @@ logger = logging.getLogger(__name__)
 
 def batch_iter(iterable, batch_size: int):
     """Yield successive batches from iterable.
-    
+
     Args:
         iterable: Sequence to batch
         batch_size: Size of each batch
-    
+
     Yields:
         Lists of batch_size items (last batch may be smaller)
-    
+
     Example:
         >>> list(batch_iter([1,2,3,4,5], 2))
         [[1,2], [3,4], [5]]
@@ -49,12 +49,13 @@ def batch_iter(iterable, batch_size: int):
 
 class StreamError(Exception):
     """Raised when stream operation fails."""
+
     pass
 
 
 class Stream:
     """WebSocket stream manager (connectivity only)."""
-    
+
     def __init__(
         self,
         api_key: str,
@@ -63,7 +64,7 @@ class Stream:
         feed: str = "iex",  # "iex" or "sip"
     ) -> None:
         """Initialise stream.
-        
+
         Args:
             api_key: Alpaca API key
             secret_key: Alpaca secret key
@@ -78,23 +79,23 @@ class Stream:
             self.feed = DataFeed.IEX if feed.lower() == "iex" else DataFeed.SIP
         else:
             self.feed = feed
-        
+
         # Streams (lazy init)
         self.market_data_stream: Optional[StockDataStream] = None
         self.trade_updates_stream: Optional[TradingStream] = None
-        
+
         # Callbacks (provided by DataHandler)
         self.on_bar: Optional[Callable] = None
         self.on_order_update: Optional[Callable] = None
         self.on_market_disconnect: Optional[Callable] = None
         self.on_trade_disconnect: Optional[Callable] = None
-        
+
         # State
         self.market_connected = False
         self.trade_connected = False
         self.reconnect_attempts = 0
         self.max_reconnect_attempts = 10
-        
+
         # Rate limit protection (Alpaca's HTTP 429 handling)
         self.market_rate_limiter = RateLimiter(
             base_delay=2.0,  # Start with 2s backoff
@@ -106,7 +107,7 @@ class Stream:
             max_delay=120.0,
             max_retries=5,
         )
-    
+
     def register_handlers(
         self,
         on_bar: Callable,
@@ -115,7 +116,7 @@ class Stream:
         on_trade_disconnect: Callable,
     ) -> None:
         """Register callbacks from DataHandler.
-        
+
         Args:
             on_bar: Called with raw bar data (SDK object)
             on_order_update: Called with raw order update (SDK object)
@@ -126,25 +127,27 @@ class Stream:
         self.on_order_update = on_order_update
         self.on_market_disconnect = on_market_disconnect
         self.on_trade_disconnect = on_trade_disconnect
-    
+
     async def start(self, symbols: list[str]) -> None:
         """Start both streams.
-        
+
         Args:
             symbols: List of symbols to subscribe to
         """
         try:
             # Start market data stream
             await self._start_market_stream(symbols)
-            
+
             # Start trade updates stream
             await self._start_trade_stream()
         except Exception as e:
             raise StreamError(f"Failed to start streams: {e}")
-    
-    async def _start_market_stream(self, symbols: list[str], batch_size: int = 10, batch_delay: float = 1.0) -> None:
+
+    async def _start_market_stream(
+        self, symbols: list[str], batch_size: int = 10, batch_delay: float = 1.0
+    ) -> None:
         """Start market data stream with batched subscriptions.
-        
+
         Args:
             symbols: List of symbols to subscribe to
             batch_size: Number of symbols per batch (default: 10)
@@ -155,12 +158,12 @@ class Stream:
             secret_key=self.secret_key,
             feed=self.feed,
         )
-        
+
         # Register bar handler (raw passthrough)
         async def handle_bar(bar):
             if self.on_bar:
                 await self.on_bar(bar)
-        
+
         # Subscribe in batches to avoid rate limits
         logger.info(f"Subscribing to {len(symbols)} symbols in batches of {batch_size}")
         num_batches = (len(symbols) + batch_size - 1) // batch_size
@@ -171,50 +174,52 @@ class Stream:
             # Delay between batches (except after last batch)
             if i < num_batches - 1:
                 await asyncio.sleep(batch_delay)
-        
+
         # Start stream using native async _run_forever() instead of sync run()
         # This avoids the asyncio.run() conflict
         asyncio.create_task(self.market_data_stream._run_forever())
         self.market_connected = True
-        logger.info(f"Market stream connected: {len(symbols)} symbols in {(len(symbols)-1)//batch_size + 1} batches")
-    
+        logger.info(
+            f"Market stream connected: {len(symbols)} symbols in {(len(symbols)-1)//batch_size + 1} batches"
+        )
+
     async def _start_trade_stream(self) -> None:
         """Start trade updates stream."""
         self.trade_updates_stream = TradingStream(
             api_key=self.api_key,
             secret_key=self.secret_key,
         )
-        
+
         # Register order update handler (raw passthrough)
         async def handle_trade_update(update):
             if self.on_order_update:
                 await self.on_order_update(update)
-        
+
         self.trade_updates_stream.subscribe_trade_updates(handle_trade_update)
-        
+
         # Start stream using native async _run_forever() instead of sync run()
         asyncio.create_task(self.trade_updates_stream._run_forever())
         self.trade_connected = True
         logger.info("Trade stream connected")
-    
+
     async def stop(self) -> None:
         """Stop both streams."""
         if self.market_data_stream:
             await self.market_data_stream.close()
             self.market_connected = False
-        
+
         if self.trade_updates_stream:
             await self.trade_updates_stream.close()
             self.trade_connected = False
-        
+
         logger.info("Streams stopped")
-    
+
     async def reconnect_market_stream(self, symbols: list[str]) -> bool:
         """Attempt to reconnect market stream with rate limit protection.
-        
+
         Args:
             symbols: Symbols to resubscribe
-        
+
         Returns:
             True if reconnected, False if max attempts exceeded
         """
@@ -224,7 +229,7 @@ class Stream:
             if self.on_market_disconnect:
                 await self.on_market_disconnect()
             return False
-        
+
         # Wait if in backoff period
         if not self.market_rate_limiter.is_ready_to_retry():
             backoff = self.market_rate_limiter.get_backoff_delay()
@@ -232,7 +237,7 @@ class Stream:
             remaining = backoff - elapsed
             logger.warning(f"Market stream: Rate limited, waiting {remaining:.1f}s before retry")
             await asyncio.sleep(remaining)
-        
+
         try:
             await self._start_market_stream(symbols)
             self.market_rate_limiter.record_success()

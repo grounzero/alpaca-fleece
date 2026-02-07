@@ -18,7 +18,7 @@ def test_validate_config_requires_api_key():
         "DATABASE_PATH": "data/trades.db",
         "CONFIG_PATH": "config/trading.yaml",
     }
-    
+
     trading = {
         "symbols": {"mode": "explicit", "list": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
@@ -26,7 +26,7 @@ def test_validate_config_requires_api_key():
         "risk": {"max_position_pct": 0.1},
         "execution": {"order_type": "market"},
     }
-    
+
     with pytest.raises(ConfigError, match="ALPACA_API_KEY"):
         validate_config(env, trading)
 
@@ -45,7 +45,7 @@ def test_validate_config_requires_secret_key():
         "DATABASE_PATH": "data/trades.db",
         "CONFIG_PATH": "config/trading.yaml",
     }
-    
+
     trading = {
         "symbols": {"mode": "explicit", "list": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
@@ -53,7 +53,7 @@ def test_validate_config_requires_secret_key():
         "risk": {"max_position_pct": 0.1},
         "execution": {"order_type": "market"},
     }
-    
+
     with pytest.raises(ConfigError, match="ALPACA_SECRET_KEY"):
         validate_config(env, trading)
 
@@ -72,7 +72,7 @@ def test_validate_config_live_trading_requires_dual_gates():
         "DATABASE_PATH": "data/trades.db",
         "CONFIG_PATH": "config/trading.yaml",
     }
-    
+
     trading = {
         "symbols": {"mode": "explicit", "list": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
@@ -80,7 +80,7 @@ def test_validate_config_live_trading_requires_dual_gates():
         "risk": {"max_position_pct": 0.1},
         "execution": {"order_type": "market"},
     }
-    
+
     with pytest.raises(ConfigError, match="dual gates"):
         validate_config(env, trading)
 
@@ -99,7 +99,7 @@ def test_validate_config_detects_kill_switch():
         "DATABASE_PATH": "data/trades.db",
         "CONFIG_PATH": "config/trading.yaml",
     }
-    
+
     trading = {
         "symbols": {"mode": "explicit", "list": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
@@ -107,7 +107,7 @@ def test_validate_config_detects_kill_switch():
         "risk": {"max_position_pct": 0.1},
         "execution": {"order_type": "market"},
     }
-    
+
     with pytest.raises(ConfigError, match="Kill switch"):
         validate_config(env, trading)
 
@@ -126,7 +126,7 @@ def test_validate_config_valid_passes():
         "DATABASE_PATH": "data/trades.db",
         "CONFIG_PATH": "config/trading.yaml",
     }
-    
+
     trading = {
         "symbols": {"mode": "explicit", "list": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
@@ -134,6 +134,6 @@ def test_validate_config_valid_passes():
         "risk": {"max_position_pct": 0.1},
         "execution": {"order_type": "market"},
     }
-    
+
     # Should not raise
     validate_config(env, trading)

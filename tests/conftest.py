@@ -15,10 +15,11 @@ def tmp_db():
     """Temporary SQLite database for tests."""
     with tempfile.NamedTemporaryFile(suffix=".db", delete=False) as f:
         db_path = f.name
-    
+
     yield db_path
-    
+
     import os
+
     try:
         os.unlink(db_path)
     except OSError:
@@ -43,7 +44,7 @@ def event_bus():
 def mock_broker():
     """Mock broker client."""
     broker = MagicMock(spec=Broker)
-    
+
     # Mock account
     broker.get_account.return_value = {
         "equity": 10000.0,
@@ -51,13 +52,13 @@ def mock_broker():
         "cash": 2000.0,
         "portfolio_value": 12000.0,
     }
-    
+
     # Mock positions
     broker.get_positions.return_value = []
-    
+
     # Mock open orders
     broker.get_open_orders.return_value = []
-    
+
     # Mock clock (market open)
     broker.get_clock.return_value = {
         "is_open": True,
@@ -65,7 +66,7 @@ def mock_broker():
         "next_close": None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     return broker
 
 
@@ -73,23 +74,29 @@ def mock_broker():
 def mock_market_data_client():
     """Mock market data client."""
     client = MagicMock()
-    
+
     # Mock bars
     import pandas as pd
-    client.get_bars.return_value = pd.DataFrame({
-        "open": [100.0, 101.0, 102.0],
-        "high": [101.0, 102.0, 103.0],
-        "low": [99.0, 100.0, 101.0],
-        "close": [100.5, 101.5, 102.5],
-        "volume": [1000, 1100, 1200],
-        "trade_count": [10, 11, 12],
-        "vwap": [100.2, 101.2, 102.2],
-    }, index=pd.DatetimeIndex([
-        datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc),
-        datetime(2024, 1, 1, 10, 1, tzinfo=timezone.utc),
-        datetime(2024, 1, 1, 10, 2, tzinfo=timezone.utc),
-    ]))
-    
+
+    client.get_bars.return_value = pd.DataFrame(
+        {
+            "open": [100.0, 101.0, 102.0],
+            "high": [101.0, 102.0, 103.0],
+            "low": [99.0, 100.0, 101.0],
+            "close": [100.5, 101.5, 102.5],
+            "volume": [1000, 1100, 1200],
+            "trade_count": [10, 11, 12],
+            "vwap": [100.2, 101.2, 102.2],
+        },
+        index=pd.DatetimeIndex(
+            [
+                datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 10, 1, tzinfo=timezone.utc),
+                datetime(2024, 1, 1, 10, 2, tzinfo=timezone.utc),
+            ]
+        ),
+    )
+
     # Mock snapshot
     client.get_snapshot.return_value = {
         "bid": 100.0,
@@ -98,7 +105,7 @@ def mock_market_data_client():
         "ask_size": 100,
         "last_quote_time": datetime.now(timezone.utc).isoformat(),
     }
-    
+
     return client
 
 

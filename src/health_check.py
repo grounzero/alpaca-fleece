@@ -10,7 +10,7 @@ logger = logging.getLogger(__name__)
 
 class HealthCheck:
     """Health check status and monitoring (Tier 1)."""
-    
+
     def __init__(self):
         """Initialise health check."""
         self.start_time = datetime.now(timezone.utc)
@@ -19,42 +19,42 @@ class HealthCheck:
         self.error_count = 0
         self.is_healthy = True
         self.status_message = "OK"
-    
+
     def record_trade(self) -> None:
         """Record that a trade was executed."""
         self.last_trade_time = datetime.now(timezone.utc)
-    
+
     def record_signal(self) -> None:
         """Record that a signal was generated."""
         self.last_signal_time = datetime.now(timezone.utc)
-    
+
     def record_error(self, error: str) -> None:
         """Record an error (Tier 1).
-        
+
         Args:
             error: Error message
         """
         self.error_count += 1
         self.status_message = error
-        
+
         if self.error_count > 5:
             self.is_healthy = False
             logger.error(f"Health check: {self.error_count} errors - marking unhealthy")
-    
+
     def clear_errors(self) -> None:
         """Clear error count on recovery (Tier 1)."""
         self.error_count = 0
         self.is_healthy = True
         self.status_message = "OK"
-    
+
     def get_status(self) -> Dict[str, Any]:
         """Get current health status (Tier 1).
-        
+
         Returns:
             Dict with health status
         """
         uptime_seconds = (datetime.now(timezone.utc) - self.start_time).total_seconds()
-        
+
         return {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "status": "HEALTHY" if self.is_healthy else "UNHEALTHY",
@@ -65,10 +65,10 @@ class HealthCheck:
             "last_trade": self.last_trade_time.isoformat() if self.last_trade_time else None,
             "last_signal": self.last_signal_time.isoformat() if self.last_signal_time else None,
         }
-    
+
     def to_json(self) -> str:
         """Get health status as JSON (Tier 1).
-        
+
         Returns:
             JSON string with status
         """

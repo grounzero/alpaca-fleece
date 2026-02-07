@@ -12,7 +12,7 @@ from .base import AlpacaDataClient, AlpacaDataClientError
 
 class MarketDataClient(AlpacaDataClient):
     """Fetch market data: bars, snapshots."""
-    
+
     def get_bars(
         self,
         symbol: str,
@@ -22,14 +22,14 @@ class MarketDataClient(AlpacaDataClient):
         limit: Optional[int] = None,
     ) -> pd.DataFrame:
         """Fetch historical bars.
-        
+
         Args:
             symbol: Stock symbol
             timeframe: "1Min", "5Min", "15Min", "1H", "1D", etc
             start: Start time (UTC)
             end: End time (UTC)
             limit: Max bars to return
-        
+
         Returns:
             DataFrame with columns: open, high, low, close, volume, trade_count, vwap, timestamp
         """
@@ -42,7 +42,7 @@ class MarketDataClient(AlpacaDataClient):
                 "1D": TimeFrame.DAY,
             }
             tf = tf_map.get(timeframe, TimeFrame.MINUTE)
-            
+
             request = StockBarsRequest(
                 symbol_or_symbols=symbol,
                 timeframe=tf,
@@ -51,35 +51,37 @@ class MarketDataClient(AlpacaDataClient):
                 limit=limit,
             )
             bars = self.client.get_stock_bars(request)
-            
+
             if symbol not in bars:
                 return pd.DataFrame()
-            
+
             df = bars[symbol].df
             # Normalize column names
-            df = df.rename(columns={
-                "n": "trade_count",
-            })
+            df = df.rename(
+                columns={
+                    "n": "trade_count",
+                }
+            )
             return df
         except Exception as e:
             raise AlpacaDataClientError(f"Failed to get bars for {symbol}: {e}")
-    
+
     def get_snapshot(self, symbol: str) -> dict:
         """Fetch latest snapshot (bid/ask for spread calculation).
-        
+
         Args:
             symbol: Stock symbol
-        
+
         Returns:
             Dict with keys: bid, ask, bid_size, ask_size, last_quote_time
         """
         try:
             request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
             quote = self.client.get_stock_latest_quote(request)
-            
+
             if symbol not in quote:
                 return {}
-            
+
             q = quote[symbol]
             return {
                 "bid": float(q.bid_price) if q.bid_price else None,

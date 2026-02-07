@@ -21,21 +21,21 @@ from .base import AlpacaDataClientError
 
 class CalendarClient:
     """Fetch market calendar (holidays, early closes)."""
-    
+
     def __init__(self, api_key: str, secret_key: str) -> None:
         """Initialise calendar client."""
         self.client = TradingClient(
             api_key=api_key,
             secret_key=secret_key,
         )
-    
+
     def get_calendar(
         self,
         start: datetime,
         end: datetime,
     ) -> list[dict]:
         """Fetch market calendar for date range.
-        
+
         Returns:
             List of dicts with keys: date, open, close (in America/New_York time)
         """
