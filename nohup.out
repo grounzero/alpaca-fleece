@@ -1,0 +1,47 @@
+2026-02-06 22:33:43,193 [INFO] alpaca_bot: ============================================================
+2026-02-06 22:33:43,193 [INFO] alpaca_bot: Alpaca Trading Bot - Startup
+2026-02-06 22:33:43,194 [INFO] alpaca_bot: ============================================================
+2026-02-06 22:33:43,194 [INFO] alpaca_bot: Initializing broker...
+2026-02-06 22:33:43,194 [INFO] alpaca_bot: Initializing state store...
+2026-02-06 22:33:43,195 [INFO] alpaca_bot: Initializing event bus...
+2026-02-06 22:33:43,195 [INFO] alpaca_bot: Initializing data clients...
+2026-02-06 22:33:43,195 [INFO] alpaca_bot: Initializing data handler...
+2026-02-06 22:33:43,195 [INFO] alpaca_bot: Initializing stream (polling mode)...
+2026-02-06 22:33:43,195 [INFO] alpaca_bot: Running reconciliation...
+2026-02-06 22:33:43,595 [INFO] alpaca_bot: Validating symbols...
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Trading symbols: ['AAPL', 'MSFT', 'GOOGL', 'NVDA', 'QQQ', 'SPY', 'TSLA', 'AMD', 'AMZN', 'META', 'NFLX', 'UBER', 'COIN', 'MSTR', 'ARKK', 'IWM', 'EEM', 'GLD', 'TLT', 'USO', 'RTX', 'LMT', 'NOC', 'BA', 'GD', 'GOLD', 'SLV', 'PAAS', 'HL', 'SCCO', 'FCX']
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Initializing strategy...
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Initializing risk manager...
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Initializing order manager...
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Initializing housekeeping...
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Starting streams (HTTP polling)...
+2026-02-06 22:33:45,121 [INFO] alpaca_bot: Polling stream started - bot will poll every minute for new bars
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: Starting event processor...
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: ============================================================
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: Trading bot ready
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: ============================================================
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: Signal handlers registered for SIGTERM and SIGINT
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: Starting main event loop - monitoring all tasks
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: DEBUG: event_processor_task done=False
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: DEBUG: housekeeping_task done=False
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: DEBUG: watcher_task done=False
+2026-02-06 22:33:45,122 [INFO] alpaca_bot: DEBUG: polling_task done=False
+2026-02-06 22:33:48,070 [INFO] alpaca_bot: Event processor started
+2026-02-06 22:33:48,071 [INFO] alpaca_bot: Shutdown watcher started
+2026-02-06 22:35:31,848 [INFO] alpaca_bot: Event processor: iteration 100
+2026-02-06 22:37:15,754 [INFO] alpaca_bot: Event processor: iteration 200
+2026-02-06 22:38:57,874 [INFO] alpaca_bot: Event processor: iteration 300
+2026-02-06 22:40:41,909 [INFO] alpaca_bot: Event processor: iteration 400
+2026-02-06 22:42:26,055 [INFO] alpaca_bot: Event processor: iteration 500
+2026-02-06 22:44:10,872 [INFO] alpaca_bot: Event processor: iteration 600
+2026-02-06 22:45:53,113 [INFO] alpaca_bot: Event processor: iteration 700
+2026-02-06 22:47:37,864 [INFO] alpaca_bot: Event processor: iteration 800
+2026-02-06 22:49:21,745 [INFO] alpaca_bot: Event processor: iteration 900
+2026-02-06 22:51:05,840 [INFO] alpaca_bot: Event processor: iteration 1000
+2026-02-06 22:52:47,867 [INFO] alpaca_bot: Event processor: iteration 1100
+2026-02-06 22:54:31,846 [INFO] alpaca_bot: Event processor: iteration 1200
+2026-02-06 22:56:16,758 [INFO] alpaca_bot: Event processor: iteration 1300
+2026-02-06 22:57:58,850 [INFO] alpaca_bot: Event processor: iteration 1400
+2026-02-06 22:59:42,996 [INFO] alpaca_bot: Event processor: iteration 1500
+2026-02-06 23:01:28,943 [INFO] alpaca_bot: Event processor: iteration 1600
+2026-02-06 23:03:12,763 [INFO] alpaca_bot: Event processor: iteration 1700
