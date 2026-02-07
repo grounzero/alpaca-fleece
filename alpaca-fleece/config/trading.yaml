@@ -1,0 +1,105 @@
+# =============================================================================
+# SYMBOLS
+# =============================================================================
+symbols:
+  mode: explicit  # explicit | watchlist | screener
+  # 31 equities (crypto ready but requires correct Alpaca symbol format)
+  list: [AAPL, MSFT, GOOGL, NVDA, QQQ, SPY, TSLA, AMD, AMZN, META, NFLX, UBER, COIN, MSTR, ARKK, IWM, EEM, GLD, TLT, USO, RTX, LMT, NOC, BA, GD, GOLD, SLV, PAAS, HL, SCCO, FCX]
+  crypto_symbols: []  # Disabled for now (requires BTC/USD format research)
+  watchlist_name: my-targets
+  screener:
+    min_price: 10.0
+    max_price: 500.0
+    min_volume: 1000000
+    max_symbols: 31
+    exclude: []
+    refresh: daily
+
+# =============================================================================
+# TRADING SESSION
+# =============================================================================
+trading:
+  session_policy: regular_only  # regular_only (equities only, 9:30-16:00 ET)
+  bar_timeframe: 1Min
+  stream_feed: iex  # iex (free) | sip (paid)
+  shutdown_at_close: true  # Shut down at market close
+
+# =============================================================================
+# POLLING (HTTP fallback for WebSocket connection limits)
+# =============================================================================
+polling:
+  batch_size: 25  # Number of symbols per batch API request (Alpaca supports up to ~500)
+
+# =============================================================================
+# DATA FILTERS (all optional, applied before order)
+# =============================================================================
+filters:
+  # Spread filter — requires snapshot fetch before order
+  max_spread_pct: 0.005  # 0.5%, set null to disable
+  
+  # Volume filter — minimum trades in the bar that triggered signal
+  min_bar_trades: 10  # set null to disable
+  
+  # Time-of-day filter
+  avoid_first_minutes: 5
+  avoid_last_minutes: 5
+
+# =============================================================================
+# EXECUTION
+# =============================================================================
+execution:
+  order_type: market  # market | marketable_limit
+  limit_buffer_pct: 0.001
+  time_in_force: day
+
+# =============================================================================
+# STRATEGY
+# =============================================================================
+strategy:
+  name: sma_crossover
+  params:
+    fast_period: 10
+    slow_period: 30
+
+# =============================================================================
+# RISK LIMITS (Session-Aware)
+# =============================================================================
+risk:
+  # Regular trading hours (9:30-16:00 ET): Equities only
+  regular_hours:
+    max_position_pct: 0.10        # 10% position size
+    max_daily_loss_pct: 0.05      # 5% daily loss limit
+    max_trades_per_day: 20
+    max_concurrent_positions: 10
+  
+  # Extended hours (16:00-9:30 ET): Crypto only, tighter limits
+  extended_hours:
+    max_position_pct: 0.05        # 5% position size (smaller for overnight gaps)
+    max_daily_loss_pct: 0.03      # 3% daily loss limit (tighter for volatility)
+    max_trades_per_day: 10        # Fewer trades overnight
+    max_concurrent_positions: 5   # Fewer concurrent positions
+
+# =============================================================================
+# EXITS
+# =============================================================================
+exits:
+  stop_loss_pct: 0.01           # -1% stop loss
+  profit_target_pct: 0.02       # +2% profit target
+  trailing_stop_enabled: false  # Set true to enable trailing stops
+  trailing_stop_activation_pct: 0.01  # Activate after +1% profit
+  trailing_stop_trail_pct: 0.005      # Trail 0.5% below highest price
+  check_interval_seconds: 30    # Check positions every 30 seconds
+  exit_on_circuit_breaker: true # Close all positions on circuit breaker
+
+# =============================================================================
+# SHUTDOWN
+# =============================================================================
+shutdown:
+  cancel_open_orders: false  # if true, cancel all open orders on shutdown
+
+# =============================================================================
+# BACKTEST COST MODEL
+# =============================================================================
+backtest:
+  spread_pct: 0.0001
+  slippage_pct: 0.00005

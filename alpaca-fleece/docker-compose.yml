@@ -1,0 +1,23 @@
+services:
+  alpaca-bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alpaca-trading-bot
+    restart: unless-stopped
+    env_file:
+      - .env
+    volumes:
+      # Persist database and logs
+      - ./data:/app/data
+      - ./logs:/app/logs
+      - ./config:/app/config
+    environment:
+      - DATABASE_PATH=/app/data/trades.db
+      - CONFIG_PATH=/app/config/trading.yaml
+      - LOG_LEVEL=INFO
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"

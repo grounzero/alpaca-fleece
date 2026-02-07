@@ -1,0 +1,76 @@
+# =============================================================================
+# SYMBOLS
+# =============================================================================
+symbols:
+  mode: explicit  # explicit | watchlist | screener
+  list: [AAPL, MSFT, GOOGL]
+  watchlist_name: my-targets
+  screener:
+    min_price: 10.0
+    max_price: 500.0
+    min_volume: 1000000
+    max_symbols: 20
+    exclude: [TSLA, GME]
+    refresh: daily
+
+# =============================================================================
+# TRADING SESSION
+# =============================================================================
+trading:
+  session_policy: regular_only  # regular_only | include_extended
+  bar_timeframe: 1Min
+  stream_feed: iex  # iex (free) | sip (paid)
+  shutdown_at_close: true
+
+# =============================================================================
+# DATA FILTERS (all optional, applied before order)
+# =============================================================================
+filters:
+  # Spread filter — requires snapshot fetch before order
+  max_spread_pct: 0.005  # 0.5%, set null to disable
+  
+  # Volume filter — minimum trades in the bar that triggered signal
+  min_bar_trades: 10  # set null to disable
+  
+  # Time-of-day filter
+  avoid_first_minutes: 5
+  avoid_last_minutes: 5
+
+# =============================================================================
+# EXECUTION
+# =============================================================================
+execution:
+  order_type: market  # market | marketable_limit
+  limit_buffer_pct: 0.001
+  time_in_force: day
+
+# =============================================================================
+# STRATEGY
+# =============================================================================
+strategy:
+  name: sma_crossover
+  params:
+    fast_period: 10
+    slow_period: 30
+
+# =============================================================================
+# RISK LIMITS
+# =============================================================================
+risk:
+  max_position_pct: 0.10
+  max_daily_loss_pct: 0.05
+  max_trades_per_day: 20
+  max_concurrent_positions: 10
+
+# =============================================================================
+# SHUTDOWN
+# =============================================================================
+shutdown:
+  cancel_open_orders: false  # if true, cancel all open orders on shutdown
+
+# =============================================================================
+# BACKTEST COST MODEL
+# =============================================================================
+backtest:
+  spread_pct: 0.0001
+  slippage_pct: 0.00005
