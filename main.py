@@ -20,7 +20,7 @@ class TradingBot:
     """Main trading bot orchestrator."""
 
     def __init__(self):
-        """Initialize trading bot."""
+        """Set up trading bot."""
         self.config = None
         self.logger = None
         self.state_store = None
@@ -35,7 +35,7 @@ class TradingBot:
         self.tasks = []
 
     async def startup(self):
-        """Initialize all components."""
+        """Load all components."""
         # Load configuration
         try:
             self.config = load_config()
@@ -58,13 +58,13 @@ class TradingBot:
         if self.config.dry_run:
             self.logger.info("Dry run mode enabled - no orders will be submitted")
 
-        # Initialize state store
+        # Set up state store
         self.state_store = StateStore()
-        self.logger.info("State store initialized")
+        self.logger.info("State store set up")
 
-        # Initialize broker
+        # Set up broker
         self.broker = Broker(self.config, self.logger)
-        self.logger.info("Broker initialized")
+        self.logger.info("Broker set up")
 
         # Reconcile account state
         await self.reconcile_account()
@@ -83,33 +83,33 @@ class TradingBot:
             self.logger.info("Resetting circuit breaker (CIRCUIT_BREAKER_RESET=true)")
             self.state_store.reset_circuit_breaker()
 
-        # Initialize event bus
+        # Set up event bus
         self.event_bus = EventBus()
-        self.logger.info("Event bus initialized")
+        self.logger.info("Event bus set up")
 
-        # Initialize data handler
+        # Set up data handler
         window_size = self.config.sma_slow + 10
         self.data_handler = DataHandler(window_size=window_size)
-        self.logger.info(f"Data handler initialized (window_size={window_size})")
+        self.logger.info(f"Data handler set up (window_size={window_size})")
 
-        # Initialize strategy
+        # Set up strategy
         self.strategy = SMACrossoverStrategy(
             fast_period=self.config.sma_fast,
             slow_period=self.config.sma_slow,
             state_store=self.state_store,
         )
-        self.logger.info(f"Strategy initialized: {self.strategy}")
+        self.logger.info(f"Strategy set up: {self.strategy}")
 
-        # Initialize risk manager
+        # Set up risk manager
         self.risk_manager = RiskManager(
             config=self.config,
             state_store=self.state_store,
             broker=self.broker,
             logger=self.logger,
         )
-        self.logger.info("Risk manager initialized")
+        self.logger.info("Risk manager set up")
 
-        # Initialize order manager
+        # Set up order manager
         self.order_manager = OrderManager(
             config=self.config,
             state_store=self.state_store,
@@ -117,9 +117,9 @@ class TradingBot:
             risk_manager=self.risk_manager,
             logger=self.logger,
         )
-        self.logger.info("Order manager initialized")
+        self.logger.info("Order manager set up")
 
-        # Initialize stream handler
+        # Set up stream handler
         self.stream_handler = StreamHandler(
             config=self.config,
             event_bus=self.event_bus,
@@ -127,7 +127,7 @@ class TradingBot:
             data_handler=self.data_handler,
             logger=self.logger,
         )
-        self.logger.info("Stream handler initialized")
+        self.logger.info("Stream handler set up")
 
         # Subscribe to events
         self.event_bus.subscribe(EventType.MARKET_BAR, self.on_market_bar)
@@ -155,7 +155,7 @@ class TradingBot:
                 for pos in positions:
                     self.logger.info(
                         f"  {pos['symbol']}: {pos['qty']} shares @ ${pos['current_price']:.2f} "
-                        f"(P&L: ${pos['unrealized_pl']:.2f})",
+                        f"(P&L: ${pos['unrealised_pl']:.2f})",
                         extra={"position": pos}
                     )
             else:

@@ -1,5 +1,6 @@
 """Event bus for asynchronous message passing."""
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any, Callable, Dict, List, Optional, Type
@@ -144,7 +145,7 @@ class EventBus:
 
     def __init__(self, maxsize: int = 1000):
         """
-        Initialize event bus.
+        Set up event bus.
 
         Args:
             maxsize: Maximum queue size (0 = unlimited)
@@ -203,13 +204,11 @@ class EventBus:
                             await handler(event)
                         else:
                             handler(event)
-                    except Exception as e:
+                    except Exception:
                         # Log error but don't stop processing
-                        import logging
                         logger = logging.getLogger(__name__)
-                        logger.error(
+                        logger.exception(
                             f"Error in event handler for {event.event_type}",
-                            exc_info=e,
                             extra={"event": str(event)}
                         )
 
@@ -218,10 +217,9 @@ class EventBus:
             except asyncio.TimeoutError:
                 # No event in queue, continue
                 continue
-            except Exception as e:
-                import logging
+            except Exception:
                 logger = logging.getLogger(__name__)
-                logger.error("Error processing event", exc_info=e)
+                logger.exception("Error processing event")
 
     async def stop(self, timeout: float = 5.0):
         """
@@ -236,7 +234,6 @@ class EventBus:
         try:
             await asyncio.wait_for(self.queue.join(), timeout=timeout)
         except asyncio.TimeoutError:
-            import logging
             logger = logging.getLogger(__name__)
             logger.warning(f"Event queue did not drain within {timeout}s, {self.queue.qsize()} events remaining")
 

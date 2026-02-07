@@ -2,6 +2,7 @@
 import os
 import pytest
 from pathlib import Path
+from unittest.mock import patch
 from src.config import load_config, Config
 
 
@@ -30,8 +31,10 @@ def test_config_missing_api_key(monkeypatch):
     monkeypatch.delenv("ALPACA_API_KEY", raising=False)
     monkeypatch.delenv("ALPACA_SECRET_KEY", raising=False)
 
-    with pytest.raises(ValueError, match="Missing required environment variables"):
-        load_config()
+    # Prevent loading from .env file
+    with patch("src.config.load_dotenv"):
+        with pytest.raises(ValueError, match="Missing required environment variables"):
+            load_config()
 
 
 def test_config_invalid_numeric(monkeypatch):

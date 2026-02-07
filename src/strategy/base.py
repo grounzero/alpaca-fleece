@@ -11,7 +11,7 @@ class BaseStrategy(ABC):
 
     def __init__(self, name: str):
         """
-        Initialize strategy.
+        Set up strategy.
 
         Args:
             name: Strategy name

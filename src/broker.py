@@ -26,7 +26,7 @@ class Broker:
 
     def __init__(self, config: Config, logger: logging.Logger):
         """
-        Initialize broker.
+        Set up broker.
 
         Args:
             config: Configuration object
@@ -35,7 +35,7 @@ class Broker:
         self.config = config
         self.logger = logger
 
-        # Initialize Alpaca clients
+        # Set up Alpaca clients
         # CRITICAL SAFETY: Use safety gate, not raw alpaca_paper flag
         # Live trading ONLY when BOTH ALPACA_PAPER=false AND ALLOW_LIVE_TRADING=true
         use_paper = not config.is_live_trading_enabled()
@@ -84,7 +84,7 @@ class Broker:
 
                 # Don't retry on certain errors
                 if any(x in error_msg for x in ["insufficient", "invalid", "forbidden", "unauthorized"]):
-                    self.logger.error(f"Non-retryable error: {e}")
+                    self.logger.exception("Non-retryable error")
                     raise BrokerError(f"Broker operation failed: {e}") from e
 
                 # Log and retry

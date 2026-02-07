@@ -11,7 +11,7 @@ class StateStore:
 
     def __init__(self, db_path: Path = None):
         """
-        Initialize state store.
+        Set up state store.
 
         Args:
             db_path: Path to SQLite database file (default: data/bot_state.db)

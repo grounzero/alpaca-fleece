@@ -41,25 +41,34 @@ alpaca-bot/
 │   └── logger.py              # Structured logging
 ├── tests/                     # Test suite
 ├── main.py                    # Entry point
-├── requirements.txt           # Dependencies
+├── pyproject.toml            # Project configuration (uv, pytest, ruff, pyright)
+├── .pre-commit-config.yaml   # Pre-commit hooks configuration
 ├── .env.example              # Configuration template
 └── README.md                 # This file
 ```
 
 ## Setup
 
-### 1. Create Virtual Environment
+### 1. Install uv
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
+# macOS/Linux
+curl -LsSf https://astral.sh/uv/install.sh | sh
+
+# Windows
+powershell -ExecutionPolicy BypassUser -c "irm https://astral.sh/uv/install.ps1 | iex"
+
+# Or using pip
+pip install uv
 ```
 
 ### 2. Install Dependencies
 
 ```bash
-pip install -r requirements.txt
+uv sync
 ```
+
+This creates a virtual environment and installs all dependencies from `pyproject.toml`.
 
 ### 3. Configure Environment
 
@@ -78,7 +87,7 @@ Get paper trading API keys from: https://app.alpaca.markets/paper/dashboard/over
 
 ### 4. Configure Trading Parameters
 
-Edit `.env` to customize:
+Edit `.env` to customise:
 
 - **Symbols**: `SYMBOLS=AAPL,MSFT,GOOGL`
 - **Strategy**: `SMA_FAST=10`, `SMA_SLOW=30`
@@ -190,13 +199,13 @@ class YourStrategy(BaseStrategy):
     def __init__(self, state_store, **params):
         super().__init__(name="YourStrategy")
         self.state_store = state_store
-        # Initialize parameters
+        # Set up parameters
 
     def get_required_history(self) -> int:
         return 50  # Minimum bars needed
 
     def on_bar(self, symbol: str, df: pd.DataFrame) -> Optional[SignalEvent]:
-        # Analyze df, return SignalEvent or None
+        # Process data, return SignalEvent or None
         if len(df) < self.get_required_history():
             return None
 
@@ -267,7 +276,7 @@ SELECT value FROM bot_state WHERE key = 'daily_trade_count';
 ## Logs
 
 Logs are written to:
-- **Console**: Human-readable format with colors
+- **Console**: Human-readable format with colours
 - **File**: `logs/alpaca-bot.log` (JSON format, daily rotation, 30 days retention)
 
 Each log entry includes:
@@ -345,7 +354,7 @@ WebSocket Stream → Event Bus → Data Handler → Strategy
 
 1. **WebSocket** receives bar → publishes `MarketBarEvent`
 2. **Data Handler** maintains rolling window per symbol
-3. **Strategy** analyzes bars → emits `SignalEvent` on crossover
+3. **Strategy** analyses bars → emits `SignalEvent` on crossover
 4. **Risk Manager** validates signal (kill-switch, circuit breaker, limits)
 5. **Order Manager** generates deterministic `client_order_id`, checks for duplicates
 6. **State Store** persists order before submission

@@ -11,7 +11,7 @@ class DataHandler:
 
     def __init__(self, window_size: int):
         """
-        Initialize data handler.
+        Set up data handler.
 
         Args:
             window_size: Maximum number of bars to keep per symbol
@@ -31,7 +31,7 @@ class DataHandler:
         """
         symbol = event.symbol
 
-        # Initialize deque for symbol if needed
+        # Set up deque for symbol if needed
         if symbol not in self.data:
             self.data[symbol] = deque(maxlen=self.window_size)
 
