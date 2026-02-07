@@ -1,10 +1,9 @@
 """Shared test fixtures."""
 
 import pytest
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import MagicMock
 from datetime import datetime, timezone
 import tempfile
-import sqlite3
 
 from src.state_store import StateStore
 from src.event_bus import EventBus
@@ -22,7 +21,7 @@ def tmp_db():
     import os
     try:
         os.unlink(db_path)
-    except:
+    except OSError:
         pass
 
 

@@ -16,7 +16,6 @@ MUST NOT:
 import asyncio
 import logging
 import time
-from datetime import datetime
 from itertools import islice
 from typing import Callable, Optional
 

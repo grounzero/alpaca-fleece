@@ -53,7 +53,7 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
     
     # Check open orders
     alpaca_order_ids = {o["client_order_id"]: o for o in alpaca_orders}
-    sqlite_order_ids = {o["client_order_id"]: o for o in sqlite_orders if o["status"] in NON_TERMINAL_STATUSES}
+    {o["client_order_id"]: o for o in sqlite_orders if o["status"] in NON_TERMINAL_STATUSES}
     
     # Rule 1: Alpaca has order terminal, SQLite has non-terminal → UPDATE SQLite (safe)
     for order in alpaca_orders:

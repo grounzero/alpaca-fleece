@@ -5,7 +5,7 @@ Caches briefly to avoid redundant calls.
 """
 
 import logging
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timezone
 from typing import Optional
 
 from src.alpaca_api.market_data import MarketDataClient

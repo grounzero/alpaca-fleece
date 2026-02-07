@@ -1,9 +1,7 @@
 """Tests for startup reconciliation."""
 
 import pytest
-import json
 from pathlib import Path
-from unittest.mock import MagicMock
 
 from src.reconciliation import reconcile, ReconciliationError
 

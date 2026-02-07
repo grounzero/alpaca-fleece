@@ -1,7 +1,7 @@
 """Tests for configuration validation."""
 
 import pytest
-from src.config import load_env, load_trading_config, validate_config, ConfigError
+from src.config import validate_config, ConfigError
 
 
 def test_validate_config_requires_api_key():

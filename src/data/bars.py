@@ -9,7 +9,6 @@ Handles backfill on stream reconnect.
 
 import logging
 from collections import deque
-from datetime import datetime, timezone
 from typing import Optional
 
 import pandas as pd

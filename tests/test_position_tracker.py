@@ -1,11 +1,8 @@
 """Tests for position tracker."""
 
 import pytest
-import asyncio
-from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock
 
-from src.position_tracker import PositionTracker, PositionData
+from src.position_tracker import PositionTracker
 from src.state_store import StateStore
 
 

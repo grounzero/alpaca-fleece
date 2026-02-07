@@ -9,10 +9,9 @@ import asyncio
 import logging
 import signal
 import sys
-from pathlib import Path
 from typing import Optional
 
-from src.config import load_env, load_trading_config, validate_config, ConfigError, ExitConfig
+from src.config import load_env, load_trading_config, validate_config
 from src.broker import Broker
 from src.state_store import StateStore
 from src.reconciliation import reconcile, ReconciliationError

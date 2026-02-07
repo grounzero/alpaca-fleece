@@ -31,7 +31,7 @@ class RegimeDetector:
             return RegimeScore("unknown", 0.0, "none", 0.0)
         
         close = df["close"].iloc[-1]
-        sma_20 = ta.sma(df["close"], length=20).iloc[-1]
+        ta.sma(df["close"], length=20).iloc[-1]
         sma_50 = ta.sma(df["close"], length=50).iloc[-1]
         atr = ta.atr(df["high"], df["low"], df["close"], length=14).iloc[-1]
         

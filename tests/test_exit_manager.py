@@ -1,15 +1,12 @@
 """Tests for exit manager."""
 
 import pytest
-import asyncio
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock
 
-from src.exit_manager import ExitManager, ExitSignalEvent
+from src.exit_manager import ExitManager
 from src.position_tracker import PositionTracker
 from src.state_store import StateStore
-from src.event_bus import EventBus
-from src.broker import Broker
 
 
 @pytest.fixture

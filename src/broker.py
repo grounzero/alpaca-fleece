@@ -14,7 +14,6 @@ Clock (/v2/clock) is owned EXCLUSIVELY by this module.
 Calendar (/v2/calendar) is NOT owned here; use alpaca_api.calendar instead.
 """
 
-from datetime import datetime, timezone
 from typing import Optional, TypedDict
 
 from alpaca.trading.client import TradingClient

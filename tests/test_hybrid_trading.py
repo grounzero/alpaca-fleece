@@ -1,11 +1,9 @@
 """Tests for Hybrid Trading (Crypto + Equities with extended hours support)."""
 
 import pytest
-from datetime import datetime, timezone
 
 from src.risk_manager import RiskManager
 from src.strategy.sma_crossover import SMACrossover
-from src.event_bus import SignalEvent
 
 
 @pytest.fixture

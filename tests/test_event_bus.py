@@ -1,7 +1,6 @@
 """Tests for event bus."""
 
 import pytest
-import asyncio
 from datetime import datetime, timezone
 
 from src.event_bus import EventBus, BarEvent, SignalEvent

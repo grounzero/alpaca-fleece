@@ -257,7 +257,7 @@ class RiskManager:
         
         # Time-of-day filter (if enabled)
         if self.avoid_first_minutes > 0 or self.avoid_last_minutes > 0:
-            from datetime import datetime, timezone, timedelta
+            from datetime import datetime
             import pytz
             
             ET = pytz.timezone("America/New_York")

@@ -7,15 +7,13 @@ Tests cover:
 - Backwards compatibility (batch_size=1 works like before)
 """
 
-import asyncio
 import pytest
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from alpaca.data.timeframe import TimeFrame
 from alpaca.data.requests import StockBarsRequest
 
-from src.stream_polling import StreamPolling, PollingBar, batch_iter
+from src.stream_polling import StreamPolling, batch_iter
 
 
 class TestBatchIter:
@@ -273,7 +271,6 @@ class TestStreamPollingBatchSizes:
             
             # Track number of batch calls
             batch_calls = []
-            original_poll_batch = stream._poll_batch
             
             async def tracking_poll_batch(batch):
                 batch_calls.append(batch)

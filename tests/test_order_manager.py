@@ -1,12 +1,10 @@
 """Tests for order manager."""
 
 import pytest
-import asyncio
 from datetime import datetime, timezone
-from unittest.mock import MagicMock, patch
 
 from src.order_manager import OrderManager, OrderManagerError
-from src.event_bus import SignalEvent, EventBus
+from src.event_bus import SignalEvent
 
 
 def test_order_manager_generates_deterministic_client_order_id(state_store, event_bus, mock_broker, config):

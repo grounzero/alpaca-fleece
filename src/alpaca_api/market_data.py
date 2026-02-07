@@ -3,7 +3,7 @@
 from datetime import datetime
 from typing import Optional
 
-from alpaca.data.requests import StockBarsRequest, StockLatestBarRequest, StockLatestQuoteRequest
+from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame
 import pandas as pd
 

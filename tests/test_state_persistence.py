@@ -1,7 +1,6 @@
 """Tests for Win #3: State Persistence + Deterministic Recovery."""
 
 import pytest
-from pathlib import Path
 
 from src.state_store import StateStore
 

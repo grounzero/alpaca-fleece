@@ -8,7 +8,7 @@ Tracks:
 """
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -248,7 +248,7 @@ class PositionTracker:
                 entry_price = float(pos["avg_entry_price"]) if pos["avg_entry_price"] else 0.0
                 side = "long" if qty > 0 else "short"
                 
-                position = self.start_tracking(
+                self.start_tracking(
                     symbol=symbol,
                     fill_price=entry_price,
                     qty=abs(qty),

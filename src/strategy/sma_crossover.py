@@ -1,6 +1,5 @@
 """SMA Crossover strategy - Multi-timeframe with regime detection."""
 
-from datetime import datetime, timezone
 
 import pandas as pd
 import pandas_ta as ta
@@ -158,7 +157,7 @@ class SMACrossover(BaseStrategy):
             return {"regime": "unknown", "strength": 0.0, "direction": "none"}
         
         close = df["close"].iloc[-1]
-        sma_20 = ta.sma(df["close"], length=20).iloc[-1]
+        ta.sma(df["close"], length=20).iloc[-1]
         sma_50 = ta.sma(df["close"], length=50).iloc[-1]
         atr = ta.atr(df["high"], df["low"], df["close"], length=14).iloc[-1]
         

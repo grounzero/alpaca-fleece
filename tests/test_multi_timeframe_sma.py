@@ -3,7 +3,6 @@
 import pytest
 import pandas as pd
 import numpy as np
-from datetime import datetime, timezone
 
 from src.strategy.sma_crossover import SMACrossover
 from src.regime_detector import RegimeDetector
