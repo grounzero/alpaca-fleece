@@ -14,8 +14,8 @@ import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 
-from src.broker import Broker
-from src.state_store import StateStore
+from src.broker import Broker, OrderInfo
+from src.state_store import StateStore, OrderIntentRow
 
 logger = logging.getLogger(__name__)
 
@@ -48,7 +48,7 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
     Raises:
         ReconciliationError if discrepancies found
     """
-    discrepancies = []
+    discrepancies: list[dict[str, object]] = []
 
     # Get state from both sources
     try:
@@ -63,7 +63,7 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
         raise ReconciliationError(f"Failed to fetch state for reconciliation: {e}")
 
     # Check open orders
-    alpaca_order_ids = {o["client_order_id"]: o for o in alpaca_orders}
+    alpaca_order_ids: dict[str, OrderInfo] = {o["client_order_id"]: o for o in alpaca_orders}
     {o["client_order_id"]: o for o in sqlite_orders if o["status"] in NON_TERMINAL_STATUSES}
 
     # Rule 1: Alpaca has order terminal, SQLite has non-terminal → UPDATE SQLite (safe)
@@ -80,8 +80,8 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
                 logger.info(f"Updating {client_id}: {sqlite_status} → {alpaca_status}")
                 state_store.update_order_intent(
                     client_order_id=client_id,
-                    status=alpaca_status,
-                    filled_qty=order.get("filled_qty", 0),
+                    status=alpaca_status or "unknown",
+                    filled_qty=float(order.get("filled_qty", 0)),
                     alpaca_order_id=order.get("id"),
                 )
 

@@ -212,7 +212,7 @@ class StateStore:
             )
             conn.commit()
 
-    def get_order_intent(self, client_order_id: str) -> Optional[dict]:
+    def get_order_intent(self, client_order_id: str) -> Optional[dict[str, object]]:
         """Get order intent by client_order_id."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -297,7 +297,7 @@ class StateStore:
         value = self.get_state("daily_trade_count")
         return int(value) if value else 0
 
-    def save_last_signal(self, symbol: str, signal_type: str, sma_period: tuple = (10, 30)) -> None:
+    def save_last_signal(self, symbol: str, signal_type: str, sma_period: tuple[int, int] = (10, 30)) -> None:
         """Persist last signal per symbol per SMA period (Win #3).
 
         Args:
@@ -308,7 +308,7 @@ class StateStore:
         key = f"last_signal:{symbol}:{sma_period[0]}:{sma_period[1]}"
         self.set_state(key, signal_type)
 
-    def get_last_signal(self, symbol: str, sma_period: tuple = (10, 30)) -> Optional[str]:
+    def get_last_signal(self, symbol: str, sma_period: tuple[int, int] = (10, 30)) -> Optional[str]:
         """Load last signal per symbol per SMA period (Win #3)."""
         key = f"last_signal:{symbol}:{sma_period[0]}:{sma_period[1]}"
         return self.get_state(key)

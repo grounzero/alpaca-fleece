@@ -33,7 +33,7 @@ class SignalEvent:
     symbol: str
     signal_type: str  # "BUY", "SELL"
     timestamp: datetime
-    metadata: dict
+    metadata: dict[str, object]
 
 
 @dataclass(frozen=True)
@@ -87,10 +87,10 @@ class EventBus:
         Args:
             maxsize: Max items in queue
         """
-        self.queue: asyncio.Queue = asyncio.Queue(maxsize=maxsize)
+        self.queue: asyncio.Queue[object] = asyncio.Queue(maxsize=maxsize)
         self.running = False
 
-    async def publish(self, event) -> None:
+    async def publish(self, event: object) -> None:
         """Publish event to queue.
 
         Args:
@@ -105,7 +105,7 @@ class EventBus:
             # Queue full, skip (log elsewhere)
             pass
 
-    async def subscribe(self) -> Optional:
+    async def subscribe(self) -> Optional[object]:
         """Get next event from queue (blocking).
 
         Returns:

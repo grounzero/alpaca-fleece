@@ -41,10 +41,10 @@ class RateLimiter:
             Seconds to wait before next attempt
         """
         if self.failures == 0:
-            return 0
+            return 0.0
 
         # Exponential: 2^n, capped at max_delay
-        delay = min(self.base_delay * (2 ** (self.failures - 1)), self.max_delay)
+        delay: float = min(self.base_delay * (2 ** (self.failures - 1)), self.max_delay)
         return delay
 
     def record_failure(self) -> None:
@@ -78,7 +78,7 @@ class RateLimiter:
         elapsed = time.time() - self.last_failure_time
         return elapsed >= delay
 
-    def get_status(self) -> dict:
+    def get_status(self) -> dict[str, object]:
         """Get rate limiter status."""
         return {
             "failures": self.failures,

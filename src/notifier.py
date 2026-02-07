@@ -93,6 +93,9 @@ class AlertNotifier:
         }
 
         try:
+            if self.alert_target is None:
+                logger.error("Slack alert target is not configured")
+                return False
             data = json.dumps(payload).encode()
             req = urllib.request.Request(
                 self.alert_target,
@@ -126,7 +129,7 @@ class AlertNotifier:
 
             msg = MIMEMultipart()
             msg["From"] = smtp_user or "trading-bot@example.com"
-            msg["To"] = self.alert_target
+            msg["To"] = self.alert_target or ""
             msg["Subject"] = f"[{severity}] {title}"
 
             msg.attach(MIMEText(message, "plain"))

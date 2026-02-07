@@ -3,8 +3,9 @@
 import gzip
 import logging
 import shutil
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +24,7 @@ class BackupManager:
         self.backup_dir = Path(backup_dir)
         self.backup_dir.mkdir(exist_ok=True)
 
-        self.last_backup_date = None
+        self.last_backup_date: Optional[date] = None
 
     def backup_database(self, compress: bool = True) -> bool:
         """Create a backup of the database (Tier 1).
@@ -123,13 +124,13 @@ class BackupManager:
             logger.error(f"Restore failed: {e}")
             return False
 
-    def get_backup_list(self) -> list:
+    def get_backup_list(self) -> list[dict[str, object]]:
         """Get list of available backups (Tier 1).
 
         Returns:
             List of backup filenames with sizes
         """
-        backups = []
+        backups: list[dict[str, object]] = []
         for backup_file in sorted(self.backup_dir.glob("trades_*.db*"), reverse=True):
             size_kb = backup_file.stat().st_size / 1024
             backups.append(

@@ -11,11 +11,11 @@ logger = logging.getLogger(__name__)
 class HealthCheck:
     """Health check status and monitoring (Tier 1)."""
 
-    def __init__(self):
+    def __init__(self) -> None:
         """Initialise health check."""
         self.start_time = datetime.now(timezone.utc)
-        self.last_trade_time = None
-        self.last_signal_time = None
+        self.last_trade_time: datetime | None = None
+        self.last_signal_time: datetime | None = None
         self.error_count = 0
         self.is_healthy = True
         self.status_message = "OK"

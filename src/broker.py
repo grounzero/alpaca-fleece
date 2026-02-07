@@ -95,10 +95,10 @@ class Broker:
         try:
             account = self.client.get_account()
             return {
-                "equity": float(account.equity),
-                "buying_power": float(account.buying_power),
-                "cash": float(account.cash),
-                "portfolio_value": float(account.portfolio_value),
+                "equity": float(account.equity),  # type: ignore[attr-defined]
+                "buying_power": float(account.buying_power),  # type: ignore[attr-defined]
+                "cash": float(account.cash),  # type: ignore[attr-defined]
+                "portfolio_value": float(account.portfolio_value),  # type: ignore[attr-defined]
             }
         except Exception as e:
             raise BrokerError(f"Failed to get account: {e}")
@@ -113,10 +113,10 @@ class Broker:
             positions = self.client.get_all_positions()
             return [
                 {
-                    "symbol": p.symbol,
-                    "qty": float(p.qty),
-                    "avg_entry_price": float(p.avg_entry_price) if p.avg_entry_price else None,
-                    "current_price": float(p.current_price) if p.current_price else None,
+                    "symbol": p.symbol,  # type: ignore[attr-defined]
+                    "qty": float(p.qty),  # type: ignore[attr-defined]
+                    "avg_entry_price": float(p.avg_entry_price) if p.avg_entry_price else None,  # type: ignore[attr-defined]
+                    "current_price": float(p.current_price) if p.current_price else None,  # type: ignore[attr-defined]
                 }
                 for p in positions
             ]
@@ -130,33 +130,28 @@ class Broker:
             List of dicts with keys: id, client_order_id, symbol, side, qty, status, filled_qty, etc
         """
         try:
-            # Try with status parameter first (newer API), fall back if not supported
-            try:
-                orders = self.client.get_orders(status="open")
-            except TypeError:
-                # Older API version doesn't support status parameter
-                orders = self.client.get_orders()
-                # Filter to open orders manually
-                orders = [
-                    o
-                    for o in orders
-                    if o.status
-                    and o.status.value not in ["filled", "canceled", "expired", "rejected"]
-                ]
+            # Get orders and filter to open ones manually
+            orders = self.client.get_orders()
+            open_orders = [
+                o
+                for o in orders
+                if o.status
+                and o.status.value not in ["filled", "canceled", "expired", "rejected"]
+            ]
 
             return [
                 {
-                    "id": str(o.id),
-                    "client_order_id": o.client_order_id,
-                    "symbol": o.symbol,
-                    "side": o.side.value if o.side else None,
-                    "qty": float(o.qty) if o.qty else None,
-                    "status": o.status.value if o.status else None,
-                    "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
-                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
-                    "created_at": o.created_at.isoformat() if o.created_at else None,
+                    "id": str(o.id),  # type: ignore[attr-defined]
+                    "client_order_id": o.client_order_id,  # type: ignore[attr-defined]
+                    "symbol": o.symbol,  # type: ignore[attr-defined]
+                    "side": o.side.value if o.side else None,  # type: ignore[attr-defined]
+                    "qty": float(o.qty) if o.qty else None,  # type: ignore[attr-defined]
+                    "status": o.status.value if o.status else None,  # type: ignore[attr-defined]
+                    "filled_qty": float(o.filled_qty) if o.filled_qty else 0,  # type: ignore[attr-defined]
+                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,  # type: ignore[attr-defined]
+                    "created_at": o.created_at.isoformat() if o.created_at else None,  # type: ignore[attr-defined]
                 }
-                for o in orders
+                for o in open_orders
             ]
         except Exception as e:
             raise BrokerError(f"Failed to get open orders: {e}")
@@ -173,10 +168,10 @@ class Broker:
         try:
             clock = self.client.get_clock()
             return {
-                "is_open": clock.is_open,
-                "next_open": clock.next_open.isoformat() if clock.next_open else None,
-                "next_close": clock.next_close.isoformat() if clock.next_close else None,
-                "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,
+                "is_open": clock.is_open,  # type: ignore[attr-defined]
+                "next_open": clock.next_open.isoformat() if clock.next_open else None,  # type: ignore[attr-defined]
+                "next_close": clock.next_close.isoformat() if clock.next_close else None,  # type: ignore[attr-defined]
+                "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,  # type: ignore[attr-defined]
             }
         except Exception as e:
             raise BrokerError(f"Failed to get clock: {e}")
@@ -230,15 +225,15 @@ class Broker:
 
             order = self.client.submit_order(order_data)
             return {
-                "id": str(order.id),
-                "client_order_id": order.client_order_id,
-                "symbol": order.symbol,
-                "side": order.side.value if order.side else None,
-                "qty": float(order.qty) if order.qty else None,
-                "status": order.status.value if order.status else None,
-                "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
+                "id": str(order.id),  # type: ignore[attr-defined]
+                "client_order_id": order.client_order_id,  # type: ignore[attr-defined]
+                "symbol": order.symbol,  # type: ignore[attr-defined]
+                "side": order.side.value if order.side else None,  # type: ignore[attr-defined]
+                "qty": float(order.qty) if order.qty else None,  # type: ignore[attr-defined]
+                "status": order.status.value if order.status else None,  # type: ignore[attr-defined]
+                "filled_qty": float(order.filled_qty) if order.filled_qty else 0,  # type: ignore[attr-defined]
                 "filled_avg_price": (
-                    float(order.filled_avg_price) if order.filled_avg_price else None
+                    float(order.filled_avg_price) if order.filled_avg_price else None  # type: ignore[attr-defined]
                 ),
             }
         except Exception as e:
@@ -251,6 +246,6 @@ class Broker:
             order_id: Alpaca order ID
         """
         try:
-            self.client.cancel_order(order_id)
+            self.client.cancel_order_by_id(order_id)  # type: ignore[attr-defined]
         except Exception as e:
             raise BrokerError(f"Failed to cancel order {order_id}: {e}")

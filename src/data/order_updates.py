@@ -8,6 +8,7 @@ Publishes to EventBus.
 """
 
 import logging
+from typing import Any
 from datetime import datetime, timezone
 
 from src.event_bus import EventBus, OrderUpdateEvent
@@ -29,7 +30,7 @@ class OrderUpdatesHandler:
         self.state_store = state_store
         self.event_bus = event_bus
 
-    async def on_order_update(self, raw_update) -> None:
+    async def on_order_update(self, raw_update: Any) -> None:
         """Process raw order update from stream.
 
         Args:
@@ -58,7 +59,7 @@ class OrderUpdatesHandler:
         except (AttributeError, TypeError, ValueError) as e:
             logger.error(f"Failed to process order update: {e}")
 
-    def _normalise_order_update(self, raw_update) -> OrderUpdateEvent:
+    def _normalise_order_update(self, raw_update: Any) -> OrderUpdateEvent:
         """Normalise raw SDK order update to OrderUpdateEvent."""
         return OrderUpdateEvent(
             order_id=raw_update.order.id,

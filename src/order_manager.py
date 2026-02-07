@@ -11,6 +11,7 @@ Uses float at module boundaries for API compatibility.
 
 import hashlib
 import logging
+from typing import Any
 from datetime import datetime, timezone
 
 from src.broker import Broker
@@ -34,7 +35,7 @@ class OrderManager:
         broker: Broker,
         state_store: StateStore,
         event_bus: EventBus,
-        config: dict,
+        config: dict[str, Any],
         strategy_name: str,
         timeframe: str = "1Min",
     ) -> None:

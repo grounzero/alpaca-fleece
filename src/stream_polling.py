@@ -6,7 +6,7 @@ This module provides the same interface as Stream but uses HTTP polling instead 
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Callable, List, Optional
+from typing import Any, Callable, Iterator, List, Optional, Sequence
 
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
@@ -15,7 +15,7 @@ from alpaca.data.timeframe import TimeFrame
 logger = logging.getLogger(__name__)
 
 
-def batch_iter(iterable, batch_size: int):
+def batch_iter(iterable: Sequence[Any], batch_size: int) -> Iterator[list[Any]]:
     """Yield successive batches from iterable.
 
     Args:
@@ -39,7 +39,7 @@ def batch_iter(iterable, batch_size: int):
 class PollingBar:
     """Minimal bar object matching alpaca Bar interface."""
 
-    def __init__(self, symbol: str, bar) -> None:
+    def __init__(self, symbol: str, bar: Any) -> None:
         """Wrap alpaca bar."""
         self.symbol = symbol
         self.timestamp = bar.timestamp
@@ -83,21 +83,21 @@ class StreamPolling:
 
         self.market_connected = False
         self.trade_connected = False
-        self.on_bar: Optional[Callable] = None
-        self.on_order_update: Optional[Callable] = None
-        self.on_market_disconnect: Optional[Callable] = None
-        self.on_trade_disconnect: Optional[Callable] = None
+        self.on_bar: Optional[Callable[[Any], Any]] = None
+        self.on_order_update: Optional[Callable[[Any], Any]] = None
+        self.on_market_disconnect: Optional[Callable[[], Any]] = None
+        self.on_trade_disconnect: Optional[Callable[[], Any]] = None
 
-        self._last_bars = {}  # Track last known bar timestamp per symbol
-        self._polling_task = None
-        self._symbols = []
+        self._last_bars: dict[str, datetime] = {}  # Track last known bar timestamp per symbol
+        self._polling_task: Optional[asyncio.Task[None]] = None
+        self._symbols: list[str] = []
 
     def register_handlers(
         self,
-        on_bar: Optional[Callable] = None,
-        on_order_update: Optional[Callable] = None,
-        on_market_disconnect: Optional[Callable] = None,
-        on_trade_disconnect: Optional[Callable] = None,
+        on_bar: Optional[Callable[[Any], Any]] = None,
+        on_order_update: Optional[Callable[[Any], Any]] = None,
+        on_market_disconnect: Optional[Callable[[], Any]] = None,
+        on_trade_disconnect: Optional[Callable[[], Any]] = None,
     ) -> None:
         """Register event handlers."""
         self.on_bar = on_bar
@@ -187,14 +187,15 @@ class StreamPolling:
 
             # Process each symbol's bars
             # BarSet.data is a dict: {symbol: [bar1, bar2, ...]}
-            for symbol, bar_list in bars_by_symbol.data.items():
+            bars_data = getattr(bars_by_symbol, 'data', {})
+            for symbol, bar_list in bars_data.items():
                 await self._process_bar_list(symbol, bar_list)
 
         except Exception as e:
             logger.warning(f"Batch polling error for {symbols}: {e}")
             # Don't re-raise - let the loop continue with other batches
 
-    async def _process_bar_list(self, symbol: str, bar_list) -> None:
+    async def _process_bar_list(self, symbol: str, bar_list: list[Any]) -> None:
         """Process a list of bars for a single symbol.
 
         Args:

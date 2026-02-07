@@ -11,7 +11,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 
-import pytz
+import pytz  # type: ignore[import-untyped]
 
 from src.broker import Broker
 from src.state_store import StateStore
@@ -84,10 +84,12 @@ class Housekeeping:
             # Step 1: Cancel all open orders
             logger.info("Cancelling open orders...")
             try:
-                orders = self.broker.get_orders(status="open")
+                orders = self.broker.get_open_orders()
                 for order in orders:
-                    self.broker.cancel_order(order["id"])
-                    logger.info(f"Cancelled order: {order['id']}")
+                    order_id = order.get("id")
+                    if order_id:
+                        self.broker.cancel_order(order_id)
+                        logger.info(f"Cancelled order: {order_id}")
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to cancel orders: {e}")
 
@@ -97,12 +99,19 @@ class Housekeeping:
                 positions = self.broker.get_positions()
                 for position in positions:
                     symbol = position["symbol"]
-                    qty = position["qty"]
+                    qty = float(position["qty"])
                     side = "sell" if qty > 0 else "buy"
                     abs_qty = abs(qty)
+                    client_order_id = f"close_{symbol}_{datetime.now(timezone.utc).isoformat()}"
 
                     logger.info(f"Closing position: {symbol} ({abs_qty} shares via {side})")
-                    self.broker.submit_order(symbol, abs_qty, side, "market")
+                    self.broker.submit_order(
+                        symbol=symbol,
+                        side=side,
+                        qty=abs_qty,
+                        client_order_id=client_order_id,
+                        order_type="market"
+                    )
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to close positions: {e}")
 

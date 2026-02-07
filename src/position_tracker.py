@@ -223,7 +223,7 @@ class PositionTracker:
 
         return pnl_amount, pnl_pct
 
-    async def sync_with_broker(self) -> dict:
+    async def sync_with_broker(self) -> dict[str, object]:
         """Sync tracked positions with broker positions.
 
         - For each broker position not tracked: start tracking with broker's avg_entry_price
@@ -244,7 +244,7 @@ class PositionTracker:
         tracked_symbols = set(self._positions.keys())
 
         # Positions to start tracking (at broker but not tracked)
-        new_positions = []
+        new_positions: list[str] = []
         for pos in broker_positions:
             symbol = pos["symbol"]
             if symbol not in tracked_symbols:
@@ -265,7 +265,7 @@ class PositionTracker:
                 )
 
         # Positions to stop tracking (tracked but not at broker)
-        removed_positions = []
+        removed_positions: list[str] = []
         for symbol in tracked_symbols:
             if symbol not in broker_symbols:
                 self.stop_tracking(symbol)
@@ -273,7 +273,7 @@ class PositionTracker:
                 logger.warning(f"Position sync: stopped tracking {symbol} (not at broker)")
 
         # Check for quantity mismatches
-        mismatches = []
+        mismatches: list[dict[str, object]] = []
         for pos in broker_positions:
             symbol = pos["symbol"]
             if symbol in self._positions:
