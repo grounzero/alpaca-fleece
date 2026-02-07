@@ -6,13 +6,12 @@ Key responsibilities:
 - Persist order intent before submitting (crash safety)
 - Track lifecycle: submitted → filled/rejected/expired/cancelled
 
-Uses Decimal for all financial values to avoid floating-point precision errors.
+Uses float at module boundaries for API compatibility.
 """
 
 import hashlib
 import logging
 from datetime import datetime, timezone
-from decimal import Decimal
 
 from src.broker import Broker
 from src.event_bus import SignalEvent, OrderIntentEvent, EventBus
@@ -85,13 +84,13 @@ class OrderManager:
     async def submit_order(
         self,
         signal: SignalEvent,
-        qty: Decimal,
+        qty: float,
     ) -> bool:
         """Submit order from signal.
         
         Args:
             signal: SignalEvent from strategy
-            qty: Order quantity (as Decimal for precision)
+            qty: Order quantity (as float at module boundary)
         
         Returns:
             True if submitted, False if duplicate prevented
