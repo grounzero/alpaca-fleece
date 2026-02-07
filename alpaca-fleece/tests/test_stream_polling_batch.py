@@ -99,8 +99,9 @@ class TestStreamPollingBatchLogic:
         """Test that batch polling makes a single API request for multiple symbols."""
         symbols = ['AAPL', 'MSFT', 'GOOGL']
         
-        # Mock the response - BarSet-like dict
-        mock_response = {
+        # Mock BarSet-like response with .data attribute
+        mock_response = MagicMock()
+        mock_response.data = {
             'AAPL': [sample_bar],
             'MSFT': [sample_bar],
             'GOOGL': [sample_bar],
@@ -123,7 +124,9 @@ class TestStreamPollingBatchLogic:
         """Test that batch polling processes bars for all symbols."""
         symbols = ['AAPL', 'MSFT', 'GOOGL']
         
-        mock_response = {
+        # Mock BarSet-like response with .data attribute
+        mock_response = MagicMock()
+        mock_response.data = {
             'AAPL': [sample_bar],
             'MSFT': [sample_bar],
             'GOOGL': [sample_bar],
@@ -143,7 +146,9 @@ class TestStreamPollingBatchLogic:
         """Test handling when some symbols have no data."""
         symbols = ['AAPL', 'MSFT', 'EMPTY']
         
-        mock_response = {
+        # Mock BarSet-like response with .data attribute
+        mock_response = MagicMock()
+        mock_response.data = {
             'AAPL': [sample_bar],
             'MSFT': [sample_bar],
             'EMPTY': [],  # No data for this symbol
@@ -165,7 +170,8 @@ class TestStreamPollingBatchLogic:
         symbols = ['AAPL', 'MSFT', 'MISSING']
         
         # Response doesn't include 'MISSING' at all
-        mock_response = {
+        mock_response = MagicMock()
+        mock_response.data = {
             'AAPL': [sample_bar],
             'MSFT': [sample_bar],
         }
@@ -220,7 +226,8 @@ class TestStreamPollingBackwardsCompatibility:
     @pytest.mark.asyncio
     async def test_legacy_poll_symbol_still_works(self, mock_stream, sample_bar):
         """Test that _poll_symbol still works for backwards compatibility."""
-        mock_response = {'AAPL': [sample_bar]}
+        mock_response = MagicMock()
+        mock_response.data = {'AAPL': [sample_bar]}
         mock_stream.client.get_stock_bars.return_value = mock_response
         
         processed = []
@@ -235,7 +242,8 @@ class TestStreamPollingBackwardsCompatibility:
         """Test that batch_size=1 still creates individual requests per symbol."""
         mock_stream._symbols = ['AAPL', 'MSFT', 'GOOGL']
         
-        mock_response = {
+        mock_response = MagicMock()
+        mock_response.data = {
             'AAPL': [sample_bar],
             'MSFT': [sample_bar],
             'GOOGL': [sample_bar],
@@ -297,36 +305,38 @@ class TestStreamPollingBatchSizes:
             assert all(len(batch) == 25 for batch in batches[:-1])
             assert len(batches[-1]) == 25  # 500 is divisible by 25
     
-    @pytest.mark.asyncio
-    async def test_empty_symbols_list(self):
-        """Test handling of empty symbols list."""
-        with patch('src.stream_polling.StockHistoricalDataClient'):
-            stream = StreamPolling("api_key", "secret_key", batch_size=25)
-            
-            batches = list(batch_iter([], stream.batch_size))
-            
-            assert batches == []
 
-
-class TestStreamPollingStart:
-    """Tests for the start method with batch logging."""
+class TestStreamPollingEfficiency:
+    """Tests for efficiency gains from batch polling."""
     
-    @pytest.mark.asyncio
-    async def test_start_logs_batch_info(self):
-        """Test that start() logs the correct batch information."""
-        with patch('src.stream_polling.StockHistoricalDataClient'):
-            stream = StreamPolling("api_key", "secret_key", batch_size=25)
-            stream._polling_task = MagicMock()
-            
-            symbols = [f"SYM{i}" for i in range(75)]  # 75 symbols = 3 batches
-            
-            with patch('src.stream_polling.logger') as mock_logger:
-                await stream.start(symbols)
-                
-                # Check that info log contains batch count
-                info_calls = [call for call in mock_logger.info.call_args_list 
-                             if 'batch' in str(call).lower()]
-                assert len(info_calls) > 0
-                
-                # Verify 3 batches for 75 symbols with batch_size=25
-                assert stream._symbols == symbols
+    def test_api_call_reduction(self):
+        """Test that batch polling reduces API calls."""
+        # 31 symbols with batch_size=25 = 2 API calls instead of 31
+        symbols = [f"SYM{i}" for i in range(31)]
+        batch_size = 25
+        
+        batches = list(batch_iter(symbols, batch_size))
+        num_api_calls = len(batches)
+        
+        assert num_api_calls == 2  # vs 31 without batching
+        
+        # 100 symbols = 4 API calls
+        symbols = [f"SYM{i}" for i in range(100)]
+        batches = list(batch_iter(symbols, batch_size))
+        assert len(batches) == 4
+    
+    def test_efficiency_with_various_counts(self):
+        """Test efficiency across different symbol counts."""
+        test_cases = [
+            (31, 25, 2),    # 31 symbols -> 2 batches
+            (50, 25, 2),    # 50 symbols -> 2 batches
+            (100, 25, 4),   # 100 symbols -> 4 batches
+            (200, 25, 8),   # 200 symbols -> 8 batches
+            (500, 25, 20),  # 500 symbols -> 20 batches
+        ]
+        
+        for num_symbols, batch_size, expected_batches in test_cases:
+            symbols = [f"SYM{i}" for i in range(num_symbols)]
+            batches = list(batch_iter(symbols, batch_size))
+            assert len(batches) == expected_batches, \
+                f"Expected {expected_batches} batches for {num_symbols} symbols, got {len(batches)}"

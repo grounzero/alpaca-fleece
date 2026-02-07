@@ -164,12 +164,13 @@ class Stream:
         
         # Subscribe in batches to avoid rate limits
         logger.info(f"Subscribing to {len(symbols)} symbols in batches of {batch_size}")
+        num_batches = (len(symbols) + batch_size - 1) // batch_size
         for i, batch in enumerate(batch_iter(symbols, batch_size)):
             logger.info(f"Subscribing batch {i+1}: {batch}")
             self.market_data_stream.subscribe_bars(handle_bar, *batch)
-            
+
             # Delay between batches (except after last batch)
-            if i < len(symbols) // batch_size:
+            if i < num_batches - 1:
                 await asyncio.sleep(batch_delay)
         
         # Start stream using native async _run_forever() instead of sync run()
