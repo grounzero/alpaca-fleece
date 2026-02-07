@@ -129,7 +129,7 @@ class OrderManager:
             client_order_id=client_order_id,
             symbol=symbol,
             side=side,
-            qty=qty,
+            qty=float(qty),  # Convert Decimal to float for storage
             status="new",
         )
         
@@ -143,7 +143,7 @@ class OrderManager:
             order = self.broker.submit_order(
                 symbol=symbol,
                 side=side,
-                qty=qty,
+                qty=float(qty),  # Convert Decimal to float for API
                 client_order_id=client_order_id,
                 order_type=self.order_type,
                 time_in_force=self.time_in_force,
@@ -161,7 +161,7 @@ class OrderManager:
             await self.event_bus.publish(OrderIntentEvent(
                 symbol=symbol,
                 side=side,
-                qty=qty,
+                qty=float(qty),  # Convert Decimal to float for event
                 client_order_id=client_order_id,
                 timestamp=datetime.now(timezone.utc),
             ))

@@ -1,148 +1,65 @@
-"""Structured logging with JSON format and daily rotation."""
+"""Logging configuration - JSON to file, human-readable to console."""
+
 import json
 import logging
-import sys
-import uuid
-from datetime import datetime
-from logging.handlers import TimedRotatingFileHandler
+from logging.handlers import RotatingFileHandler
 from pathlib import Path
-from typing import Any, Dict
+from datetime import datetime, timezone
+import uuid
 
 
-# Global run ID for this execution
-RUN_ID = str(uuid.uuid4())[:8]
-
-
-class JSONFormatter(logging.Formatter):
-    """Format log records as JSON."""
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format the log record as JSON."""
-        log_data: Dict[str, Any] = {
-            "timestamp": datetime.utcnow().isoformat() + "Z",
-            "run_id": RUN_ID,
-            "level": record.levelname,
-            "logger": record.name,
-            "message": record.getMessage(),
-        }
-
-        # Add exception info if present
-        if record.exc_info:
-            log_data["exception"] = self.formatException(record.exc_info)
-
-        # Add extra fields
-        for key, value in record.__dict__.items():
-            if key not in [
-                "name", "msg", "args", "created", "filename", "funcName",
-                "levelname", "levelno", "lineno", "module", "msecs",
-                "message", "pathname", "process", "processName",
-                "relativeCreated", "thread", "threadName", "exc_info",
-                "exc_text", "stack_info"
-            ]:
-                log_data[key] = value
-
-        return json.dumps(log_data)
-
-
-class ConsoleFormatter(logging.Formatter):
-    """Human-readable console formatter."""
-
-    COLORS = {
-        "DEBUG": "\033[36m",      # Cyan
-        "INFO": "\033[32m",       # Green
-        "WARNING": "\033[33m",    # Yellow
-        "ERROR": "\033[31m",      # Red
-        "CRITICAL": "\033[35m",   # Magenta
-    }
-    RESET = "\033[0m"
-
-    def format(self, record: logging.LogRecord) -> str:
-        """Format the log record for console."""
-        color = self.COLORS.get(record.levelname, self.RESET)
-        timestamp = datetime.utcnow().strftime("%H:%M:%S")
-
-        # Base message
-        msg = f"{color}[{timestamp}] {record.levelname:8s}{self.RESET} {record.getMessage()}"
-
-        # Add exception if present
-        if record.exc_info:
-            msg += "\n" + self.formatException(record.exc_info)
-
-        return msg
-
-
-def setup_logger(name: str, log_level: str = "INFO", log_dir: Path = None) -> logging.Logger:
-    """
-    Set up logger with JSON file output and human-readable console output.
-
+def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logger:
+    """Setup logger with JSON file + console output.
+    
     Args:
-        name: Logger name
-        log_level: Logging level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-        log_dir: Directory for log files (default: logs/)
-
+        log_level: Log level (DEBUG, INFO, WARNING, ERROR)
+        log_dir: Directory for log files
+    
     Returns:
-        Configured logger instance
+        Configured logger
     """
-    logger = logging.getLogger(name)
-    logger.setLevel(getattr(logging, log_level.upper()))
-
-    # Remove existing handlers
-    logger.handlers.clear()
-
-    # Console handler (human-readable)
-    console_handler = logging.StreamHandler(sys.stdout)
-    console_handler.setLevel(getattr(logging, log_level.upper()))
-    console_handler.setFormatter(ConsoleFormatter())
-    logger.addHandler(console_handler)
-
-    # File handler (JSON, daily rotation)
-    if log_dir is None:
-        log_dir = Path(__file__).parent.parent / "logs"
-
-    log_dir.mkdir(exist_ok=True)
-
-    file_handler = TimedRotatingFileHandler(
-        filename=log_dir / f"{name}.log",
-        when="midnight",
-        interval=1,
-        backupCount=30,  # Keep 30 days
-        encoding="utf-8",
+    Path(log_dir).mkdir(parents=True, exist_ok=True)
+    
+    logger = logging.getLogger("alpaca_bot")
+    logger.setLevel(getattr(logging, log_level))
+    
+    # Run ID for tracking sessions
+    run_id = str(uuid.uuid4())[:8]
+    
+    # File handler (JSON)
+    file_handler = RotatingFileHandler(
+        f"{log_dir}/alpaca_bot.log",
+        maxBytes=10 * 1024 * 1024,  # 10MB
+        backupCount=30,  # 30 days retention
     )
-    file_handler.setLevel(getattr(logging, log_level.upper()))
-    file_handler.setFormatter(JSONFormatter())
+    file_formatter = JSONFormatter(run_id)
+    file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
-
+    
+    # Console handler (human-readable)
+    console_handler = logging.StreamHandler()
+    console_formatter = logging.Formatter(
+        "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+    )
+    console_handler.setFormatter(console_formatter)
+    logger.addHandler(console_handler)
+    
     return logger
 
 
-def get_logger(name: str) -> logging.Logger:
-    """Get an existing logger by name."""
-    return logging.getLogger(name)
-
-
-class SensitiveDataFilter(logging.Filter):
-    """Filter to prevent logging of sensitive data."""
-
-    SENSITIVE_KEYS = [
-        "api_key", "secret_key", "password", "token", "credential",
-        "alpaca_api_key", "alpaca_secret_key",
-    ]
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        """Check if record contains sensitive data."""
-        message = record.getMessage().lower()
-
-        # Check for sensitive keys in message
-        for key in self.SENSITIVE_KEYS:
-            if key in message:
-                # Check if it looks like it's exposing a value (contains =, :, or quotes)
-                if any(char in message for char in ["=", ":", '"', "'"]):
-                    record.msg = f"[REDACTED] Message contained sensitive key: {key}"
-                    record.args = ()
-                    return True
-
-        return True
-
-
-# Add sensitive data filter to root logger
-logging.getLogger().addFilter(SensitiveDataFilter())
+class JSONFormatter(logging.Formatter):
+    """JSON logging formatter."""
+    
+    def __init__(self, run_id: str) -> None:
+        self.run_id = run_id
+    
+    def format(self, record: logging.LogRecord) -> str:
+        """Format record as JSON."""
+        log_obj = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "run_id": self.run_id,
+            "level": record.levelname,
+            "module": record.name,
+            "message": record.getMessage(),
+        }
+        return json.dumps(log_obj)

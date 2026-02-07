@@ -1,280 +1,207 @@
 """Tests for order manager."""
+
 import pytest
-from datetime import datetime
-from unittest.mock import AsyncMock, MagicMock
-import pytz
+import asyncio
+from datetime import datetime, timezone
+from unittest.mock import MagicMock, patch
 
-from src.order_manager import OrderManager
-from src.config import Config
-from src.state_store import StateStore
-from src.event_bus import SignalEvent
-from pathlib import Path
-import tempfile
+from src.order_manager import OrderManager, OrderManagerError
+from src.event_bus import SignalEvent, EventBus
 
 
-@pytest.fixture
-def state_store():
-    """Create temporary state store."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        store = StateStore(db_path)
-        yield store
-        store.close()
-
-
-@pytest.fixture
-def config():
-    """Create test configuration."""
-    return Config(
-        alpaca_api_key="test_key",
-        alpaca_secret_key="test_secret",
-        alpaca_paper=True,
-        allow_live_trading=False,
-        symbols=["AAPL"],
-        bar_timeframe="1Min",
-        stream_feed="iex",
-        max_position_pct=0.10,
-        max_daily_loss_pct=0.05,
-        max_trades_per_day=20,
-        sma_fast=10,
-        sma_slow=30,
-        dry_run=False,
-        allow_extended_hours=False,
-        log_level="INFO",
-        kill_switch=False,
-        circuit_breaker_reset=False,
+def test_order_manager_generates_deterministic_client_order_id(state_store, event_bus, mock_broker, config):
+    """Order manager generates consistent client_order_id for same inputs."""
+    order_mgr = OrderManager(
+        broker=mock_broker,
+        state_store=state_store,
+        event_bus=event_bus,
+        config=config,
+        strategy_name="sma_crossover",
+        timeframe="1Min",
     )
-
-
-@pytest.fixture
-def broker_mock():
-    """Create mock broker."""
-    broker = AsyncMock()
-    broker.get_account = AsyncMock(return_value={
-        "equity": 10000.0,
-        "cash": 5000.0,
-        "buying_power": 10000.0,
-    })
-    broker.submit_order = AsyncMock(return_value={
-        "id": "alpaca_order_123",
-        "client_order_id": "test_client_id",
-        "symbol": "AAPL",
-        "side": "buy",
-        "qty": 10,
-        "filled_qty": 10,
-        "status": "filled",
-    })
-    return broker
-
-
-@pytest.fixture
-def risk_manager_mock():
-    """Create mock risk manager."""
-    risk_manager = MagicMock()
-    risk_manager.validate_signal = AsyncMock(return_value=(True, "Validated"))
-    risk_manager.calculate_qty = MagicMock(return_value=10)
-    risk_manager.reset_failures = MagicMock()
-    return risk_manager
-
-
-@pytest.fixture
-def order_manager(config, state_store, broker_mock, risk_manager_mock):
-    """Create order manager instance."""
-    logger = MagicMock()
-    return OrderManager(config, state_store, broker_mock, risk_manager_mock, logger)
-
-
-def test_generate_client_order_id_deterministic(order_manager):
-    """Test client_order_id is deterministic."""
-    signal_ts = datetime(2024, 1, 1, 10, 0, 0)
-
-    id1 = order_manager.generate_client_order_id("SMA", "AAPL", "1Min", signal_ts, "buy")
-    id2 = order_manager.generate_client_order_id("SMA", "AAPL", "1Min", signal_ts, "buy")
-
+    
+    ts = datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc)
+    
+    # Generate order ID twice with same inputs
+    id1 = order_mgr._generate_client_order_id("AAPL", ts, "buy")
+    id2 = order_mgr._generate_client_order_id("AAPL", ts, "buy")
+    
+    # Should be identical
     assert id1 == id2
-    assert len(id1) == 16
-
-
-def test_generate_client_order_id_different_inputs(order_manager):
-    """Test different inputs produce different IDs."""
-    signal_ts = datetime(2024, 1, 1, 10, 0, 0)
-
-    id1 = order_manager.generate_client_order_id("SMA", "AAPL", "1Min", signal_ts, "buy")
-    id2 = order_manager.generate_client_order_id("SMA", "AAPL", "1Min", signal_ts, "sell")
-    id3 = order_manager.generate_client_order_id("SMA", "MSFT", "1Min", signal_ts, "buy")
-
-    assert id1 != id2
+    
+    # Different inputs should produce different IDs
+    id3 = order_mgr._generate_client_order_id("MSFT", ts, "buy")
     assert id1 != id3
-    assert id2 != id3
 
 
 @pytest.mark.asyncio
-async def test_process_signal_success(order_manager, state_store):
-    """Test successful signal processing."""
+async def test_order_manager_prevents_duplicate_orders(state_store, event_bus, mock_broker, config):
+    """Order manager prevents duplicate orders."""
+    order_mgr = OrderManager(
+        broker=mock_broker,
+        state_store=state_store,
+        event_bus=event_bus,
+        config=config,
+        strategy_name="sma_crossover",
+    )
+    
     signal = SignalEvent(
         symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=pytz.UTC),
-        metadata={"close": 150.0},
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
     )
-
-    order_intent = await order_manager.process_signal(signal)
-
-    assert order_intent is not None
-    assert order_intent.symbol == "AAPL"
-    assert order_intent.side == "buy"
-    assert order_intent.qty == 10
-
-    # Check state store
-    assert state_store.order_exists(order_intent.client_order_id)
-
-
-@pytest.mark.asyncio
-async def test_process_signal_duplicate_prevention(order_manager, state_store):
-    """Test duplicate order prevention."""
-    signal = SignalEvent(
-        symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=pytz.UTC),
-        metadata={"close": 150.0},
-    )
-
+    
+    # Mock broker to succeed
+    mock_broker.submit_order.return_value = {
+        "id": "alpaca-order-123",
+        "client_order_id": order_mgr._generate_client_order_id("AAPL", signal.timestamp, "buy"),
+        "symbol": "AAPL",
+        "status": "submitted",
+    }
+    
     # Submit first order
-    order_intent1 = await order_manager.process_signal(signal)
-    assert order_intent1 is not None
-
-    # Submit same signal again (same client_order_id)
-    order_intent2 = await order_manager.process_signal(signal)
-
-    # Second submission should be prevented
-    assert order_intent2 is None
+    result1 = await order_mgr.submit_order(signal, qty=10.0)
+    assert result1 is True
+    
+    # Submit identical signal again (should be prevented)
+    result2 = await order_mgr.submit_order(signal, qty=10.0)
+    assert result2 is False  # Duplicate prevented
 
 
 @pytest.mark.asyncio
-async def test_process_signal_dry_run(config, state_store, broker_mock, risk_manager_mock):
-    """Test dry run mode."""
-    config_dry = Config(
-        **{**config.__dict__, "dry_run": True}
+async def test_order_manager_persists_intent_before_submission(state_store, event_bus, mock_broker, config):
+    """Order manager persists order intent BEFORE submitting (crash safety)."""
+    order_mgr = OrderManager(
+        broker=mock_broker,
+        state_store=state_store,
+        event_bus=event_bus,
+        config=config,
+        strategy_name="sma_crossover",
     )
-
-    logger = MagicMock()
-    order_manager = OrderManager(config_dry, state_store, broker_mock, risk_manager_mock, logger)
-
+    
     signal = SignalEvent(
         symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=pytz.UTC),
-        metadata={"close": 150.0},
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
     )
-
-    order_intent = await order_manager.process_signal(signal)
-
-    assert order_intent is not None
-
-    # Broker submit_order should NOT be called in dry run
-    broker_mock.submit_order.assert_not_called()
-
-    # Check order status is "dry_run"
-    order = state_store.get_order_intent(order_intent.client_order_id)
-    assert order["status"] == "dry_run"
+    
+    # Mock broker to fail on submission
+    mock_broker.submit_order.side_effect = Exception("Network error")
+    
+    # Try to submit (will fail)
+    with pytest.raises(OrderManagerError):
+        await order_mgr.submit_order(signal, qty=10.0)
+    
+    # But order intent should still be persisted (crash safety)
+    client_id = order_mgr._generate_client_order_id("AAPL", signal.timestamp, "buy")
+    intent = state_store.get_order_intent(client_id)
+    assert intent is not None
+    assert intent["symbol"] == "AAPL"
 
 
 @pytest.mark.asyncio
-async def test_process_signal_invalid(order_manager, risk_manager_mock):
-    """Test signal rejection by risk manager."""
-    risk_manager_mock.validate_signal = AsyncMock(return_value=(False, "Kill switch activated"))
-
+async def test_order_manager_publishes_to_event_bus(state_store, event_bus, mock_broker, config):
+    """Order manager publishes OrderIntentEvent to EventBus."""
+    order_mgr = OrderManager(
+        broker=mock_broker,
+        state_store=state_store,
+        event_bus=event_bus,
+        config=config,
+        strategy_name="sma_crossover",
+    )
+    
     signal = SignalEvent(
         symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=pytz.UTC),
-        metadata={"close": 150.0},
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
     )
-
-    order_intent = await order_manager.process_signal(signal)
-
-    assert order_intent is None
+    
+    # Mock broker to succeed
+    mock_broker.submit_order.return_value = {
+        "id": "alpaca-order-123",
+        "client_order_id": order_mgr._generate_client_order_id("AAPL", signal.timestamp, "buy"),
+        "symbol": "AAPL",
+        "status": "submitted",
+    }
+    
+    # Submit order
+    await order_mgr.submit_order(signal, qty=10.0)
+    
+    # Event should be published
+    assert event_bus.size() > 0  # Event in queue
 
 
 @pytest.mark.asyncio
-async def test_process_signal_increments_trade_count(order_manager, state_store):
-    """Test daily trade count is incremented."""
-    initial_count = state_store.get_daily_trade_count()
-
+async def test_order_manager_increments_circuit_breaker_on_failure(state_store, event_bus, mock_broker, config):
+    """Order manager increments circuit breaker on submission failure."""
+    order_mgr = OrderManager(
+        broker=mock_broker,
+        state_store=state_store,
+        event_bus=event_bus,
+        config=config,
+        strategy_name="sma_crossover",
+    )
+    
+    # Mock broker to fail
+    mock_broker.submit_order.side_effect = Exception("Broker error")
+    
     signal = SignalEvent(
         symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=pytz.UTC),
-        metadata={"close": 150.0},
+        signal_type="BUY",
+        timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=timezone.utc),
+        metadata={},
     )
-
-    await order_manager.process_signal(signal)
-
-    final_count = state_store.get_daily_trade_count()
-    assert final_count == initial_count + 1
+    
+    # Submit order (will fail)
+    with pytest.raises(OrderManagerError):
+        await order_mgr.submit_order(signal, qty=10.0)
+    
+    # Circuit breaker should be incremented (Win #3: now persisted)
+    cb_failures = state_store.get_circuit_breaker_count()  # Win #3: use new method
+    assert cb_failures == 1
+    
+    # Submit different signal again (will fail again)
+    signal2 = SignalEvent(
+        symbol="MSFT",
+        signal_type="SELL",
+        timestamp=datetime(2024, 1, 1, 10, 1, 0, tzinfo=timezone.utc),
+        metadata={},
+    )
+    with pytest.raises(OrderManagerError):
+        await order_mgr.submit_order(signal2, qty=10.0)
+    
+    cb_failures = state_store.get_circuit_breaker_count()  # Win #3: use new method
+    assert cb_failures == 2
 
 
 @pytest.mark.asyncio
-async def test_process_signal_kill_switch_file_blocks_order(config, state_store, broker_mock, risk_manager_mock):
-    """Test kill switch FILE blocks order immediately before submission.
-
-    This is a CRITICAL safety test. Even after passing risk validation,
-    the kill switch file should be checked IMMEDIATELY before order submission.
-    This catches cases where kill switch is created AFTER bot startup.
-    """
-    from unittest.mock import patch
-
-    logger = MagicMock()
-    order_manager = OrderManager(config, state_store, broker_mock, risk_manager_mock, logger)
-
-    signal = SignalEvent(
-        symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 10, 0, 0, tzinfo=pytz.UTC),
-        metadata={"close": 150.0},
+async def test_order_manager_trips_circuit_breaker_at_5_failures(state_store, event_bus, mock_broker, config):
+    """Circuit breaker trips after 5 consecutive failures."""
+    order_mgr = OrderManager(
+        broker=mock_broker,
+        state_store=state_store,
+        event_bus=event_bus,
+        config=config,
+        strategy_name="sma_crossover",
     )
-
-    # Mock the kill switch file to exist (simulating file created after startup)
-    with patch("src.order_manager.Path") as mock_path:
-        mock_file = MagicMock()
-        mock_file.exists.return_value = True
-        mock_path.return_value.__truediv__.return_value = mock_file
-
-        order_intent = await order_manager.process_signal(signal)
-
-        # Order should be blocked
-        assert order_intent is None
-
-        # Broker should NOT have been called
-        broker_mock.submit_order.assert_not_called()
-
-        # Order should be saved with blocked status
-        # Find the order by checking state store (order was saved before kill switch check)
-        # The status should be updated to blocked_kill_switch
-
-
-@pytest.mark.asyncio
-async def test_process_signal_succeeds_without_kill_switch_file(order_manager, state_store, broker_mock):
-    """Test that orders succeed normally when kill switch file doesn't exist."""
-    signal = SignalEvent(
-        symbol="AAPL",
-        side="buy",
-        strategy_name="SMA_Crossover",
-        signal_timestamp=datetime(2024, 1, 1, 11, 0, 0, tzinfo=pytz.UTC),  # Different timestamp
-        metadata={"close": 150.0},
-    )
-
-    order_intent = await order_manager.process_signal(signal)
-
-    # Order should succeed
-    assert order_intent is not None
-    assert order_intent.symbol == "AAPL"
-
-    # Broker should have been called
-    broker_mock.submit_order.assert_called_once()
+    
+    # Mock broker to fail
+    mock_broker.submit_order.side_effect = Exception("Broker error")
+    
+    # Submit 5 different signals (will fail each time)
+    for i in range(5):
+        signal = SignalEvent(
+            symbol="AAPL",
+            signal_type="BUY",
+            timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=timezone.utc),
+            metadata={},
+        )
+        with pytest.raises(OrderManagerError):
+            await order_mgr.submit_order(signal, qty=10.0)
+    
+    # Circuit breaker should be tripped
+    cb_state = state_store.get_state("circuit_breaker_state")
+    assert cb_state == "tripped"

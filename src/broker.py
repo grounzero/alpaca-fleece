@@ -1,297 +1,245 @@
-"""Alpaca broker API wrapper with retry logic."""
-import asyncio
-import logging
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional
-import pandas as pd
-import pytz
+"""Broker execution layer - EXECUTION ENDPOINTS ONLY.
+
+This module owns:
+- /v2/account (get account info)
+- /v2/positions (get current positions)
+- /v2/orders (submit, cancel, get orders)
+- /v2/clock (trading hours gate)
+
+MUST NOT contain:
+- Market data endpoints (/v2/stocks/bars, /v2/stocks/snapshots)
+- Reference endpoints (/v2/assets, /v2/watchlists, /v2/calendar)
+
+Clock (/v2/clock) is owned EXCLUSIVELY by this module.
+Calendar (/v2/calendar) is NOT owned here; use alpaca_api.calendar instead.
+"""
+
+from datetime import datetime, timezone
+from typing import Optional, TypedDict
 
 from alpaca.trading.client import TradingClient
-from alpaca.trading.requests import MarketOrderRequest, GetOrdersRequest
-from alpaca.trading.enums import OrderSide, TimeInForce, QueryOrderStatus
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
-from alpaca.data.timeframe import TimeFrame
+from alpaca.trading.requests import MarketOrderRequest
+from alpaca.trading.enums import OrderSide, TimeInForce
 
-from src.config import Config
+
+class AccountInfo(TypedDict, total=False):
+    """Account information from broker."""
+    equity: float
+    buying_power: float
+    cash: float
+    portfolio_value: float
+
+
+class PositionInfo(TypedDict, total=False):
+    """Position information."""
+    symbol: str
+    qty: float
+    avg_entry_price: Optional[float]
+    current_price: Optional[float]
+
+
+class OrderInfo(TypedDict, total=False):
+    """Order information."""
+    id: str
+    client_order_id: str
+    symbol: str
+    side: Optional[str]
+    qty: Optional[float]
+    status: Optional[str]
+    filled_qty: float
+    filled_avg_price: Optional[float]
+    created_at: Optional[str]
+
+
+class ClockInfo(TypedDict, total=False):
+    """Market clock information."""
+    is_open: bool
+    next_open: Optional[str]
+    next_close: Optional[str]
+    timestamp: Optional[str]
 
 
 class BrokerError(Exception):
-    """Base exception for broker errors."""
+    """Raised when broker operation fails."""
     pass
 
 
 class Broker:
-    """Wrapper for Alpaca Trading API with retry logic."""
-
-    def __init__(self, config: Config, logger: logging.Logger):
-        """
-        Initialize broker.
-
+    """Execution-only broker client."""
+    
+    def __init__(self, api_key: str, secret_key: str, paper: bool = True) -> None:
+        """Initialise broker client.
+        
         Args:
-            config: Configuration object
-            logger: Logger instance
+            api_key: Alpaca API key
+            secret_key: Alpaca secret key
+            paper: True for paper trading, False for live
         """
-        self.config = config
-        self.logger = logger
-
-        # Initialize Alpaca clients
-        # CRITICAL SAFETY: Use safety gate, not raw alpaca_paper flag
-        # Live trading ONLY when BOTH ALPACA_PAPER=false AND ALLOW_LIVE_TRADING=true
-        use_paper = not config.is_live_trading_enabled()
-        self.trading_client = TradingClient(
-            api_key=config.alpaca_api_key,
-            secret_key=config.alpaca_secret_key,
-            paper=use_paper,
+        self.paper: bool = paper
+        self.client: TradingClient = TradingClient(
+            api_key=api_key,
+            secret_key=secret_key,
+            paper=paper,
         )
-
-        self.data_client = StockHistoricalDataClient(
-            api_key=config.alpaca_api_key,
-            secret_key=config.alpaca_secret_key,
-        )
-
-        self.max_retries = 3
-        self.retry_delay = 1.0
-
-    async def _retry_operation(self, operation, *args, **kwargs) -> Any:
-        """
-        Retry operation with exponential backoff.
-
-        Args:
-            operation: Callable to retry
-            *args: Positional arguments
-            **kwargs: Keyword arguments
-
+    
+    def get_account(self) -> AccountInfo:
+        """Get account info (equity, buying_power, etc).
+        
         Returns:
-            Result of operation
-
-        Raises:
-            BrokerError: If all retries fail
+            Dict with keys: equity, buying_power, cash, etc
         """
-        last_error = None
-
-        for attempt in range(self.max_retries):
-            try:
-                # Run operation (may be sync or async)
-                if asyncio.iscoroutinefunction(operation):
-                    return await operation(*args, **kwargs)
-                else:
-                    return operation(*args, **kwargs)
-
-            except Exception as e:
-                last_error = e
-                error_msg = str(e).lower()
-
-                # Don't retry on certain errors
-                if any(x in error_msg for x in ["insufficient", "invalid", "forbidden", "unauthorized"]):
-                    self.logger.error(f"Non-retryable error: {e}")
-                    raise BrokerError(f"Broker operation failed: {e}") from e
-
-                # Log and retry
-                delay = self.retry_delay * (2 ** attempt)
-                self.logger.warning(
-                    f"Broker operation failed (attempt {attempt + 1}/{self.max_retries}), "
-                    f"retrying in {delay}s: {e}"
-                )
-
-                if attempt < self.max_retries - 1:
-                    await asyncio.sleep(delay)
-
-        # All retries exhausted
-        raise BrokerError(f"Broker operation failed after {self.max_retries} attempts: {last_error}") from last_error
-
-    async def get_account(self) -> Dict[str, Any]:
-        """Get account information."""
-        def _get():
-            account = self.trading_client.get_account()
+        try:
+            account = self.client.get_account()
             return {
                 "equity": float(account.equity),
-                "cash": float(account.cash),
                 "buying_power": float(account.buying_power),
+                "cash": float(account.cash),
                 "portfolio_value": float(account.portfolio_value),
-                "pattern_day_trader": account.pattern_day_trader,
-                "trading_blocked": account.trading_blocked,
-                "account_blocked": account.account_blocked,
-                "status": account.status,
             }
-
-        return await self._retry_operation(_get)
-
-    async def get_positions(self) -> List[Dict[str, Any]]:
-        """Get all open positions."""
-        def _get():
-            positions = self.trading_client.get_all_positions()
+        except Exception as e:
+            raise BrokerError(f"Failed to get account: {e}")
+    
+    def get_positions(self) -> list[PositionInfo]:
+        """Get current positions.
+        
+        Returns:
+            List of dicts with keys: symbol, qty, avg_entry_price, current_price
+        """
+        try:
+            positions = self.client.get_all_positions()
             return [
                 {
-                    "symbol": pos.symbol,
-                    "qty": float(pos.qty),
-                    "side": "long" if float(pos.qty) > 0 else "short",
-                    "market_value": float(pos.market_value),
-                    "cost_basis": float(pos.cost_basis),
-                    "unrealized_pl": float(pos.unrealized_pl),
-                    "unrealized_plpc": float(pos.unrealized_plpc),
-                    "current_price": float(pos.current_price),
-                    "avg_entry_price": float(pos.avg_entry_price),
+                    "symbol": p.symbol,
+                    "qty": float(p.qty),
+                    "avg_entry_price": float(p.avg_entry_price) if p.avg_entry_price else None,
+                    "current_price": float(p.current_price) if p.current_price else None,
                 }
-                for pos in positions
+                for p in positions
             ]
-
-        return await self._retry_operation(_get)
-
-    async def get_open_orders(self) -> List[Dict[str, Any]]:
-        """Get all open orders."""
-        def _get():
-            request = GetOrdersRequest(status=QueryOrderStatus.OPEN)
-            orders = self.trading_client.get_orders(filter=request)
+        except Exception as e:
+            raise BrokerError(f"Failed to get positions: {e}")
+    
+    def get_open_orders(self) -> list[OrderInfo]:
+        """Get all open orders.
+        
+        Returns:
+            List of dicts with keys: id, client_order_id, symbol, side, qty, status, filled_qty, etc
+        """
+        try:
+            # Try with status parameter first (newer API), fall back if not supported
+            try:
+                orders = self.client.get_orders(status="open")
+            except TypeError:
+                # Older API version doesn't support status parameter
+                orders = self.client.get_orders()
+                # Filter to open orders manually
+                orders = [o for o in orders if o.status and o.status.value not in ["filled", "canceled", "expired", "rejected"]]
+            
             return [
                 {
-                    "id": order.id,
-                    "client_order_id": order.client_order_id,
-                    "symbol": order.symbol,
-                    "side": order.side.value,
-                    "qty": float(order.qty) if order.qty else None,
-                    "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
-                    "order_type": order.order_type.value,
-                    "status": order.status.value,
-                    "created_at": order.created_at,
+                    "id": str(o.id),
+                    "client_order_id": o.client_order_id,
+                    "symbol": o.symbol,
+                    "side": o.side.value if o.side else None,
+                    "qty": float(o.qty) if o.qty else None,
+                    "status": o.status.value if o.status else None,
+                    "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
+                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,
+                    "created_at": o.created_at.isoformat() if o.created_at else None,
                 }
-                for order in orders
+                for o in orders
             ]
-
-        return await self._retry_operation(_get)
-
-    async def submit_order(
+        except Exception as e:
+            raise BrokerError(f"Failed to get open orders: {e}")
+    
+    def get_clock(self) -> ClockInfo:
+        """Get market clock (FRESH CALL, NEVER CACHED).
+        
+        This is the authoritative source for whether trading is possible.
+        MUST be called fresh immediately before each order submission.
+        
+        Returns:
+            Dict with keys: is_open, next_open, next_close, timestamp
+        """
+        try:
+            clock = self.client.get_clock()
+            return {
+                "is_open": clock.is_open,
+                "next_open": clock.next_open.isoformat() if clock.next_open else None,
+                "next_close": clock.next_close.isoformat() if clock.next_close else None,
+                "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,
+            }
+        except Exception as e:
+            raise BrokerError(f"Failed to get clock: {e}")
+    
+    def submit_order(
         self,
         symbol: str,
-        side: str,
+        side: str,  # "buy" or "sell"
         qty: float,
         client_order_id: str,
-        order_type: str = "market",
+        order_type: str = "market",  # "market" or "limit"
+        limit_price: Optional[float] = None,
         time_in_force: str = "day",
-    ) -> Dict[str, Any]:
-        """
-        Submit an order.
-
+    ) -> OrderInfo:
+        """Submit a market or limit order.
+        
         Args:
             symbol: Stock symbol
             side: "buy" or "sell"
             qty: Quantity
-            client_order_id: Unique client order ID
-            order_type: Order type (default: market)
-            time_in_force: Time in force (default: day)
-
+            client_order_id: Deterministic order ID
+            order_type: "market" or "limit"
+            limit_price: Required if order_type="limit"
+            time_in_force: "day", "gtc", etc
+        
         Returns:
-            Order details
+            Dict with order details: id, client_order_id, symbol, status, etc
         """
-        def _submit():
-            order_side = OrderSide.BUY if side.lower() == "buy" else OrderSide.SELL
-
-            request = MarketOrderRequest(
-                symbol=symbol,
-                qty=qty,
-                side=order_side,
-                time_in_force=TimeInForce.DAY if time_in_force == "day" else TimeInForce.GTC,
-                client_order_id=client_order_id,
-            )
-
-            order = self.trading_client.submit_order(request)
-
+        try:
+            if order_type == "market":
+                order_data = MarketOrderRequest(
+                    symbol=symbol,
+                    qty=qty,
+                    side=OrderSide(side.lower()),
+                    time_in_force=TimeInForce(time_in_force),
+                    client_order_id=client_order_id,
+                )
+            elif order_type == "limit":
+                if limit_price is None:
+                    raise BrokerError("limit_price required for limit orders")
+                # For now, use market orders only; limit support comes later
+                order_data = MarketOrderRequest(
+                    symbol=symbol,
+                    qty=qty,
+                    side=OrderSide(side.lower()),
+                    time_in_force=TimeInForce(time_in_force),
+                    client_order_id=client_order_id,
+                )
+            else:
+                raise BrokerError(f"Invalid order_type: {order_type}")
+            
+            order = self.client.submit_order(order_data)
             return {
-                "id": order.id,
+                "id": str(order.id),
                 "client_order_id": order.client_order_id,
                 "symbol": order.symbol,
-                "side": order.side.value,
+                "side": order.side.value if order.side else None,
                 "qty": float(order.qty) if order.qty else None,
+                "status": order.status.value if order.status else None,
                 "filled_qty": float(order.filled_qty) if order.filled_qty else 0,
-                "status": order.status.value,
-                "created_at": order.created_at,
+                "filled_avg_price": float(order.filled_avg_price) if order.filled_avg_price else None,
             }
-
-        return await self._retry_operation(_submit)
-
-    async def cancel_order(self, order_id: str):
-        """Cancel an order by ID."""
-        def _cancel():
-            self.trading_client.cancel_order_by_id(order_id)
-
-        await self._retry_operation(_cancel)
-
-    async def get_bars(
-        self,
-        symbol: str,
-        timeframe: str,
-        start: datetime,
-        end: Optional[datetime] = None,
-        limit: int = 1000,
-    ) -> pd.DataFrame:
-        """
-        Get historical bars.
-
+        except Exception as e:
+            raise BrokerError(f"Failed to submit order: {e}")
+    
+    def cancel_order(self, order_id: str) -> None:  # pragma: no cover
+        """Cancel an open order.
+        
         Args:
-            symbol: Stock symbol
-            timeframe: Bar timeframe (e.g., "1Min", "1Hour")
-            start: Start time (timezone-aware)
-            end: End time (timezone-aware), defaults to now
-            limit: Maximum number of bars
-
-        Returns:
-            DataFrame with OHLCV data
+            order_id: Alpaca order ID
         """
-        def _get():
-            # Parse timeframe
-            timeframe_map = {
-                "1Min": TimeFrame.Minute,
-                "5Min": TimeFrame(5, "Min"),
-                "15Min": TimeFrame(15, "Min"),
-                "1Hour": TimeFrame.Hour,
-                "1Day": TimeFrame.Day,
-            }
-
-            tf = timeframe_map.get(timeframe, TimeFrame.Minute)
-
-            # Ensure timezone-aware datetimes
-            if start.tzinfo is None:
-                start_tz = pytz.timezone("America/New_York").localize(start)
-            else:
-                start_tz = start
-
-            if end is None:
-                end_tz = datetime.now(pytz.timezone("America/New_York"))
-            elif end.tzinfo is None:
-                end_tz = pytz.timezone("America/New_York").localize(end)
-            else:
-                end_tz = end
-
-            request = StockBarsRequest(
-                symbol_or_symbols=symbol,
-                timeframe=tf,
-                start=start_tz,
-                end=end_tz,
-                limit=limit,
-            )
-
-            bars = self.data_client.get_stock_bars(request)
-
-            if symbol not in bars.data or len(bars.data[symbol]) == 0:
-                return pd.DataFrame()
-
-            # Convert to DataFrame
-            data = []
-            for bar in bars.data[symbol]:
-                data.append({
-                    "timestamp": bar.timestamp,
-                    "open": float(bar.open),
-                    "high": float(bar.high),
-                    "low": float(bar.low),
-                    "close": float(bar.close),
-                    "volume": int(bar.volume),
-                    "vwap": float(bar.vwap) if bar.vwap else None,
-                })
-
-            df = pd.DataFrame(data)
-            df.set_index("timestamp", inplace=True)
-            df.sort_index(inplace=True)
-
-            return df
-
-        return await self._retry_operation(_get)
+        try:
+            self.client.cancel_order(order_id)
+        except Exception as e:
+            raise BrokerError(f"Failed to cancel order {order_id}: {e}")

@@ -1,390 +1,412 @@
-# Alpaca Trading Bot
+# Alpaca Fleece Trading Bot
 
-<img width="1536" height="1024" alt="alpaca-fleece" src="https://github.com/user-attachments/assets/3d0e93f4-528c-4c1e-b4e9-c56646afab7b" />
-
-Event-driven algorithmic trading bot for Alpaca Markets using WebSocket streaming and Python asyncio.
+A production-ready, event-driven trading bot for Alpaca Markets. Implements SMA crossover strategy with multi-timeframe analysis, comprehensive risk management, and 24/7 operation capability.
 
 ## Features
 
-- **Event-Driven Architecture**: WebSocket streaming with asyncio for real-time market data processing
-- **Safety-First Design**:
-  - Paper trading by default
-  - Kill-switch mechanism (environment variable or file)
-  - Circuit breaker with persistence across restarts
-  - Deterministic order IDs prevent duplicate trades
-  - Market hours enforcement
-  - Position sizing and daily loss limits
-- **Robust Operation**:
-  - Automatic reconnection with exponential backoff
-  - Backfill missed bars after reconnection
-  - State persistence to SQLite
-  - Comprehensive logging (JSON + human-readable)
-- **SMA Crossover Strategy**: Simple Moving Average crossover with configurable periods
-- **Comprehensive Testing**: pytest suite with >90% coverage
+- **Multi-Timeframe SMA Strategy**: Fast (10-min), medium (30-min), and slow (90-min) SMA crossovers
+- **Risk Management**: Kill switch, circuit breaker, daily loss limits, position sizing
+- **State Persistence**: SQLite database survives restarts
+- **HTTP Polling**: Reliable market data via Alpaca API (avoids WebSocket limits)
+- **24/7 Operation**: Daemon mode with graceful shutdown handling
+- **Paper Trading**: Locked to paper mode for safe testing
 
-## Project Structure
+## Quick Start
 
-```
-alpaca-bot/
-├── src/
-│   ├── config.py              # Configuration management
-│   ├── broker.py              # Alpaca REST API wrapper
-│   ├── stream.py              # WebSocket streaming
-│   ├── event_bus.py           # Event system
-│   ├── data_handler.py        # Rolling data windows
-│   ├── strategy/
-│   │   ├── base.py            # Strategy interface
-│   │   └── sma_crossover.py  # SMA crossover implementation
-│   ├── risk_manager.py        # Risk management
-│   ├── order_manager.py       # Order execution
-│   ├── state_store.py         # SQLite persistence
-│   └── logger.py              # Structured logging
-├── tests/                     # Test suite
-├── main.py                    # Entry point
-├── requirements.txt           # Dependencies
-├── .env.example              # Configuration template
-└── README.md                 # This file
-```
+### Prerequisites
 
-## Setup
+- Python 3.12+
+- Alpaca API credentials (paper trading)
+- uv (for dependency management)
 
-### 1. Create Virtual Environment
+### Installation
 
 ```bash
-python -m venv venv
-source venv/bin/activate  # On Windows: venv\Scripts\activate
-```
+# Clone and enter directory
+cd alpaca-fleece
 
-### 2. Install Dependencies
+# Install dependencies
+uv sync --frozen
 
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Configure Environment
-
-```bash
+# Configure environment
 cp .env.example .env
+# Edit .env with your Alpaca API credentials
 ```
 
-Edit `.env` and add your Alpaca API credentials:
+## Running Options
+
+### Option 1: Direct Python (Development)
+
+Best for development and debugging:
 
 ```bash
-ALPACA_API_KEY=your_paper_api_key_here
-ALPACA_SECRET_KEY=your_paper_secret_key_here
+source .venv/bin/activate
+python orchestrator.py
 ```
 
-Get paper trading API keys from: https://app.alpaca.markets/paper/dashboard/overview
+The bot runs in the foreground. Press Ctrl+C for graceful shutdown.
 
-### 4. Configure Trading Parameters
+### Option 2: Shell Script (Recommended for Production)
 
-Edit `.env` to customize:
-
-- **Symbols**: `SYMBOLS=AAPL,MSFT,GOOGL`
-- **Strategy**: `SMA_FAST=10`, `SMA_SLOW=30`
-- **Risk Limits**: `MAX_POSITION_PCT=0.10`, `MAX_DAILY_LOSS_PCT=0.05`
-
-## Running the Bot
-
-### Paper Trading (Default)
+Uses `setsid` to create a new session, ensuring the bot survives terminal disconnects:
 
 ```bash
-python main.py
+# Start the bot
+./bot.sh start
+
+# Check status
+./bot.sh status
+
+# View logs
+tail -f logs/orchestrator.out
+
+# Stop gracefully
+./bot.sh stop
+
+# Restart
+./bot.sh restart
 ```
 
-The bot will:
-1. Load configuration and validate settings
-2. Reconcile account state with Alpaca
-3. Check circuit breaker status
-4. Start WebSocket stream for market data
-5. Process bars through strategy → risk → order pipeline
-6. Log activity to console and `logs/alpaca-bot.log`
+**Why this works:** `setsid` creates a new session and process group, so the bot is no longer associated with the terminal's session.
 
-### Dry Run Mode
+### Option 3: Docker (Containerised Deployment)
 
-Test without submitting orders:
+Best for isolated environments and easy deployment:
 
 ```bash
-# Add to .env
-DRY_RUN=true
+# Build the Docker image
+make build
 
-python main.py
+# Run the container
+make run
+
+# Check container status
+make status
+
+# View logs
+make logs
+
+# Stop the container
+make stop
+
+# Restart
+make restart
 ```
 
-### Live Trading (USE WITH CAUTION)
+**Docker Features:**
+- Uses `python:3.12-slim` base image
+- Includes `uv` for fast dependency resolution
+- Mounts `data/` and `logs/` as volumes for persistence
+- Runs as non-root user for security
 
-**WARNING: Live trading uses real money. Test thoroughly with paper trading first.**
-
-Requirements:
-1. Set `ALPACA_PAPER=false` in `.env`
-2. Set `ALLOW_LIVE_TRADING=true` in `.env`
-3. Add live API credentials
+**Manual Docker Commands:**
 
 ```bash
-# .env
-ALPACA_API_KEY=your_live_api_key
-ALPACA_SECRET_KEY=your_live_secret_key
-ALPACA_PAPER=false
-ALLOW_LIVE_TRADING=true
+# Build
+docker-compose build
 
-python main.py
+# Run detached
+docker-compose up -d
+
+# View logs
+docker-compose logs -f
+
+# Stop
+docker-compose down
+
+# Shell access
+docker-compose exec alpaca-bot bash
 ```
 
-Both flags are required to prevent accidental live trading.
+### Option 4: Python Daemon (Alternative)
 
-## Safety Features
+Uses double-fork technique for proper Unix daemonisation:
 
-### Kill Switch
-
-Immediately stop all trading:
-
-**Option 1: Environment Variable**
 ```bash
-KILL_SWITCH=true
+# Start daemon
+python daemon.py start
+
+# Check status
+python daemon.py status
+
+# Stop
+python daemon.py stop
 ```
 
-**Option 2: Create File**
+**Features:**
+- PID file management
+- Signal handling (SIGTERM for graceful shutdown)
+- Proper file descriptor handling
+- Background operation
+
+### Option 5: Systemd Service (Linux Servers)
+
+For production Linux servers with automatic restart:
+
 ```bash
-touch .kill_switch
+# Install service (one-time)
+make systemd-install
+
+# Start
+make systemd-start
+
+# Enable auto-start on boot
+make systemd-enable
+
+# Check status
+make systemd-status
+
+# View logs
+journalctl -u alpaca-bot -f
 ```
 
-### Circuit Breaker
+**Benefits:**
+- Automatic restart on crashes
+- Structured logging via journald
+- Dependency management (waits for network)
+- Clean integration with Linux systems
 
-Automatically trips after 5 consecutive failures (order rejections, API errors, etc.).
+## Configuration
 
-**Check Status**: View `data/bot_state.db` or check logs for "CIRCUIT BREAKER TRIPPED"
+### Environment Variables (`.env`)
 
-**Reset**:
-1. Fix underlying issues
-2. Set `CIRCUIT_BREAKER_RESET=true` in `.env`
-3. Restart bot
-
-**Manual Reset via Database**:
 ```bash
-sqlite3 data/bot_state.db
-DELETE FROM bot_state WHERE key = 'circuit_breaker_state';
+# Alpaca API credentials (required)
+ALPACA_API_KEY=your_api_key_here
+ALPACA_SECRET_KEY=your_secret_key_here
+
+# Trading mode (LOCKED to paper)
+ALPACA_PAPER=true
+ALLOW_LIVE_TRADING=false
+
+# Safety gates
+KILL_SWITCH=false
+CIRCUIT_BREAKER_RESET=false
+DRY_RUN=false
+
+# Logging
+LOG_LEVEL=INFO
+
+# Paths (relative to bot directory)
+DATABASE_PATH=data/trades.db
+CONFIG_PATH=config/trading.yaml
 ```
 
-### Market Hours
+### Trading Configuration (`config/trading.yaml`)
 
-By default, only trades 9:30 AM - 4:00 PM ET on weekdays.
+```yaml
+# Symbols to trade
+symbols:
+  mode: explicit
+  list: [AAPL, MSFT, GOOGL, NVDA, QQQ, SPY, TSLA, AMD, AMZN, META, NFLX, UBER, COIN, MSTR, ARKK, IWM, EEM, GLD, TLT, USO, RTX, LMT, NOC, BA, GD, GOLD, SLV, PAAS, HL, SCCO, FCX]
 
-Enable extended hours:
+# Trading hours
+session_policy: regular_only  # 9:30-16:00 ET only
+
+# Risk limits
+risk:
+  max_position_pct: 0.10      # 10% max per position
+  max_daily_loss_pct: 0.05    # 5% daily loss limit
+  max_trades_per_day: 20
+  max_concurrent_positions: 10
+
+# Strategy parameters
+strategy:
+  name: sma_crossover
+  # Uses 10-min, 30-min, and 90-min SMAs (multi-timeframe)
+```
+
+## Monitoring
+
+### Check Bot Status
+
 ```bash
-ALLOW_EXTENDED_HOURS=true
+./bot.sh status
 ```
 
-## Strategy Development
+### View Logs
 
-### Creating a New Strategy
+```bash
+# Real-time logs
+tail -f logs/orchestrator.out
 
-1. Create file in `src/strategy/your_strategy.py`
-2. Inherit from `BaseStrategy`
-3. Implement required methods:
+# Last 100 lines
+tail -100 logs/orchestrator.out
 
-```python
-from src.strategy.base import BaseStrategy
-from src.event_bus import SignalEvent
-
-class YourStrategy(BaseStrategy):
-    def __init__(self, state_store, **params):
-        super().__init__(name="YourStrategy")
-        self.state_store = state_store
-        # Initialize parameters
-
-    def get_required_history(self) -> int:
-        return 50  # Minimum bars needed
-
-    def on_bar(self, symbol: str, df: pd.DataFrame) -> Optional[SignalEvent]:
-        # Analyze df, return SignalEvent or None
-        if len(df) < self.get_required_history():
-            return None
-
-        # Your logic here
-        if buy_condition:
-            return SignalEvent(
-                symbol=symbol,
-                side="buy",
-                strategy_name=self.name,
-                signal_timestamp=df.index[-1],
-            )
-
-        return None
+# Search for errors
+grep ERROR logs/orchestrator.out
 ```
 
-4. Update `main.py` to use your strategy
-5. Add tests in `tests/test_your_strategy.py`
+### Database Queries
 
-**Important**: Strategies must not emit duplicate consecutive signals. Track last signal per symbol via `state_store`.
+```bash
+# Check trades
+sqlite3 data/trades.db "SELECT * FROM trades ORDER BY timestamp_utc DESC LIMIT 10;"
+
+# Check equity curve
+sqlite3 data/trades.db "SELECT * FROM equity_curve ORDER BY timestamp_utc DESC LIMIT 10;"
+
+# Check open orders
+sqlite3 data/trades.db "SELECT * FROM order_intents WHERE status IN ('new', 'submitted', 'accepted');"
+```
+
+### Process Monitoring
+
+```bash
+# Check if running
+ps aux | grep orchestrator
+
+# Check with PID file
+cat data/alpaca_bot.pid
+
+# Check resource usage
+top -p $(cat data/alpaca_bot.pid)
+```
 
 ## Testing
 
-### Run All Tests
+Run the test suite:
 
 ```bash
-pytest tests/ -v
+# All tests
+.venv/bin/python -m pytest tests/ -v
+
+# Quick check
+.venv/bin/python -m pytest tests/ -q
+
+# Specific test
+.venv/bin/python -m pytest tests/test_strategy.py -v
+
+# With coverage
+.venv/bin/python -m pytest tests/ --cov=src
 ```
 
-### Run Specific Test File
-
-```bash
-pytest tests/test_strategy.py -v
-```
-
-### Run with Coverage
-
-```bash
-pytest tests/ --cov=src --cov-report=html
-```
-
-## Database Schema
-
-SQLite database at `data/bot_state.db`:
-
-### Tables
-
-- **order_intents**: All order attempts (pending, filled, rejected, etc.)
-- **trades**: Executed trades with prices
-- **equity_curve**: Equity snapshots every 60s
-- **bot_state**: Key-value store for circuit breaker, trade counts, last signals
-
-### Useful Queries
-
-```sql
--- View recent trades
-SELECT * FROM trades ORDER BY timestamp DESC LIMIT 10;
-
--- Check circuit breaker status
-SELECT * FROM bot_state WHERE key = 'circuit_breaker_state';
-
--- View equity curve
-SELECT timestamp, equity, daily_pnl FROM equity_curve ORDER BY timestamp DESC LIMIT 20;
-
--- Daily trade count
-SELECT value FROM bot_state WHERE key = 'daily_trade_count';
-```
-
-## Logs
-
-Logs are written to:
-- **Console**: Human-readable format with colors
-- **File**: `logs/alpaca-bot.log` (JSON format, daily rotation, 30 days retention)
-
-Each log entry includes:
-- `timestamp`: UTC timestamp
-- `run_id`: Unique ID for this execution
-- `level`: Log level (DEBUG, INFO, WARNING, ERROR, CRITICAL)
-- `message`: Log message
-- `symbol`, `side`, `qty`, etc.: Contextual fields
-
-## Configuration Reference
-
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `ALPACA_API_KEY` | - | Alpaca API key (required) |
-| `ALPACA_SECRET_KEY` | - | Alpaca secret key (required) |
-| `ALPACA_PAPER` | `true` | Use paper trading |
-| `ALLOW_LIVE_TRADING` | `false` | Enable live trading (requires ALPACA_PAPER=false) |
-| `SYMBOLS` | `AAPL,MSFT` | Comma-separated symbols |
-| `BAR_TIMEFRAME` | `1Min` | Bar timeframe (1Min, 5Min, 15Min, 1Hour, 1Day) |
-| `STREAM_FEED` | `iex` | Stream feed (iex or sip) |
-| `MAX_POSITION_PCT` | `0.10` | Max position size as % of equity |
-| `MAX_DAILY_LOSS_PCT` | `0.05` | Max daily loss as % of equity |
-| `MAX_TRADES_PER_DAY` | `20` | Max trades per day |
-| `SMA_FAST` | `10` | Fast SMA period |
-| `SMA_SLOW` | `30` | Slow SMA period |
-| `DRY_RUN` | `false` | Log orders without submitting |
-| `ALLOW_EXTENDED_HOURS` | `false` | Trade outside 9:30-16:00 ET |
-| `LOG_LEVEL` | `INFO` | Log level (DEBUG, INFO, WARNING, ERROR) |
-| `KILL_SWITCH` | - | Set to `true` to disable trading |
-| `CIRCUIT_BREAKER_RESET` | `false` | Reset circuit breaker on startup |
-
-## Troubleshooting
-
-### Bot won't start
-
-1. Check `.env` has valid API keys
-2. Check circuit breaker: `sqlite3 data/bot_state.db "SELECT * FROM bot_state WHERE key = 'circuit_breaker_state';"`
-3. Check logs in `logs/alpaca-bot.log`
-
-### No signals generated
-
-1. Check if strategy has sufficient data: requires `SMA_SLOW + 2` bars minimum
-2. Verify symbols have active trading (check Alpaca dashboard)
-3. Check market hours (9:30-16:00 ET) unless `ALLOW_EXTENDED_HOURS=true`
-4. Review strategy logic with `LOG_LEVEL=DEBUG`
-
-### Orders not filled
-
-1. Check dry run mode: `DRY_RUN=false`
-2. Verify not paper trading when expecting live: `ALPACA_PAPER=false`
-3. Check account status: trading_blocked, account_blocked
-4. Review logs for rejection reasons
-
-### WebSocket disconnects
-
-- Normal behavior, bot automatically reconnects with exponential backoff
-- After 10 consecutive failures, circuit breaker trips
-- Check network connectivity and Alpaca status
+**Current Status:** 109 tests passing
 
 ## Architecture
 
+The bot uses a phase-based architecture matching agent contracts:
+
+1. **Phase 1: Infrastructure** — Load config, connect broker, initialise state store, run reconciliation
+2. **Phase 2: Data Layer** — Start event bus, initialise streaming (HTTP polling), set up data handlers
+3. **Phase 3: Trading Logic** — Load strategy, initialise risk manager, order manager, housekeeping
+4. **Phase 4: Runtime** — Start event processing loop, monitor tasks, handle graceful shutdown
+
+## Troubleshooting
+
+### Bot Won't Start
+
+```bash
+# Check logs for errors
+tail -50 logs/orchestrator.out
+
+# Verify environment
+cat .env | grep ALPACA_API_KEY
+
+# Check for existing process
+pgrep -f orchestrator
+
+# Clean stale PID file
+rm data/alpaca_bot.pid
 ```
-WebSocket Stream → Event Bus → Data Handler → Strategy
-                                                  ↓
-                                            Signal Event
-                                                  ↓
-                                           Risk Manager
-                                                  ↓
-                                          Order Manager
-                                                  ↓
-                                        SQLite State Store
+
+### Bot Stops Unexpectedly
+
+- Check disk space: `df -h`
+- Check memory: `free -h`
+- Look for errors in logs: `grep ERROR logs/orchestrator.out`
+- Verify Alpaca API connectivity
+
+### Database Issues
+
+```bash
+# Reset database (WARNING: loses all data)
+rm data/trades.db
+# Bot will recreate on next start
 ```
 
-### Event Flow
+### Permission Errors
 
-1. **WebSocket** receives bar → publishes `MarketBarEvent`
-2. **Data Handler** maintains rolling window per symbol
-3. **Strategy** analyzes bars → emits `SignalEvent` on crossover
-4. **Risk Manager** validates signal (kill-switch, circuit breaker, limits)
-5. **Order Manager** generates deterministic `client_order_id`, checks for duplicates
-6. **State Store** persists order before submission
-7. **Broker** submits order to Alpaca (if not dry run)
+```bash
+# Fix data directory permissions
+chmod 755 data/
+chmod 644 data/*.db 2>/dev/null || true
+```
 
-### State Persistence
+## Development
 
-All critical state persists to SQLite:
-- Order intents (prevents duplicates after restart)
-- Circuit breaker state
-- Daily trade count
-- Last signal per symbol (prevents duplicate signals)
-- Equity snapshots
-- Trade history
+### Project Structure
 
-## License
+```
+alpaca-fleece/
+├── src/                    # Source code
+│   ├── alpaca_api/        # Alpaca API clients
+│   ├── data/              # Data normalisation
+│   ├── strategy/          # Trading strategies
+│   ├── broker.py          # Order execution
+│   ├── config.py          # Configuration loading
+│   ├── event_bus.py       # Async event system
+│   ├── housekeeping.py    # Maintenance tasks
+│   ├── order_manager.py   # Order lifecycle
+│   ├── reconciliation.py  # Account sync
+│   ├── risk_manager.py    # Risk enforcement
+│   ├── state_store.py     # SQLite persistence
+│   └── stream_polling.py  # HTTP market data
+├── tests/                 # Test suite (109 tests)
+├── config/                # Trading configuration
+├── data/                  # SQLite database (gitignored)
+├── logs/                  # Log files (gitignored)
+├── agents/                # Architecture docs (gitignored)
+├── bot.sh                 # Shell script runner
+├── daemon.py              # Python daemon wrapper
+├── orchestrator.py        # Main entry point
+├── Dockerfile             # Docker image
+├── docker-compose.yml     # Docker orchestration
+└── Makefile               # Convenience commands
+```
 
-MIT
+### Making Changes
 
-## Disclaimer
+1. Edit source code in `src/`
+2. Run tests: `.venv/bin/python -m pytest tests/`
+3. Test manually: `python orchestrator.py`
+4. Use `bot.sh` for production deployment
 
-**This software is for educational purposes only. USE AT YOUR OWN RISK.**
+## Safety Features
 
-- Past performance does not guarantee future results
-- Trading involves substantial risk of loss
-- Test thoroughly with paper trading before using real money
-- The authors assume no liability for financial losses
-- You are responsible for compliance with applicable laws and regulations
+- **Paper Trading Only**: Locked to Alpaca paper trading (cannot enable live)
+- **Kill Switch**: Set `KILL_SWITCH=true` in `.env` to halt all trading
+- **Circuit Breaker**: Halts after 5 consecutive order failures
+- **Daily Limits**: Enforces max daily loss and trade count
+- **Reconciliation**: Validates state against Alpaca on startup
+- **Graceful Shutdown**: Closes positions and cancels orders on SIGTERM
+
+## Agent Spawning (with Language Standards)
+
+When spawning sub-agents for development tasks, always include British English language standards:
+
+```bash
+# Generate formatted task with standards
+make spawn-agent TASK="Refactor order manager to use async/await"
+
+# Or use the script directly
+./scripts/spawn-with-standards.sh "Your task description"
+
+# Or use the Python helper
+python scripts/spawn_agent.py "Your task description"
+```
+
+This ensures all spawned agents follow British English conventions (initialise, behaviour, colour, etc.)
+
+See `/home/t-rox/.openclaw/agents/LANGUAGE_STANDARDS.md` for the full rules.
+
+## Licence
+
+Private use only. Not for redistribution.
 
 ## Support
 
-For issues or questions:
-- Review logs in `logs/alpaca-bot.log`
-- Check Alpaca API status: https://status.alpaca.markets/
-- Consult Alpaca documentation: https://docs.alpaca.markets/
-
-## Credits
-
-Built with:
-- [alpaca-py](https://github.com/alpacahq/alpaca-py) - Alpaca Markets Python SDK
-- [pandas](https://pandas.pydata.org/) - Data analysis
-- [pandas-ta](https://github.com/twopirllc/pandas-ta) - Technical analysis
+For issues or questions, check:
+1. Logs: `logs/orchestrator.out`
+2. Tests: Run test suite to verify setup
+3. Configuration: Verify `.env` and `config/trading.yaml`
