@@ -1,6 +1,6 @@
-<img width="1536" height="1024" alt="alpaca-fleece" src="https://github.com/user-attachments/assets/3d0e93f4-528c-4c1e-b4e9-c56646afab7b" />
-
 # Alpaca Trading Bot
+
+<img width="1536" height="1024" alt="alpaca-fleece" src="https://github.com/user-attachments/assets/3d0e93f4-528c-4c1e-b4e9-c56646afab7b" />
 
 Event-driven algorithmic trading bot for Alpaca Markets using WebSocket streaming and Python asyncio.
 
