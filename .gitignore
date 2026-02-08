@@ -68,6 +68,10 @@ archive/
 # Agent contracts (documentation - not source code)
 agents/
 
+# Ignore all markdown files except README.md
+*.md
+!README.md
+
 # Instantiated agents (per-project, not committed)
 .agents/
 
