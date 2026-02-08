@@ -93,6 +93,32 @@ def load_trading_config(path: str) -> dict[str, Any]:
     return config
 
 
+def validate_exit_config(exit_config: dict) -> None:
+    """Validate exit manager configuration.
+
+    Args:
+        exit_config: Dictionary containing exit configuration values
+
+    Raises:
+        ConfigError: If any exit configuration value is invalid
+    """
+    stop_loss = exit_config.get("stop_loss_pct", 0.01)
+    profit_target = exit_config.get("profit_target_pct", 0.02)
+    trailing_activation = exit_config.get("trailing_stop_activation_pct", 0.01)
+    trailing_trail = exit_config.get("trailing_stop_trail_pct", 0.005)
+
+    if not 0 < stop_loss < 1:
+        raise ConfigError(f"stop_loss_pct must be between 0 and 1, got {stop_loss}")
+    if not 0 < profit_target < 1:
+        raise ConfigError(f"profit_target_pct must be between 0 and 1, got {profit_target}")
+    if trailing_trail >= stop_loss:
+        raise ConfigError(
+            f"trailing_stop_trail_pct ({trailing_trail}) must be less than stop_loss_pct ({stop_loss})"
+        )
+    if trailing_activation <= 0:
+        raise ConfigError("trailing_stop_activation_pct must be positive")
+
+
 def validate_config(env: EnvConfig, trading: dict[str, Any]) -> None:
     """Validate configuration for safety gates and consistency."""
 
@@ -139,6 +165,10 @@ def validate_config(env: EnvConfig, trading: dict[str, Any]) -> None:
     session_policy = trading_config.get("session_policy")
     if session_policy not in ["regular_only", "include_extended"]:
         raise ConfigError(f"Invalid session_policy: {session_policy}")
+
+    # Validate exit configuration
+    exits_config = trading.get("exits", {})
+    validate_exit_config(exits_config)
 
     # Validate asset scope (US equities only)
     # This will be checked at runtime when symbols are resolved
