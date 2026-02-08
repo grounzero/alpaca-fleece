@@ -17,6 +17,7 @@ class OrderIntentRow(TypedDict, total=False):
     symbol: str
     side: str
     qty: float
+    atr: Optional[float]
     status: str
     filled_qty: float
     alpaca_order_id: Optional[str]

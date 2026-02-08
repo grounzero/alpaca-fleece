@@ -286,10 +286,11 @@ class ExitManager:
         pnl_amount, pnl_pct = self.position_tracker.calculate_pnl(position.symbol, current_price)
 
         # If ATR is available for this position, use ATR-based dynamic stops/targets
-        if getattr(position, "atr", None) and position.atr > 0:
+        if position.atr is not None and position.atr > 0.0:
+            atr_value = position.atr
             stop_price, target_price = calculate_dynamic_stops(
                 entry_price=position.entry_price,
-                atr=position.atr,
+                atr=atr_value,
                 atr_multiplier_stop=self.atr_multiplier_stop,
                 atr_multiplier_target=self.atr_multiplier_target,
                 side=position.side,
