@@ -227,7 +227,9 @@ class PositionTracker:
                 unrealised_pct = (current_price - position.entry_price) / position.entry_price
                 if unrealised_pct >= self.trailing_stop_activation_pct:
                     position.trailing_stop_activated = True
-                    position.trailing_stop_price = current_price * (1 - self.trailing_stop_trail_pct)
+                    position.trailing_stop_price = current_price * (
+                        1 - self.trailing_stop_trail_pct
+                    )
                     state_changed = True
                     logger.info(
                         f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
@@ -261,7 +263,9 @@ class PositionTracker:
                 unrealised_pct = (position.entry_price - current_price) / position.entry_price
                 if unrealised_pct >= self.trailing_stop_activation_pct:
                     position.trailing_stop_activated = True
-                    position.trailing_stop_price = current_price * (1 + self.trailing_stop_trail_pct)
+                    position.trailing_stop_price = current_price * (
+                        1 + self.trailing_stop_trail_pct
+                    )
                     state_changed = True
                     logger.info(
                         f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
