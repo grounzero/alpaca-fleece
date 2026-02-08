@@ -10,7 +10,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
-
 from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
