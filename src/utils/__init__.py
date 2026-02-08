@@ -1,6 +1,6 @@
 """Shared utility functions."""
 
-from typing import Iterator, Sequence, TypeVar
+from typing import Any, Iterator, Sequence, TypeVar
 
 T = TypeVar("T")
 
@@ -27,7 +27,7 @@ def batch_iter(items: Sequence[T], batch_size: int) -> Iterator[list[T]]:
         yield list(items[i : i + batch_size])
 
 
-def parse_optional_float(value: object) -> float | None:
+def parse_optional_float(value: Any) -> float | None:
     """Coerce a DB or metadata value to float if possible, otherwise return None.
 
     This helper lives in `src.utils` so multiple modules can import a stable,
