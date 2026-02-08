@@ -32,6 +32,7 @@ from src.state_store import StateStore
 from src.utils import parse_optional_float
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
+from src import __version__ as version
 
 logger = logging.getLogger("alpaca_bot")
 
@@ -91,6 +92,9 @@ class Orchestrator:
         logger.info("=" * 60)
         logger.info("PHASE 1: Infrastructure Initialization")
         logger.info("=" * 60)
+
+        # Log package version on startup
+        logger.info(f"Alpaca Fleece version: {version}")
 
         errors = []
         warnings = []
@@ -157,6 +161,7 @@ class Orchestrator:
 
             result = {
                 "status": "failed" if errors else "ready",
+                "version": version,
                 "account": {
                     "equity": float(account["equity"]),
                     "buying_power": float(account["buying_power"]),
