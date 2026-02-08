@@ -167,6 +167,9 @@ class StateStore:
                     cursor.execute("ALTER TABLE order_intents ADD COLUMN atr NUMERIC(10, 4)")
                     conn.commit()
             except sqlite3.Error as e:
+                # Use the module-level logger (defined at top of this module)
+                # rather than creating a new logger instance here. This keeps
+                # logging consistent and is safe during early init/migration.
                 logger.warning("Could not migrate order_intents to add atr column: %s", e)
 
     def get_state(self, key: str) -> Optional[str]:
@@ -280,6 +283,7 @@ class StateStore:
                 )
 
             rows = cursor.fetchall()
+
             def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
                 atr_raw = row[4]
                 atr_val: Optional[float] = None
