@@ -633,8 +633,11 @@ class Orchestrator:
             # Start tracking position with actual fill price
             atr_raw = order_intent.get("atr") if order_intent else None
             atr_value = None
-            if isinstance(atr_raw, (int, float)):
-                atr_value = float(atr_raw)
+            if atr_raw is not None:
+                try:
+                    atr_value = float(atr_raw)
+                except (TypeError, ValueError):
+                    atr_value = None
 
             self.position_tracker.start_tracking(
                 symbol=event.symbol,

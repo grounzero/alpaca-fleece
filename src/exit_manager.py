@@ -289,68 +289,87 @@ class ExitManager:
         if position.atr is not None and position.atr > 0.0:
             atr_value = position.atr
             converted_side = (position.side or "").lower()
-            stop_price, target_price = calculate_dynamic_stops(
-                entry_price=position.entry_price,
-                atr=atr_value,
-                atr_multiplier_stop=self.atr_multiplier_stop,
-                atr_multiplier_target=self.atr_multiplier_target,
-                side=converted_side,
-            )
 
-            # Long position ATR-based checks
-            if converted_side == "long":
-                if current_price <= stop_price:
-                    return ExitSignalEvent(
-                        symbol=position.symbol,
-                        side="sell",
-                        qty=position.qty,
-                        reason="stop_loss",
-                        entry_price=position.entry_price,
-                        current_price=current_price,
-                        pnl_pct=pnl_pct,
-                        pnl_amount=pnl_amount,
-                        timestamp=datetime.now(timezone.utc),
-                    )
-
-                if current_price >= target_price:
-                    return ExitSignalEvent(
-                        symbol=position.symbol,
-                        side="sell",
-                        qty=position.qty,
-                        reason="profit_target",
-                        entry_price=position.entry_price,
-                        current_price=current_price,
-                        pnl_pct=pnl_pct,
-                        pnl_amount=pnl_amount,
-                        timestamp=datetime.now(timezone.utc),
-                    )
+            # Validate side explicitly to avoid mismatched compute vs checks
+            if converted_side not in ("long", "short"):
+                logger.warning(
+                    "Unsupported position side '%s' for ATR-based exits on %s; skipping ATR logic.",
+                    position.side,
+                    position.symbol,
+                )
             else:
-                # Short position ATR-based checks (inverse)
-                if current_price >= stop_price:
-                    return ExitSignalEvent(
-                        symbol=position.symbol,
-                        side="buy",
-                        qty=position.qty,
-                        reason="stop_loss",
-                        entry_price=position.entry_price,
-                        current_price=current_price,
-                        pnl_pct=pnl_pct,
-                        pnl_amount=pnl_amount,
-                        timestamp=datetime.now(timezone.utc),
-                    )
+                stop_price, target_price = calculate_dynamic_stops(
+                    entry_price=position.entry_price,
+                    atr=atr_value,
+                    atr_multiplier_stop=self.atr_multiplier_stop,
+                    atr_multiplier_target=self.atr_multiplier_target,
+                    side=converted_side,
+                )
 
-                if current_price <= target_price:
-                    return ExitSignalEvent(
-                        symbol=position.symbol,
-                        side="buy",
-                        qty=position.qty,
-                        reason="profit_target",
-                        entry_price=position.entry_price,
-                        current_price=current_price,
-                        pnl_pct=pnl_pct,
-                        pnl_amount=pnl_amount,
-                        timestamp=datetime.now(timezone.utc),
+                # Basic validation of computed stop/target
+                if not isinstance(stop_price, (int, float)) or not isinstance(
+                    target_price, (int, float)
+                ):
+                    logger.debug(
+                        "Computed non-numeric stop/target for %s (atr=%s) - skipping ATR logic",
+                        position.symbol,
+                        atr_value,
                     )
+                else:
+                    # Long position ATR-based checks
+                    if converted_side == "long":
+                        if current_price <= stop_price:
+                            return ExitSignalEvent(
+                                symbol=position.symbol,
+                                side="sell",
+                                qty=position.qty,
+                                reason="stop_loss",
+                                entry_price=position.entry_price,
+                                current_price=current_price,
+                                pnl_pct=pnl_pct,
+                                pnl_amount=pnl_amount,
+                                timestamp=datetime.now(timezone.utc),
+                            )
+
+                        if current_price >= target_price:
+                            return ExitSignalEvent(
+                                symbol=position.symbol,
+                                side="sell",
+                                qty=position.qty,
+                                reason="profit_target",
+                                entry_price=position.entry_price,
+                                current_price=current_price,
+                                pnl_pct=pnl_pct,
+                                pnl_amount=pnl_amount,
+                                timestamp=datetime.now(timezone.utc),
+                            )
+                    elif converted_side == "short":
+                        # Short position ATR-based checks (inverse)
+                        if current_price >= stop_price:
+                            return ExitSignalEvent(
+                                symbol=position.symbol,
+                                side="buy",
+                                qty=position.qty,
+                                reason="stop_loss",
+                                entry_price=position.entry_price,
+                                current_price=current_price,
+                                pnl_pct=pnl_pct,
+                                pnl_amount=pnl_amount,
+                                timestamp=datetime.now(timezone.utc),
+                            )
+
+                        if current_price <= target_price:
+                            return ExitSignalEvent(
+                                symbol=position.symbol,
+                                side="buy",
+                                qty=position.qty,
+                                reason="profit_target",
+                                entry_price=position.entry_price,
+                                current_price=current_price,
+                                pnl_pct=pnl_pct,
+                                pnl_amount=pnl_amount,
+                                timestamp=datetime.now(timezone.utc),
+                            )
 
         # Priority 1: Stop loss (highest priority) - fallback to fixed pct
         if pnl_pct <= -self.stop_loss_pct:

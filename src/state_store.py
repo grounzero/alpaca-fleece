@@ -237,12 +237,20 @@ class StateStore:
             )
             row = cursor.fetchone()
             if row:
+                atr_raw = row[4]
+                atr_val: Optional[float] = None
+                if atr_raw is not None:
+                    try:
+                        atr_val = float(atr_raw)
+                    except (TypeError, ValueError):
+                        atr_val = None
+
                 return {
                     "client_order_id": row[0],
                     "symbol": row[1],
                     "side": row[2],
                     "qty": row[3],
-                    "atr": row[4],
+                    "atr": atr_val,
                     "status": row[5],
                     "filled_qty": row[6],
                     "alpaca_order_id": row[7],
@@ -271,19 +279,27 @@ class StateStore:
                 )
 
             rows = cursor.fetchall()
-            return [
-                {
+            def map_row(row):
+                atr_raw = row[4]
+                atr_val: Optional[float] = None
+                if atr_raw is not None:
+                    try:
+                        atr_val = float(atr_raw)
+                    except (TypeError, ValueError):
+                        atr_val = None
+
+                return {
                     "client_order_id": row[0],
                     "symbol": row[1],
                     "side": row[2],
                     "qty": row[3],
-                    "atr": row[4],
+                    "atr": atr_val,
                     "status": row[5],
                     "filled_qty": row[6],
                     "alpaca_order_id": row[7],
                 }
-                for row in rows
-            ]
+
+            return [map_row(row) for row in rows]
 
     # Win #3: Daily Limits & Circuit Breaker Persistence
 
