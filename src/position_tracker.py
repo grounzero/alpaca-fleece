@@ -161,6 +161,11 @@ class PositionTracker:
     def update_current_price(self, symbol: str, current_price: float) -> Optional[PositionData]:
         """Update position with current price, handling trailing stop logic.
 
+        Only persists to SQLite when state actually changes:
+        - New highest price
+        - Trailing stop activation
+        - Trailing stop price update
+
         Args:
             symbol: Stock symbol
             current_price: Current market price
@@ -172,9 +177,12 @@ class PositionTracker:
         if not position:
             return None
 
+        state_changed = False
+
         # Update highest price if current is higher
         if current_price > position.highest_price:
             position.highest_price = current_price
+            state_changed = True
 
             # Update trailing stop if activated
             if self.trailing_stop_enabled and position.trailing_stop_activated:
@@ -185,6 +193,7 @@ class PositionTracker:
                     or new_trailing_stop > position.trailing_stop_price
                 ):
                     position.trailing_stop_price = new_trailing_stop
+                    state_changed = True
                     logger.debug(
                         f"{symbol} trailing stop raised to ${position.trailing_stop_price:.2f}"
                     )
@@ -195,12 +204,16 @@ class PositionTracker:
             if unrealised_pct >= self.trailing_stop_activation_pct:
                 position.trailing_stop_activated = True
                 position.trailing_stop_price = current_price * (1 - self.trailing_stop_trail_pct)
+                state_changed = True
                 logger.info(
                     f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
                     f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
                 )
 
-        self._persist_position(position)
+        # Only persist if state actually changed
+        if state_changed:
+            self._persist_position(position)
+
         return position
 
     def calculate_pnl(self, symbol: str, current_price: float) -> tuple[float, float]:
