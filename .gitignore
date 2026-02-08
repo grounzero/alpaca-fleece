@@ -26,11 +26,13 @@ coverage.xml
 
 # IDE
 .vscode/
+.claude/
 .idea/
 *.swp
 *.swo
 *~
 .DS_Store
+Thumbs.db
 
 # SQLite
 *.db
@@ -72,18 +74,5 @@ agents/
 # Runtime files
 data/*.pid
 
-# Documentation (implementation plans, analysis)
 docs/
 
-# OpenClaw workspace files
-AGENTS.md
-BOOTSTRAP.md
-HEARTBEAT.md
-IDENTITY.md
-SOUL.md
-TOOLS.md
-USER.md
-
-# Memory files
-MEMORY.md
-memory/
