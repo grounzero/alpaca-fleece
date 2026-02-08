@@ -169,18 +169,16 @@ async def test_sma_crossover_no_signal_without_crossover(state_store):
     """Strategy should not emit signal if no crossover occurs."""
     strategy = SMACrossover(state_store)
 
-    # Create steady uptrend (no crossover, both SMAs rising together)
-    prices = list(range(100, 160))  # 60 bars for SMA(20,50)
+    # Create flat data - no crossover possible (SMAs will be equal/parallel)
+    prices = [100.0] * 100  # Flat line - no cross
     df = create_price_series(prices)
 
     signals = await strategy.on_bar("AAPL", df)
 
-    # If we're in middle of steady trend (no cross), no signal
-    # This test is probabilistic - depends on data
-    # At minimum, check structure is correct
-    for signal in signals:
-        assert signal.signal_type in ["BUY", "SELL"]
-        assert "confidence" in signal.metadata
+    # Flat data should never produce a crossover signal
+    assert (
+        len(signals) == 0
+    ), f"Expected no signals for flat data, got {len(signals)}: {[s.signal_type for s in signals]}"
 
 
 @pytest.mark.asyncio
