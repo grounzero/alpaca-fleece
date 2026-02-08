@@ -6,6 +6,7 @@ structured phases matching the agent contracts in agents/.
 """
 
 import asyncio
+import inspect
 import logging
 import signal
 import sys
@@ -680,8 +681,25 @@ class Orchestrator:
             while True:
                 try:
                     # Update gauge values before writing
-                    positions = self.broker.get_positions() if self.broker else []
-                    metrics.update_open_positions(len(positions))
+                    positions = []
+                    if self.broker:
+                        try:
+                            maybe_positions = self.broker.get_positions()
+                            if inspect.isawaitable(maybe_positions):
+                                positions = await maybe_positions
+                            else:
+                                positions = maybe_positions
+                        except Exception:
+                            logger.exception("Failed to read positions from broker; using 0")
+
+                    # Safely compute open positions count
+                    open_positions_count = 0
+                    try:
+                        open_positions_count = len(positions) if positions is not None else 0
+                    except Exception:
+                        open_positions_count = 0
+
+                    metrics.update_open_positions(open_positions_count)
                     metrics.update_daily_pnl(self.state_store.get_daily_pnl())
                     metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
 
