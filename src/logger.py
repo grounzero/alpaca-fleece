@@ -26,7 +26,7 @@ def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logg
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
-    # Normalize and validate log level
+    # Validate log level
     log_level = log_level.upper()
     level = getattr(logging, log_level, logging.INFO)
     logger.setLevel(level)

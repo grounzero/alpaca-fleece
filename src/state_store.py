@@ -5,6 +5,7 @@ and bot state. All financial values use NUMERIC for precision.
 """
 
 import sqlite3
+import logging
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, TypedDict
@@ -163,9 +164,9 @@ class StateStore:
                 if "atr" not in oi_columns:
                     cursor.execute("ALTER TABLE order_intents ADD COLUMN atr NUMERIC(10, 4)")
                     conn.commit()
-            except Exception:
-                # Don't fail initialization if migration can't be applied here
-                pass
+            except sqlite3.Error as e:
+                logger = logging.getLogger(__name__)
+                logger.warning("Could not migrate order_intents to add atr column: %s", e)
 
     def get_state(self, key: str) -> Optional[str]:
         """Get state value by key."""

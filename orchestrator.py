@@ -631,12 +631,17 @@ class Orchestrator:
 
         if side == "buy":
             # Start tracking position with actual fill price
+            atr_raw = order_intent.get("atr") if order_intent else None
+            atr_value = None
+            if isinstance(atr_raw, (int, float)):
+                atr_value = float(atr_raw)
+
             self.position_tracker.start_tracking(
                 symbol=event.symbol,
                 fill_price=fill_price,
                 qty=event.filled_qty,
                 side="long",
-                atr=order_intent.get("atr") if order_intent else None,
+                atr=atr_value,
             )
             logger.info(
                 f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} " f"qty={event.filled_qty}"

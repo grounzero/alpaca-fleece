@@ -412,14 +412,25 @@ class PositionTracker:
             rows = cursor.fetchall()
 
             for row in rows:
+                # Convert ATR to a float if present — sqlite3 may return str/Decimal
+                raw_atr = row[4]
+                atr_val: float | None
+                if raw_atr is None:
+                    atr_val = None
+                else:
+                    try:
+                        atr_val = float(raw_atr)
+                    except Exception:
+                        atr_val = None
+
                 position = PositionData(
                     symbol=row[0],
                     side=row[1],
-                    qty=row[2],
-                    entry_price=row[3],
-                    atr=row[4],
+                    qty=float(row[2]),
+                    entry_price=float(row[3]),
+                    atr=atr_val,
                     entry_time=datetime.fromisoformat(row[5]),
-                    highest_price=row[6],
+                    highest_price=float(row[6]),
                     trailing_stop_price=row[7],
                     trailing_stop_activated=bool(row[8]),
                     pending_exit=bool(row[9]),

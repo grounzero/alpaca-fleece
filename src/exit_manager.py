@@ -50,8 +50,8 @@ def calculate_dynamic_stops(
     stop_distance = atr * atr_multiplier_stop
     target_distance = atr * atr_multiplier_target
 
-    normalized_side = (side or "").lower()
-    if normalized_side == "short":
+    converted_side = (side or "").lower()
+    if converted_side == "short":
         stop_price = entry_price + stop_distance
         target_price = entry_price - target_distance
     else:
@@ -288,16 +288,17 @@ class ExitManager:
         # If ATR is available for this position, use ATR-based dynamic stops/targets
         if position.atr is not None and position.atr > 0.0:
             atr_value = position.atr
+            converted_side = (position.side or "").lower()
             stop_price, target_price = calculate_dynamic_stops(
                 entry_price=position.entry_price,
                 atr=atr_value,
                 atr_multiplier_stop=self.atr_multiplier_stop,
                 atr_multiplier_target=self.atr_multiplier_target,
-                side=position.side,
+                side=converted_side,
             )
 
             # Long position ATR-based checks
-            if position.side == "long":
+            if converted_side == "long":
                 if current_price <= stop_price:
                     return ExitSignalEvent(
                         symbol=position.symbol,

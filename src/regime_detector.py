@@ -40,7 +40,7 @@ class RegimeDetector:
         distance = close - sma_50
         trend_strength = abs(distance) / atr if atr > 0 else 0
 
-        # Normalize trend strength to 0.0-1.0
+        # Convert trend strength to 0.0-1.0
         normalized_strength = min(trend_strength / 2.0, 1.0)
 
         # Detect regime

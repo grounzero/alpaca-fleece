@@ -79,9 +79,9 @@ class OrderManager:
         Returns:
             16-char hex string
         """
-        # Normalize side to prevent duplicate orders from formatting differences
-        normalized_side = side.strip().lower()
-        data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{normalized_side}"
+        # Convert side to a canonical form to prevent duplicate orders from formatting differences
+        converted_side = side.strip().lower()
+        data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{converted_side}"
         hash_val = hashlib.sha256(data.encode()).hexdigest()[:16]
         return hash_val
 

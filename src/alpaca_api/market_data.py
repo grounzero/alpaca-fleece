@@ -56,7 +56,7 @@ class MarketDataClient(AlpacaDataClient):
                 return pd.DataFrame()
 
             df = bars[symbol].df
-            # Normalize column names
+            # Convert column names
             df = df.rename(
                 columns={
                     "n": "trade_count",
