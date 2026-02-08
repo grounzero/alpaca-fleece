@@ -19,5 +19,9 @@ def batch_iter(items: Sequence[T], batch_size: int) -> Iterator[list[T]]:
         >>> list(batch_iter([1, 2, 3, 4, 5], 2))
         [[1, 2], [3, 4], [5]]
     """
+    if batch_size < 0:
+        raise ValueError("batch_size must be positive")
+    if batch_size == 0:
+        return
     for i in range(0, len(items), batch_size):
         yield list(items[i : i + batch_size])
