@@ -41,7 +41,7 @@ class RegimeDetector:
         trend_strength = abs(distance) / atr if atr > 0 else 0
 
         # Convert trend strength to 0.0-1.0
-        normalized_strength = min(trend_strength / 2.0, 1.0)
+        converted_strength = min(trend_strength / 2.0, 1.0)
 
         # Detect regime
         if trend_strength > 1.5:
@@ -51,7 +51,7 @@ class RegimeDetector:
                 regime="trending",
                 confidence=0.9,
                 trend_direction=direction,
-                strength=normalized_strength,
+                strength=converted_strength,
             )
         elif trend_strength > 0.8:
             # Weak trend
@@ -60,7 +60,7 @@ class RegimeDetector:
                 regime="trending",
                 confidence=0.6,
                 trend_direction=direction,
-                strength=normalized_strength,
+                strength=converted_strength,
             )
         elif trend_strength < 0.5:
             # Ranging/choppy market
@@ -76,5 +76,5 @@ class RegimeDetector:
                 regime="unknown",
                 confidence=0.5,
                 trend_direction="none",
-                strength=normalized_strength,
+                strength=converted_strength,
             )
