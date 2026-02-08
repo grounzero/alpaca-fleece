@@ -169,3 +169,72 @@ def test_evaluate_exit_rules_skip_atr_when_invalid() -> None:
     assert sig is not None
     assert sig.reason == "stop_loss"
     assert sig.side == "sell"
+
+
+def test_trailing_stop_activation_triggers_exit() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=None,
+        # Set trailing stop slightly above the percent stop threshold so a
+        # price can trigger trailing_stop without also hitting the fixed pct stop.
+        trailing_stop_price=99.5,
+        trailing_stop_activated=True,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None,
+        position_tracker=tracker,
+        event_bus=None,
+        state_store=None,
+        data_handler=None,
+        trailing_stop_enabled=True,
+    )
+
+    # Trailing stop at 99.5 -> current price 99.4 triggers trailing_stop exit
+    # while not triggering the fixed -1% stop_loss.
+    sig = mgr._evaluate_exit_rules(position, current_price=99.4)
+    assert sig is not None
+    assert sig.reason == "trailing_stop"
+    assert sig.side == "sell"
+
+
+def test_atr_nan_and_inf_fallback_to_percent_stop() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    for bad_atr in (float("nan"), float("inf")):
+        position = PositionData(
+            symbol="AAPL",
+            side="long",
+            qty=qty,
+            entry_price=entry,
+            entry_time=now,
+            highest_price=entry,
+            atr=bad_atr,
+        )
+
+        tracker = DummyTracker(entry_price=entry, qty=qty)
+        mgr = ExitManager(
+            broker=None,
+            position_tracker=tracker,
+            event_bus=None,
+            state_store=None,
+            data_handler=None,
+        )
+
+        # ATR is non-finite -> fallback to percent stop (1%). Price 98 triggers stop
+        sig = mgr._evaluate_exit_rules(position, current_price=98.0)
+        assert sig is not None
+        assert sig.reason == "stop_loss"
+        assert sig.side == "sell"
