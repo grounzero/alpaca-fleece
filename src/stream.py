@@ -1,231 +1,241 @@
-"""WebSocket stream handler with reconnection logic."""
+"""WebSocket stream - connectivity only (raw passthrough).
+
+This module owns:
+- Connecting to Alpaca WebSocket streams
+- Reconnect logic with exponential backoff
+- Delivering raw SDK objects to DataHandler
+- Rate limit protection (HTTP 429 handling)
+- Batched subscription (prevent rate limits)
+
+MUST NOT:
+- Normalise data into internal events
+- Write to SQLite
+- Publish to EventBus
+"""
+
 import asyncio
 import logging
-import random
-from datetime import datetime, timedelta
-import pytz
+import time
+from typing import Any, Callable, Optional
 
+from alpaca.data.enums import DataFeed
 from alpaca.data.live import StockDataStream
-from alpaca.data.models import Bar
+from alpaca.trading.stream import TradingStream
 
-from src.config import Config
-from src.event_bus import EventBus, MarketBarEvent
-from src.broker import Broker
-from src.data_handler import DataHandler
+from src.rate_limiter import RateLimiter
+from src.utils import batch_iter
+
+logger = logging.getLogger(__name__)
 
 
-class StreamHandler:
-    """Handle Alpaca WebSocket stream with reconnection logic."""
+class StreamError(Exception):
+    """Raised when stream operation fails."""
+
+    pass
+
+
+class Stream:
+    """WebSocket stream manager (connectivity only)."""
 
     def __init__(
         self,
-        config: Config,
-        event_bus: EventBus,
-        broker: Broker,
-        data_handler: DataHandler,
-        logger: logging.Logger,
-    ):
-        """
-        Initialize stream handler.
+        api_key: str,
+        secret_key: str,
+        paper: bool = True,
+        feed: str = "iex",  # "iex" or "sip"
+    ) -> None:
+        """Initialise stream.
 
         Args:
-            config: Configuration object
-            event_bus: Event bus instance
-            broker: Broker instance for backfill
-            data_handler: Data handler for backfill
-            logger: Logger instance
+            api_key: Alpaca API key
+            secret_key: Alpaca secret key
+            paper: True for paper trading
+            feed: "iex" (free) or "sip" (paid)
         """
-        self.config = config
-        self.event_bus = event_bus
-        self.broker = broker
-        self.data_handler = data_handler
-        self.logger = logger
+        self.api_key = api_key
+        self.secret_key = secret_key
+        self.paper = paper
+        # Convert string feed to enum
+        if isinstance(feed, str):
+            self.feed = DataFeed.IEX if feed.lower() == "iex" else DataFeed.SIP
+        else:
+            self.feed = feed
 
-        self.stream = StockDataStream(
-            api_key=config.alpaca_api_key,
-            secret_key=config.alpaca_secret_key,
-            feed=config.stream_feed,
-        )
+        # Streams (lazy init)
+        self.market_data_stream: Optional[StockDataStream] = None
+        self.trade_updates_stream: Optional[TradingStream] = None
 
-        self.running = False
-        self.last_message_time = None
-        self.reconnect_count = 0
+        # Callbacks (provided by DataHandler)
+        self.on_bar: Optional[Callable[..., Any]] = None
+        self.on_order_update: Optional[Callable[..., Any]] = None
+        self.on_market_disconnect: Optional[Callable[..., Any]] = None
+        self.on_trade_disconnect: Optional[Callable[..., Any]] = None
+
+        # State
+        self.market_connected = False
+        self.trade_connected = False
+        self.reconnect_attempts = 0
         self.max_reconnect_attempts = 10
-        self.max_reconnect_delay = 60.0
-        self.message_timeout = 30.0
-        self.last_bar_times = {}  # Track last bar time per symbol for backfill
 
-    async def _handle_bar(self, bar: Bar):
-        """
-        Handle incoming bar from WebSocket.
-
-        Args:
-            bar: Bar object from Alpaca
-        """
-        try:
-            # Update last message time
-            self.last_message_time = datetime.utcnow()
-
-            # Track last bar time for backfill detection
-            self.last_bar_times[bar.symbol] = bar.timestamp
-
-            # Create event
-            event = MarketBarEvent(
-                symbol=bar.symbol,
-                open=float(bar.open),
-                high=float(bar.high),
-                low=float(bar.low),
-                close=float(bar.close),
-                volume=int(bar.volume),
-                bar_timestamp=bar.timestamp,
-                vwap=float(bar.vwap) if bar.vwap else None,
-            )
-
-            # Publish to event bus
-            await self.event_bus.publish(event)
-
-        except Exception as e:
-            self.logger.error(f"Error handling bar: {e}", exc_info=e)
-
-    async def _backfill_missed_bars(self):
-        """Backfill missed bars after reconnection."""
-        self.logger.info("Backfilling missed bars after reconnection")
-
-        for symbol in self.config.symbols:
-            try:
-                # Determine backfill start time
-                if symbol in self.last_bar_times:
-                    # Start from last received bar
-                    start_time = self.last_bar_times[symbol]
-                else:
-                    # No previous data, backfill last N bars
-                    start_time = datetime.now(pytz.timezone("America/New_York")) - timedelta(hours=1)
-
-                end_time = datetime.now(pytz.timezone("America/New_York"))
-
-                # Fetch bars
-                df = await self.broker.get_bars(
-                    symbol=symbol,
-                    timeframe=self.config.bar_timeframe,
-                    start=start_time,
-                    end=end_time,
-                    limit=100,
-                )
-
-                if not df.empty:
-                    # Add to data handler
-                    self.data_handler.add_historical_bars(symbol, df)
-                    self.logger.info(f"Backfilled {len(df)} bars for {symbol}")
-
-                    # Update last bar time
-                    self.last_bar_times[symbol] = df.index[-1]
-
-            except Exception as e:
-                self.logger.error(f"Error backfilling {symbol}: {e}", exc_info=e)
-
-    async def _monitor_connection(self):
-        """Monitor connection health and force reconnect if needed."""
-        while self.running:
-            try:
-                await asyncio.sleep(10)  # Check every 10 seconds
-
-                if self.last_message_time:
-                    time_since_last_message = (datetime.utcnow() - self.last_message_time).total_seconds()
-
-                    if time_since_last_message > self.message_timeout:
-                        self.logger.warning(
-                            f"No messages received for {time_since_last_message:.1f}s, forcing reconnect"
-                        )
-                        # Stop and restart stream
-                        await self._reconnect()
-
-            except Exception as e:
-                self.logger.error(f"Error in connection monitor: {e}", exc_info=e)
-
-    async def _reconnect(self):
-        """Handle reconnection with exponential backoff."""
-        self.reconnect_count += 1
-
-        if self.reconnect_count > self.max_reconnect_attempts:
-            self.logger.error(
-                f"Max reconnect attempts ({self.max_reconnect_attempts}) exceeded, "
-                "tripping circuit breaker"
-            )
-            # Signal circuit breaker trip
-            raise Exception("Max reconnect attempts exceeded")
-
-        # Calculate backoff delay with jitter
-        delay = min(
-            self.max_reconnect_delay,
-            (2 ** (self.reconnect_count - 1)) + random.uniform(0, 1)
+        # Rate limit protection (Alpaca's HTTP 429 handling)
+        self.market_rate_limiter = RateLimiter(
+            base_delay=2.0,  # Start with 2s backoff
+            max_delay=120.0,  # Cap at 2 minutes
+            max_retries=5,  # Give up after 5 failures
+        )
+        self.trade_rate_limiter = RateLimiter(
+            base_delay=2.0,
+            max_delay=120.0,
+            max_retries=5,
         )
 
-        self.logger.info(f"Reconnecting in {delay:.1f}s (attempt {self.reconnect_count})")
-        await asyncio.sleep(delay)
+    def register_handlers(
+        self,
+        on_bar: Callable[..., Any],
+        on_order_update: Callable[..., Any],
+        on_market_disconnect: Callable[..., Any],
+        on_trade_disconnect: Callable[..., Any],
+    ) -> None:
+        """Register callbacks from DataHandler.
 
-        # Stop existing stream
+        Args:
+            on_bar: Called with raw bar data (SDK object)
+            on_order_update: Called with raw order update (SDK object)
+            on_market_disconnect: Called when market stream disconnects
+            on_trade_disconnect: Called when trade stream disconnects
+        """
+        self.on_bar = on_bar
+        self.on_order_update = on_order_update
+        self.on_market_disconnect = on_market_disconnect
+        self.on_trade_disconnect = on_trade_disconnect
+
+    async def start(self, symbols: list[str]) -> None:
+        """Start both streams.
+
+        Args:
+            symbols: List of symbols to subscribe to
+        """
         try:
-            await self.stream.stop_ws()
-        except:
-            pass
+            # Start market data stream
+            await self._start_market_stream(symbols)
 
-        # Backfill missed bars
-        await self._backfill_missed_bars()
-
-        # Restart stream
-        await self._start_stream()
-
-    async def _start_stream(self):
-        """Start the WebSocket stream."""
-        # Subscribe to bars
-        for symbol in self.config.symbols:
-            self.stream.subscribe_bars(self._handle_bar, symbol)
-
-        # Run stream
-        self.logger.info(f"Starting WebSocket stream for symbols: {self.config.symbols}")
-        try:
-            await self.stream._run_forever()
+            # Start trade updates stream
+            await self._start_trade_stream()
         except Exception as e:
-            self.logger.error(f"Stream error: {e}", exc_info=e)
-            if self.running:
-                await self._reconnect()
+            raise StreamError(f"Failed to start streams: {e}")
 
-    async def run(self):
-        """Run the stream handler."""
-        self.running = True
-        self.last_message_time = datetime.utcnow()
+    async def _start_market_stream(
+        self, symbols: list[str], batch_size: int = 10, batch_delay: float = 1.0
+    ) -> None:
+        """Start market data stream with batched subscriptions."""
+        """Start market data stream with batched subscriptions.
 
-        # Start connection monitor task
-        monitor_task = asyncio.create_task(self._monitor_connection())
+        Args:
+            symbols: List of symbols to subscribe to
+            batch_size: Number of symbols per batch (default: 10)
+            batch_delay: Delay in seconds between batches (default: 1.0)
+        """
+        self.market_data_stream = StockDataStream(
+            api_key=self.api_key,
+            secret_key=self.secret_key,
+            feed=self.feed,
+        )
+
+        # Register bar handler (raw passthrough)
+        async def handle_bar(bar: Any) -> None:
+            if self.on_bar:
+                await self.on_bar(bar)
+
+        # Subscribe in batches to avoid rate limits
+        logger.info(f"Subscribing to {len(symbols)} symbols in batches of {batch_size}")
+        num_batches = (len(symbols) + batch_size - 1) // batch_size
+        for i, batch in enumerate(batch_iter(symbols, batch_size)):
+            logger.info(f"Subscribing batch {i+1}/{num_batches} size={len(batch)}")
+            self.market_data_stream.subscribe_bars(handle_bar, *batch)
+
+            # Delay between batches (except after last batch)
+            if i < num_batches - 1:
+                await asyncio.sleep(batch_delay)
+
+        # Start stream using native async _run_forever() instead of sync run()
+        # This avoids the asyncio.run() conflict
+        asyncio.create_task(self.market_data_stream._run_forever())
+        self.market_connected = True
+        logger.info(
+            f"Market stream connected: {len(symbols)} symbols in {(len(symbols)-1)//batch_size + 1} batches"
+        )
+
+    async def _start_trade_stream(self) -> None:
+        """Start trade updates stream."""
+        self.trade_updates_stream = TradingStream(
+            api_key=self.api_key,
+            secret_key=self.secret_key,
+        )
+
+        # Register order update handler (raw passthrough)
+        async def handle_trade_update(update: Any) -> None:
+            if self.on_order_update:
+                await self.on_order_update(update)
+
+        self.trade_updates_stream.subscribe_trade_updates(handle_trade_update)
+
+        # Start stream using native async _run_forever() instead of sync run()
+        asyncio.create_task(self.trade_updates_stream._run_forever())  # type: ignore[no-untyped-call]
+        self.trade_connected = True
+        logger.info("Trade stream connected")
+
+    async def stop(self) -> None:
+        """Stop both streams."""
+        if self.market_data_stream:
+            await self.market_data_stream.close()
+            self.market_connected = False
+
+        if self.trade_updates_stream:
+            await self.trade_updates_stream.close()
+            self.trade_connected = False
+
+        logger.info("Streams stopped")
+
+    async def reconnect_market_stream(self, symbols: list[str]) -> bool:
+        """Attempt to reconnect market stream with rate limit protection.
+
+        Args:
+            symbols: Symbols to resubscribe
+
+        Returns:
+            True if reconnected, False if max attempts exceeded
+        """
+        # Check if rate limited
+        if self.market_rate_limiter.is_limited:
+            logger.error("Market stream: Rate limit exceeded (HTTP 429), giving up")
+            if self.on_market_disconnect:
+                await self.on_market_disconnect()
+            return False
+
+        # Wait if in backoff period
+        if not self.market_rate_limiter.is_ready_to_retry():
+            backoff = self.market_rate_limiter.get_backoff_delay()
+            elapsed = time.time() - self.market_rate_limiter.last_failure_time
+            remaining = backoff - elapsed
+            logger.warning(f"Market stream: Rate limited, waiting {remaining:.1f}s before retry")
+            await asyncio.sleep(remaining)
 
         try:
-            # Start stream
-            await self._start_stream()
-
+            await self._start_market_stream(symbols)
+            self.market_rate_limiter.record_success()
+            logger.info("Market stream reconnected (rate limiter reset)")
+            return True
+        except ValueError as e:
+            if "429" in str(e) or "connection limit" in str(e).lower():
+                logger.warning("Market stream: HTTP 429 rate limit hit")
+                self.market_rate_limiter.record_failure()
+                # Don't immediately retry, let backoff kick in
+                return False
+            else:
+                logger.error(f"Market stream reconnect failed: {e}")
+                self.market_rate_limiter.record_failure()
+                return False
         except Exception as e:
-            self.logger.error(f"Fatal stream error: {e}", exc_info=e)
-            raise
-
-        finally:
-            # Cleanup
-            monitor_task.cancel()
-            try:
-                await monitor_task
-            except asyncio.CancelledError:
-                pass
-
-    async def stop(self):
-        """Stop the stream handler."""
-        self.logger.info("Stopping WebSocket stream")
-        self.running = False
-
-        try:
-            await self.stream.stop_ws()
-        except Exception as e:
-            self.logger.warning(f"Error stopping stream: {e}")
-
-    def reset_reconnect_count(self):
-        """Reset reconnect count after successful operation."""
-        if self.reconnect_count > 0:
-            self.logger.info(f"Resetting reconnect count (was {self.reconnect_count})")
-            self.reconnect_count = 0
+            logger.error(f"Market stream reconnect failed: {e}")
+            self.market_rate_limiter.record_failure()
+            return False

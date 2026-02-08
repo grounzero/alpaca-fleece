@@ -1,67 +1,81 @@
-# Editor / IDE
-.vscode/
-.idea/
-.claude/
+# Environment variables & secrets
+.env
+.env.local
+.env.*.local
 
 # Python
 __pycache__/
 *.py[cod]
+*$py.class
 *.so
-*.egg-info/
-.eggs/
-pip-log.txt
-pip-delete-this-directory.txt
-
-# Virtual environments
+.Python
+env/
 venv/
 .venv/
-env/
-ENV/
-
-# Environment variables
-.env
-.env.local
-.env.*.local
-!.env.example
-
-# Logs
-logs/
-*.log
-
-# Databases / runtime data
-*.db
-*.sqlite
-*.sqlite3
-data/*
-!data/.gitkeep
-
-# Test artifacts
-.pytest_cache/
+pip-log.txt
+pip-delete-this-directory.txt
 .tox/
 .coverage
+.coverage.*
+.cache
+nosetests.xml
 coverage.xml
-htmlcov/
+*.cover
 .hypothesis/
+.pytest_cache/
 
-# Type checking
-.mypy_cache/
-.dmypy.json
-dmypy.json
-
-# OS junk
+# IDE
+.vscode/
+.claude/
+.idea/
 *.swp
 *.swo
 *~
 .DS_Store
 Thumbs.db
-*.iml
-*.sublime-project
-*.sublime-workspace
 
-# Runtime safety files
-.kill_switch
-.circuit_breaker_tripped
+# SQLite
+*.db
+*.sqlite
+*.sqlite3
 
-# Build artifacts
-build/
+# Logs
+logs/
+*.log
+
+# Data
+data/reconciliation_error.json
+data/trades.db
+
+# Build
 dist/
+build/
+*.egg-info/
+
+# Node (if using uv)
+node_modules/
+.pnpm-store/
+
+# Generated
+.pytest_cache/
+htmlcov/
+
+# Bot specific
+nohup.out
+test_connection.py
+archive/
+
+# Agent contracts (documentation - not source code)
+agents/
+
+# Instantiated agents (per-project, not committed)
+.agents/
+
+# Runtime files
+data/*.pid
+
+docs/
+
+# Scripts directory (local utilities)
+scripts/
+

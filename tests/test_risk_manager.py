@@ -1,233 +1,321 @@
 """Tests for risk manager."""
+
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
+
 import pytest
-import asyncio
-from datetime import datetime, time
-from unittest.mock import AsyncMock, MagicMock, patch
-import pytz
 
-from src.risk_manager import RiskManager
-from src.config import Config
-from src.state_store import StateStore
+from src.data_handler import DataHandler
 from src.event_bus import SignalEvent
-from pathlib import Path
-import tempfile
+from src.risk_manager import RiskManager, RiskManagerError
 
 
-@pytest.fixture
-def state_store():
-    """Create temporary state store."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        store = StateStore(db_path)
-        yield store
-        store.close()
+@pytest.mark.asyncio
+async def test_risk_manager_refuses_on_kill_switch(mock_broker, state_store, config):
+    """Risk manager refuses to trade when kill-switch is active."""
+    # Setup
+    state_store.set_state("kill_switch", "true")
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
 
-
-@pytest.fixture
-def config():
-    """Create test configuration."""
-    return Config(
-        alpaca_api_key="test_key",
-        alpaca_secret_key="test_secret",
-        alpaca_paper=True,
-        allow_live_trading=False,
-        symbols=["AAPL", "MSFT"],
-        bar_timeframe="1Min",
-        stream_feed="iex",
-        max_position_pct=0.10,
-        max_daily_loss_pct=0.05,
-        max_trades_per_day=20,
-        sma_fast=10,
-        sma_slow=30,
-        dry_run=False,
-        allow_extended_hours=False,
-        log_level="INFO",
-        kill_switch=False,
-        circuit_breaker_reset=False,
-    )
-
-
-@pytest.fixture
-def broker_mock():
-    """Create mock broker."""
-    broker = AsyncMock()
-    broker.get_account = AsyncMock(return_value={
-        "equity": 10000.0,
-        "cash": 5000.0,
-        "buying_power": 10000.0,
-        "portfolio_value": 10000.0,
-        "trading_blocked": False,
-        "account_blocked": False,
-    })
-    return broker
-
-
-@pytest.fixture
-def risk_manager(config, state_store, broker_mock):
-    """Create risk manager instance."""
-    logger = MagicMock()
-    return RiskManager(config, state_store, broker_mock, logger)
-
-
-@pytest.fixture
-def signal():
-    """Create test signal."""
-    return SignalEvent(
+    signal = SignalEvent(
         symbol="AAPL",
-        side="buy",
-        strategy_name="test_strategy",
-        signal_timestamp=datetime.now(pytz.timezone("America/New_York")),
-        metadata={"close": 150.0},
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
     )
 
-
-@pytest.mark.asyncio
-async def test_validate_signal_success(risk_manager, signal):
-    """Test successful signal validation."""
-    is_valid, reason = await risk_manager.validate_signal(signal, 150.0)
-
-    assert is_valid is True
-    assert reason == "Validated"
+    # Should raise
+    with pytest.raises(RiskManagerError, match="Kill-switch active"):
+        await risk_mgr.check_signal(signal)
 
 
 @pytest.mark.asyncio
-async def test_validate_signal_kill_switch(risk_manager, signal, config):
-    """Test kill switch blocks signals."""
-    risk_manager.config = Config(
-        **{**config.__dict__, "kill_switch": True}
+async def test_risk_manager_refuses_on_circuit_breaker(mock_broker, state_store, config):
+    """Risk manager refuses to trade when circuit breaker is tripped."""
+    state_store.set_state("circuit_breaker_state", "tripped")
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
     )
 
-    is_valid, reason = await risk_manager.validate_signal(signal, 150.0)
-
-    assert is_valid is False
-    assert reason == "Kill switch activated"
+    with pytest.raises(RiskManagerError, match="Circuit breaker tripped"):
+        await risk_mgr.check_signal(signal)
 
 
 @pytest.mark.asyncio
-async def test_validate_signal_circuit_breaker(risk_manager, signal, state_store):
-    """Test circuit breaker blocks signals."""
-    state_store.set_circuit_breaker_state(tripped=True, failures=5)
+async def test_risk_manager_refuses_when_market_closed(mock_broker, state_store, config):
+    """Risk manager refuses when market is closed."""
+    # Setup broker to return market closed
+    mock_broker.get_clock.return_value = {
+        "is_open": False,
+        "next_open": None,
+        "next_close": None,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
 
-    is_valid, reason = await risk_manager.validate_signal(signal, 150.0)
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
 
-    assert is_valid is False
-    assert reason == "Circuit breaker tripped"
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
 
-
-@pytest.mark.asyncio
-async def test_validate_signal_daily_limit(risk_manager, signal, state_store):
-    """Test daily trade limit blocks signals."""
-    state_store.set_state("daily_trade_count", 20)
-
-    is_valid, reason = await risk_manager.validate_signal(signal, 150.0)
-
-    assert is_valid is False
-    assert "Daily trade limit reached" in reason
-
-
-@pytest.mark.asyncio
-async def test_validate_signal_market_hours(risk_manager, signal):
-    """Test market hours check."""
-    # Mock current time to be outside market hours
-    with patch("src.risk_manager.datetime") as mock_datetime:
-        # Set time to 8:00 AM ET (before market open)
-        mock_time = datetime(2024, 1, 15, 8, 0, 0)  # Monday
-        mock_datetime.now.return_value = pytz.timezone("America/New_York").localize(mock_time)
-        mock_datetime.side_effect = lambda *args, **kwargs: datetime(*args, **kwargs)
-
-        # Force re-check
-        result = risk_manager.is_market_hours()
-
-        # Since we're mocking, the result depends on implementation
-        # For this test, we just verify the method runs
-        assert isinstance(result, bool)
-
-
-def test_calculate_qty(risk_manager):
-    """Test position quantity calculation."""
-    equity = 10000.0
-    price = 100.0
-
-    qty = risk_manager.calculate_qty(equity, price)
-
-    # max_position_pct = 0.10
-    # max_value = 10000 * 0.10 = 1000
-    # qty = 1000 / 100 = 10
-    assert qty == 10
-
-
-def test_calculate_qty_zero_price(risk_manager):
-    """Test quantity calculation with zero price."""
-    qty = risk_manager.calculate_qty(10000.0, 0.0)
-    assert qty == 0
-
-
-def test_circuit_breaker_trip(risk_manager, state_store):
-    """Test circuit breaker trip."""
-    # Record failures
-    for _ in range(4):
-        risk_manager.record_failure()
-
-    state = state_store.get_circuit_breaker_state()
-    assert state["tripped"] is False
-    assert state["failures"] == 4
-
-    # Fifth failure should trip
-    risk_manager.record_failure()
-
-    state = state_store.get_circuit_breaker_state()
-    assert state["tripped"] is True
-    assert state["failures"] == 5
-
-
-def test_circuit_breaker_reset(risk_manager, state_store):
-    """Test circuit breaker manual reset."""
-    state_store.set_circuit_breaker_state(tripped=True, failures=5)
-
-    risk_manager.reset_circuit_breaker()
-
-    state = state_store.get_circuit_breaker_state()
-    assert state["tripped"] is False
-    assert state["failures"] == 0
-
-
-def test_circuit_breaker_persistence(state_store):
-    """Test circuit breaker state persists across restarts."""
-    # Set circuit breaker state
-    state_store.set_circuit_breaker_state(tripped=True, failures=5)
-
-    # Close and reopen database (simulating restart)
-    db_path = state_store.db_path
-    state_store.close()
-
-    state_store2 = StateStore(db_path)
-    state = state_store2.get_circuit_breaker_state()
-
-    assert state["tripped"] is True
-    assert state["failures"] == 5
-
-    state_store2.close()
+    with pytest.raises(RiskManagerError, match="Market not open"):
+        await risk_mgr.check_signal(signal)
 
 
 @pytest.mark.asyncio
-async def test_validate_signal_kill_switch_file(config, state_store, broker_mock, signal):
-    """Test kill switch FILE blocks signals (not just env var).
+async def test_risk_manager_refuses_when_daily_loss_exceeded(mock_broker, state_store, config):
+    """Risk manager refuses when daily loss limit exceeded."""
+    # Setup: equity $10k, max daily loss 5%, so max loss is $500
+    # Set daily PnL to -$600 (exceeds limit)
+    state_store.set_state("daily_pnl", "-600.0")
 
-    This is a CRITICAL safety test. The kill switch file should be checked
-    dynamically at runtime, not just at startup.
-    """
-    from unittest.mock import patch
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
 
-    logger = MagicMock()
-    risk_manager = RiskManager(config, state_store, broker_mock, logger)
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
 
-    # Mock the kill switch file to exist
-    with patch("src.risk_manager.Path") as mock_path:
-        mock_file = MagicMock()
-        mock_file.exists.return_value = True
-        mock_path.return_value.__truediv__.return_value = mock_file
+    with pytest.raises(RiskManagerError, match="Daily loss limit exceeded"):
+        await risk_mgr.check_signal(signal)
 
-        is_valid, reason = await risk_manager.validate_signal(signal, 150.0)
 
-        assert is_valid is False
-        assert reason == "Kill switch activated"
+@pytest.mark.asyncio
+async def test_risk_manager_refuses_when_daily_trade_count_exceeded(
+    mock_broker, state_store, config
+):
+    """Risk manager refuses when daily trade count exceeded."""
+    # Config allows 20 trades/day
+    state_store.set_state("daily_trade_count", "20")
+
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
+
+    with pytest.raises(RiskManagerError, match="Daily trade count exceeded"):
+        await risk_mgr.check_signal(signal)
+
+
+@pytest.mark.asyncio
+async def test_risk_manager_refuses_spread_too_wide(mock_broker, state_store, config):
+    """Risk manager refuses when spread exceeds max_spread_pct."""
+    # Config max_spread_pct: 0.5%, bid=$100, ask=$100.10 (0.1%)
+    # Create spread too wide: bid=$100, ask=$100.60 (0.6%)
+    data_handler = MagicMock(spec=DataHandler)
+    data_handler.get_snapshot.return_value = {
+        "bid": 100.0,
+        "ask": 100.60,
+        "bid_size": 100,
+        "ask_size": 100,
+    }
+
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
+
+    # Should skip (return False), not error
+    result = await risk_mgr.check_signal(signal)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_risk_manager_refuses_if_spread_fetch_fails(mock_broker, state_store, config):
+    """Risk manager REFUSES (does not bypass) if spread filter enabled but snapshot fetch fails."""
+    # Spread filter enabled (max_spread_pct=0.005)
+    # Snapshot fetch returns None
+    data_handler = MagicMock(spec=DataHandler)
+    data_handler.get_snapshot.return_value = None
+
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
+
+    # Must refuse (raise), not bypass
+    with pytest.raises(RiskManagerError, match="snapshot unavailable"):
+        await risk_mgr.check_signal(signal)
+
+
+@pytest.mark.asyncio
+async def test_risk_manager_skips_on_low_bar_trades(mock_broker, state_store, config):
+    """Risk manager skips signal if bar trade count too low."""
+    # Config min_bar_trades: 10, set to 5
+    data_handler = MagicMock(spec=DataHandler)
+    data_handler.get_snapshot.return_value = {
+        "bid": 100.0,
+        "ask": 100.1,
+    }
+
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "open": [100.0],
+            "high": [101.0],
+            "low": [99.0],
+            "close": [100.5],
+            "volume": [1000],
+            "trade_count": [5],  # Below min_bar_trades (10)
+        }
+    )
+    data_handler.get_dataframe.return_value = df
+
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
+
+    # Should skip (return False)
+    result = await risk_mgr.check_signal(signal)
+    assert result is False
+
+
+@pytest.mark.asyncio
+async def test_risk_manager_passes_all_checks(mock_broker, state_store, config):
+    """Risk manager passes when all checks pass."""
+    data_handler = MagicMock(spec=DataHandler)
+    data_handler.get_snapshot.return_value = {
+        "bid": 100.0,
+        "ask": 100.1,
+    }
+
+    import pandas as pd
+
+    df = pd.DataFrame(
+        {
+            "trade_count": [15],  # Above minimum
+        }
+    )
+    data_handler.get_dataframe.return_value = df
+
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    signal = SignalEvent(
+        symbol="AAPL",
+        signal_type="BUY",
+        timestamp=datetime.now(timezone.utc),
+        metadata={},
+    )
+
+    # Should pass
+    result = await risk_mgr.check_signal(signal)
+    assert result is True
+
+
+# =============================================================================
+# Exit Order Tests (check_exit_order)
+# =============================================================================
+
+
+@pytest.mark.asyncio
+async def test_check_exit_order_passes_when_market_open(mock_broker, state_store, config):
+    """Exit order validation passes when market is open."""
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    result = await risk_mgr.check_exit_order("AAPL", "sell", 10.0)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_check_exit_order_blocked_when_market_closed(mock_broker, state_store, config):
+    """Exit orders blocked when market closed."""
+    mock_broker.get_clock.return_value = {
+        "is_open": False,
+        "next_open": None,
+        "next_close": None,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    with pytest.raises(RiskManagerError, match="Market not open"):
+        await risk_mgr.check_exit_order("AAPL", "sell", 10.0)
+
+
+@pytest.mark.asyncio
+async def test_check_exit_order_blocked_on_kill_switch(mock_broker, state_store, config):
+    """Exit orders blocked when kill switch active."""
+    state_store.set_state("kill_switch", "true")
+
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    with pytest.raises(RiskManagerError, match="Kill-switch active"):
+        await risk_mgr.check_exit_order("AAPL", "sell", 10.0)
+
+
+@pytest.mark.asyncio
+async def test_check_exit_order_skips_position_size_check(mock_broker, state_store, config):
+    """Exit order validation skips position size checks."""
+    # Set up a scenario that would fail position size for entry
+    # But should pass for exit
+    state_store.set_state("daily_trade_count", "20")  # Would fail entry
+
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    # Exit order should still pass (no daily trade count check)
+    result = await risk_mgr.check_exit_order("AAPL", "sell", 10.0)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_check_exit_order_skips_spread_filter(mock_broker, state_store, config):
+    """Exit order validation skips spread filter."""
+    # Spread filter would fail for entry if snapshot returns None
+    data_handler = MagicMock(spec=DataHandler)
+    data_handler.get_snapshot.return_value = None  # Would fail entry
+
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    # Exit order should still pass (no spread check)
+    result = await risk_mgr.check_exit_order("AAPL", "sell", 10.0)
+    assert result is True
+
+
+@pytest.mark.asyncio
+async def test_check_exit_order_validates_during_extended_hours(mock_broker, state_store, config):
+    """Exit order validation works during extended hours for crypto."""
+    # Add crypto symbol to config
+    config["symbols"]["crypto_symbols"] = ["BTCUSD"]
+
+    data_handler = MagicMock(spec=DataHandler)
+    risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
+
+    result = await risk_mgr.check_exit_order("BTCUSD", "sell", 0.5)
+    assert result is True

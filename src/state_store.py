@@ -1,90 +1,177 @@
-"""SQLite persistence for bot state."""
+"""SQLite state store - schema and basic queries.
+
+Provides a crash-safe persistence layer for order intents, trades, equity curve,
+and bot state. All financial values use NUMERIC for precision.
+"""
+
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
-import json
+from typing import Optional, TypedDict
+
+
+class OrderIntentRow(TypedDict, total=False):
+    """Order intent row from database."""
+
+    client_order_id: str
+    symbol: str
+    side: str
+    qty: float
+    status: str
+    filled_qty: float
+    alpaca_order_id: Optional[str]
+
+
+class StateStoreError(Exception):
+    """Raised when state store operation fails."""
+
+    pass
 
 
 class StateStore:
-    """Manage persistent state in SQLite."""
+    """SQLite state persistence."""
 
-    def __init__(self, db_path: Path = None):
-        """
-        Initialize state store.
+    def __init__(self, db_path: str) -> None:
+        """Initialise state store.
 
         Args:
-            db_path: Path to SQLite database file (default: data/bot_state.db)
+            db_path: Path to SQLite database
         """
-        if db_path is None:
-            db_path = Path(__file__).parent.parent / "data" / "bot_state.db"
-
-        db_path.parent.mkdir(exist_ok=True)
         self.db_path = db_path
-        self.conn = sqlite3.connect(str(db_path), check_same_thread=False)
-        self.conn.row_factory = sqlite3.Row
-        self._init_schema()
+        Path(self.db_path).parent.mkdir(parents=True, exist_ok=True)
+        self.init_schema()
 
-    def _init_schema(self):
-        """Create tables if they don't exist."""
-        cursor = self.conn.cursor()
+    def init_schema(self) -> None:
+        """Create tables if they don't exist.
 
-        # Order intents table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS order_intents (
-                client_order_id TEXT PRIMARY KEY,
-                symbol TEXT NOT NULL,
-                side TEXT NOT NULL,
-                qty REAL NOT NULL,
-                status TEXT NOT NULL,
-                filled_qty REAL DEFAULT 0,
-                alpaca_order_id TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+        Uses NUMERIC(10,4) for financial values (qty, price) to avoid
+        floating-point precision errors common with REAL.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+
+            # Order intents table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS order_intents (
+                    client_order_id TEXT PRIMARY KEY,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    qty NUMERIC(10, 4) NOT NULL,
+                    status TEXT NOT NULL,
+                    filled_qty NUMERIC(10, 4) DEFAULT 0,
+                    alpaca_order_id TEXT,
+                    created_at_utc TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                )
+            """)
+
+            # Trades table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS trades (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_utc TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    side TEXT NOT NULL,
+                    qty NUMERIC(10, 4) NOT NULL,
+                    price NUMERIC(10, 4) NOT NULL,
+                    order_id TEXT NOT NULL,
+                    client_order_id TEXT NOT NULL
+                )
+            """)
+
+            # Equity curve table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS equity_curve (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_utc TEXT NOT NULL,
+                    equity NUMERIC(12, 2) NOT NULL,
+                    daily_pnl NUMERIC(12, 2) NOT NULL
+                )
+            """)
+
+            # Bot state table (key-value)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bot_state (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL,
+                    updated_at_utc TEXT NOT NULL
+                )
+            """)
+
+            # Bars table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS bars (
+                    symbol TEXT NOT NULL,
+                    timeframe TEXT NOT NULL,
+                    timestamp_utc TEXT NOT NULL,
+                    open NUMERIC(10, 4), high NUMERIC(10, 4), low NUMERIC(10, 4), close NUMERIC(10, 4),
+                    volume INTEGER, trade_count INTEGER, vwap NUMERIC(10, 4),
+                    PRIMARY KEY (symbol, timeframe, timestamp_utc)
+                )
+            """)
+
+            # Positions snapshot table
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS positions_snapshot (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    timestamp_utc TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    qty NUMERIC(10, 4) NOT NULL,
+                    avg_entry_price NUMERIC(10, 4) NOT NULL
+                )
+            """)
+
+            # Create indexes for frequently queried columns
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_order_intents_status 
+                ON order_intents(status)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_order_intents_symbol 
+                ON order_intents(symbol)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_trades_symbol_timestamp 
+                ON trades(symbol, timestamp_utc)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_bars_symbol_timestamp 
+                ON bars(symbol, timestamp_utc)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_positions_snapshot_timestamp 
+                ON positions_snapshot(timestamp_utc)
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_equity_curve_timestamp 
+                ON equity_curve(timestamp_utc)
+            """)
+
+            conn.commit()
+
+    def get_state(self, key: str) -> Optional[str]:
+        """Get state value by key."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
+            row = cursor.fetchone()
+            return row[0] if row else None
+
+    def set_state(self, key: str, value: str) -> None:
+        """Set state value."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT OR REPLACE INTO bot_state (key, value, updated_at_utc) VALUES (?, ?, ?)",
+                (key, value, now),
             )
-        """)
-
-        # Trades table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS trades (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                symbol TEXT NOT NULL,
-                side TEXT NOT NULL,
-                qty REAL NOT NULL,
-                price REAL NOT NULL,
-                order_id TEXT,
-                client_order_id TEXT NOT NULL,
-                FOREIGN KEY (client_order_id) REFERENCES order_intents(client_order_id)
-            )
-        """)
-
-        # Equity curve table
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS equity_curve (
-                id INTEGER PRIMARY KEY AUTOINCREMENT,
-                timestamp TEXT NOT NULL,
-                equity REAL NOT NULL,
-                daily_pnl REAL
-            )
-        """)
-
-        # Bot state table (key-value store)
-        cursor.execute("""
-            CREATE TABLE IF NOT EXISTS bot_state (
-                key TEXT PRIMARY KEY,
-                value TEXT NOT NULL,
-                updated_at TEXT NOT NULL
-            )
-        """)
-
-        # Create indices
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_timestamp ON trades(timestamp)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_trades_symbol ON trades(symbol)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_equity_timestamp ON equity_curve(timestamp)")
-        cursor.execute("CREATE INDEX IF NOT EXISTS idx_order_intents_symbol ON order_intents(symbol)")
-
-        self.conn.commit()
+            conn.commit()
 
     def save_order_intent(
         self,
@@ -92,168 +179,143 @@ class StateStore:
         symbol: str,
         side: str,
         qty: float,
-        status: str = "pending",
-        alpaca_order_id: Optional[str] = None,
-    ):
-        """Save order intent to database."""
-        cursor = self.conn.cursor()
-        now = datetime.utcnow().isoformat()
+        status: str = "new",
+    ) -> None:
+        """Save order intent before submission (crash safety)."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO order_intents 
+                   (client_order_id, symbol, side, qty, status, created_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (client_order_id, symbol, side, qty, status, now, now),
+            )
+            conn.commit()
 
-        cursor.execute("""
-            INSERT OR REPLACE INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        """, (client_order_id, symbol, side, qty, status, alpaca_order_id, now, now))
-
-        self.conn.commit()
-
-    def update_order_status(
+    def update_order_intent(
         self,
         client_order_id: str,
         status: str,
-        filled_qty: Optional[float] = None,
+        filled_qty: float,
         alpaca_order_id: Optional[str] = None,
-    ):
-        """Update order status."""
-        cursor = self.conn.cursor()
-        now = datetime.utcnow().isoformat()
+    ) -> None:
+        """Update order intent after status change."""
+        now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """UPDATE order_intents 
+                   SET status = ?, filled_qty = ?, alpaca_order_id = ?, updated_at_utc = ?
+                   WHERE client_order_id = ?""",
+                (status, filled_qty, alpaca_order_id, now, client_order_id),
+            )
+            conn.commit()
 
-        if filled_qty is not None:
-            cursor.execute("""
-                UPDATE order_intents
-                SET status = ?, filled_qty = ?, alpaca_order_id = COALESCE(?, alpaca_order_id), updated_at = ?
-                WHERE client_order_id = ?
-            """, (status, filled_qty, alpaca_order_id, now, client_order_id))
-        else:
-            cursor.execute("""
-                UPDATE order_intents
-                SET status = ?, alpaca_order_id = COALESCE(?, alpaca_order_id), updated_at = ?
-                WHERE client_order_id = ?
-            """, (status, alpaca_order_id, now, client_order_id))
-
-        self.conn.commit()
-
-    def get_order_intent(self, client_order_id: str) -> Optional[Dict[str, Any]]:
+    def get_order_intent(self, client_order_id: str) -> Optional[dict[str, object]]:
         """Get order intent by client_order_id."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT * FROM order_intents WHERE client_order_id = ?", (client_order_id,))
-        row = cursor.fetchone()
-        return dict(row) if row else None
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
+                (client_order_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "client_order_id": row[0],
+                    "symbol": row[1],
+                    "side": row[2],
+                    "qty": row[3],
+                    "status": row[4],
+                    "filled_qty": row[5],
+                    "alpaca_order_id": row[6],
+                }
+            return None
 
-    def order_exists(self, client_order_id: str) -> bool:
-        """Check if order intent exists."""
-        return self.get_order_intent(client_order_id) is not None
+    def get_all_order_intents(self, status: Optional[str] = None) -> list[OrderIntentRow]:
+        """Get all order intents, optionally filtered by status.
 
-    def save_trade(
-        self,
-        symbol: str,
-        side: str,
-        qty: float,
-        price: float,
-        client_order_id: str,
-        order_id: Optional[str] = None,
-    ):
-        """Save trade to database."""
-        cursor = self.conn.cursor()
-        now = datetime.utcnow().isoformat()
+        Args:
+            status: Optional status filter (e.g., 'new', 'submitted', 'filled')
 
-        cursor.execute("""
-            INSERT INTO trades (timestamp, symbol, side, qty, price, order_id, client_order_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
-        """, (now, symbol, side, qty, price, order_id, client_order_id))
+        Returns:
+            List of order intent rows
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            if status:
+                cursor.execute(
+                    "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents WHERE status = ?",
+                    (status,),
+                )
+            else:
+                cursor.execute(
+                    "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents"
+                )
 
-        self.conn.commit()
+            rows = cursor.fetchall()
+            return [
+                {
+                    "client_order_id": row[0],
+                    "symbol": row[1],
+                    "side": row[2],
+                    "qty": row[3],
+                    "status": row[4],
+                    "filled_qty": row[5],
+                    "alpaca_order_id": row[6],
+                }
+                for row in rows
+            ]
 
-    def save_equity(self, equity: float, daily_pnl: Optional[float] = None):
-        """Save equity snapshot."""
-        cursor = self.conn.cursor()
-        now = datetime.utcnow().isoformat()
+    # Win #3: Daily Limits & Circuit Breaker Persistence
 
-        cursor.execute("""
-            INSERT INTO equity_curve (timestamp, equity, daily_pnl)
-            VALUES (?, ?, ?)
-        """, (now, equity, daily_pnl))
+    def save_circuit_breaker_count(self, count: int) -> None:
+        """Persist circuit breaker failure count (Win #3)."""
+        self.set_state("circuit_breaker_count", str(count))
 
-        self.conn.commit()
+    def get_circuit_breaker_count(self) -> int:
+        """Load circuit breaker failure count from DB (Win #3)."""
+        value = self.get_state("circuit_breaker_count")
+        return int(value) if value else 0
 
-    def get_state(self, key: str) -> Optional[str]:
-        """Get state value by key."""
-        cursor = self.conn.cursor()
-        cursor.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
-        row = cursor.fetchone()
-        return row["value"] if row else None
+    def save_daily_pnl(self, pnl: float) -> None:
+        """Persist daily P&L across restarts (Win #3)."""
+        self.set_state("daily_pnl", str(pnl))
 
-    def set_state(self, key: str, value: Any):
-        """Set state value (stored as JSON string)."""
-        cursor = self.conn.cursor()
-        now = datetime.utcnow().isoformat()
+    def get_daily_pnl(self) -> float:
+        """Load daily P&L from DB (Win #3)."""
+        value = self.get_state("daily_pnl")
+        return float(value) if value else 0.0
 
-        # Convert value to JSON string
-        value_str = json.dumps(value) if not isinstance(value, str) else value
-
-        cursor.execute("""
-            INSERT OR REPLACE INTO bot_state (key, value, updated_at)
-            VALUES (?, ?, ?)
-        """, (key, value_str, now))
-
-        self.conn.commit()
-
-    def delete_state(self, key: str):
-        """Delete state by key."""
-        cursor = self.conn.cursor()
-        cursor.execute("DELETE FROM bot_state WHERE key = ?", (key,))
-        self.conn.commit()
+    def save_daily_trade_count(self, count: int) -> None:
+        """Persist daily trade count across restarts (Win #3)."""
+        self.set_state("daily_trade_count", str(count))
 
     def get_daily_trade_count(self) -> int:
-        """Get daily trade count."""
+        """Load daily trade count from DB (Win #3)."""
         value = self.get_state("daily_trade_count")
         return int(value) if value else 0
 
-    def increment_daily_trade_count(self):
-        """Increment daily trade count."""
-        count = self.get_daily_trade_count()
-        self.set_state("daily_trade_count", count + 1)
+    def save_last_signal(
+        self, symbol: str, signal_type: str, sma_period: tuple[int, int] = (10, 30)
+    ) -> None:
+        """Persist last signal per symbol per SMA period (Win #3).
 
-    def reset_daily_trade_count(self):
-        """Reset daily trade count to zero."""
-        self.set_state("daily_trade_count", 0)
+        Args:
+            symbol: Stock symbol (e.g., 'AAPL')
+            signal_type: 'BUY' or 'SELL'
+            sma_period: (fast, slow) tuple
+        """
+        key = f"last_signal:{symbol}:{sma_period[0]}:{sma_period[1]}"
+        self.set_state(key, signal_type)
 
-    def get_circuit_breaker_state(self) -> Dict[str, Any]:
-        """Get circuit breaker state."""
-        state = self.get_state("circuit_breaker_state")
-        if state:
-            return json.loads(state)
-        return {"tripped": False, "failures": 0}
+    def get_last_signal(self, symbol: str, sma_period: tuple[int, int] = (10, 30)) -> Optional[str]:
+        """Load last signal per symbol per SMA period (Win #3)."""
+        key = f"last_signal:{symbol}:{sma_period[0]}:{sma_period[1]}"
+        return self.get_state(key)
 
-    def set_circuit_breaker_state(self, tripped: bool, failures: int):
-        """Set circuit breaker state."""
-        self.set_state("circuit_breaker_state", {
-            "tripped": tripped,
-            "failures": failures,
-        })
-
-    def reset_circuit_breaker(self):
-        """Reset circuit breaker."""
-        self.set_circuit_breaker_state(tripped=False, failures=0)
-
-    def get_last_signal(self, symbol: str) -> Optional[str]:
-        """Get last signal for symbol (BUY, SELL, or None)."""
-        return self.get_state(f"last_signal:{symbol}")
-
-    def set_last_signal(self, symbol: str, signal: str):
-        """Set last signal for symbol."""
-        self.set_state(f"last_signal:{symbol}", signal)
-
-    def get_recent_trades(self, limit: int = 100) -> List[Dict[str, Any]]:
-        """Get recent trades."""
-        cursor = self.conn.cursor()
-        cursor.execute("""
-            SELECT * FROM trades
-            ORDER BY timestamp DESC
-            LIMIT ?
-        """, (limit,))
-        return [dict(row) for row in cursor.fetchall()]
-
-    def close(self):
-        """Close database connection."""
-        self.conn.close()
+    def reset_daily_state(self) -> None:
+        """Reset daily limits at market open (Win #3)."""
+        self.save_daily_pnl(0.0)
+        self.save_daily_trade_count(0)

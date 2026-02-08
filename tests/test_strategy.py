@@ -1,164 +1,239 @@
-"""Tests for SMA crossover strategy."""
-import pytest
+"""Tests for strategy signal generation."""
+
+from datetime import datetime, timedelta, timezone
+
 import pandas as pd
-from datetime import datetime, timedelta
-from src.strategy.sma_crossover import SMACrossoverStrategy
-from src.state_store import StateStore
-from pathlib import Path
-import tempfile
+import pytest
+
+from src.event_bus import SignalEvent
+from src.strategy.sma_crossover import SMACrossover
 
 
-@pytest.fixture
-def state_store():
-    """Create temporary state store."""
-    with tempfile.TemporaryDirectory() as tmpdir:
-        db_path = Path(tmpdir) / "test.db"
-        store = StateStore(db_path)
-        yield store
-        store.close()
+def create_price_series(prices: list, symbol: str = "AAPL") -> pd.DataFrame:
+    """Create a price DataFrame for testing.
 
+    Args:
+        prices: List of closing prices
+        symbol: Symbol name (for index naming)
 
-@pytest.fixture
-def strategy(state_store):
-    """Create strategy instance."""
-    return SMACrossoverStrategy(fast_period=5, slow_period=10, state_store=state_store)
-
-
-def create_price_series(prices, start_date=None):
-    """Create DataFrame with price series."""
-    if start_date is None:
-        start_date = datetime(2024, 1, 1, 9, 30)
-
-    data = []
-    for i, price in enumerate(prices):
-        timestamp = start_date + timedelta(minutes=i)
-        data.append({
-            "timestamp": timestamp,
-            "open": price,
-            "high": price,
-            "low": price,
-            "close": price,
-            "volume": 1000,
-        })
-
-    df = pd.DataFrame(data)
-    df.set_index("timestamp", inplace=True)
-    return df
-
-
-def test_strategy_requires_history(strategy):
-    """Test strategy requires sufficient history."""
-    assert strategy.get_required_history() == 12  # slow_period + 2
-
-
-def test_strategy_no_signal_insufficient_data(strategy):
-    """Test no signal with insufficient data."""
-    prices = [100, 101, 102]
-    df = create_price_series(prices)
-
-    signal = strategy.on_bar("AAPL", df)
-
-    assert signal is None
-
-
-def test_strategy_bullish_crossover(strategy):
-    """Test bullish crossover generates BUY signal."""
-    # Create prices where fast SMA crosses above slow SMA
-    # Start with declining prices, then rally
-    prices = [100] * 10 + [95, 90, 85, 85, 90, 95, 100, 105, 110, 115, 120]
-
-    df = create_price_series(prices)
-
-    # Process bars until crossover
-    signal = None
-    for i in range(strategy.get_required_history(), len(df)):
-        signal = strategy.on_bar("AAPL", df.iloc[:i+1])
-        if signal:
-            break
-
-    assert signal is not None
-    assert signal.side == "buy"
-    assert signal.symbol == "AAPL"
-    assert signal.strategy_name == "SMA_Crossover"
-
-
-def test_strategy_bearish_crossover(strategy):
-    """Test bearish crossover generates SELL signal."""
-    # Create prices where fast SMA crosses below slow SMA
-    # Start with rally, then decline
-    prices = [100] * 10 + [105, 110, 115, 115, 110, 105, 100, 95, 90, 85, 80]
-
-    df = create_price_series(prices)
-
-    # Process bars until crossover
-    signal = None
-    for i in range(strategy.get_required_history(), len(df)):
-        signal = strategy.on_bar("AAPL", df.iloc[:i+1])
-        if signal:
-            break
-
-    assert signal is not None
-    assert signal.side == "sell"
-    assert signal.symbol == "AAPL"
-    assert signal.strategy_name == "SMA_Crossover"
-
-
-def test_strategy_no_signal_when_fast_above_slow(strategy):
-    """Test no signal when fast > slow but no crossover."""
-    # Fast already above slow, no crossover
-    prices = [100, 101, 102, 103, 104, 105, 106, 107, 108, 109, 110, 111, 112]
-
-    df = create_price_series(prices)
-
-    signal = strategy.on_bar("AAPL", df)
-
-    # Should be None because no crossover occurred
-    # (fast was already above slow from the start)
-    assert signal is None
-
-
-def test_strategy_no_duplicate_signals(strategy, state_store):
-    """Test strategy does not emit duplicate consecutive signals."""
-    # Create bullish crossover
-    prices = [100] * 10 + [95, 90, 85, 85, 90, 95, 100, 105, 110, 115, 120, 121, 122]
-
-    df = create_price_series(prices)
-
-    signals = []
-    for i in range(strategy.get_required_history(), len(df)):
-        signal = strategy.on_bar("AAPL", df.iloc[:i+1])
-        if signal:
-            signals.append(signal)
-
-    # Should only get one BUY signal despite fast staying above slow
-    assert len(signals) == 1
-    assert signals[0].side == "buy"
-
-    # Verify last signal is stored
-    last_signal = state_store.get_last_signal("AAPL")
-    assert last_signal == "BUY"
-
-
-def test_strategy_alternate_signals(strategy, state_store):
-    """Test strategy can alternate between BUY and SELL."""
-    # Create prices with multiple crossovers
-    prices = (
-        [100] * 10 +  # Baseline
-        [95, 90, 85, 90, 95, 100, 105, 110] +  # Rally (bullish crossover)
-        [105, 100, 95, 90, 85, 80, 75, 70] +  # Decline (bearish crossover)
-        [75, 80, 85, 90, 95, 100, 105, 110]  # Rally again (bullish crossover)
+    Returns:
+        DataFrame with OHLCV columns
+    """
+    start_time = datetime(2024, 1, 1, 10, 0, tzinfo=timezone.utc)
+    return pd.DataFrame(
+        {
+            "open": prices,
+            "high": [p * 1.01 for p in prices],
+            "low": [p * 0.99 for p in prices],
+            "close": prices,
+            "volume": [1000] * len(prices),
+        },
+        index=pd.DatetimeIndex([start_time + timedelta(minutes=i) for i in range(len(prices))]),
     )
 
+
+# Test data pattern that reliably generates SMA crossovers
+# Requires 51+ bars for SMA(20,50) warmup
+# Pattern: baseline → decline → rally → decline → rally
+RELIABLE_CROSSOVER_PRICES = (
+    [150] * 25  # Baseline: fast SMA > slow SMA
+    +
+    # Gradual decline: fast crosses below slow (generates SELL)
+    [140, 135, 130, 125, 120, 115, 110, 105, 100, 95, 90, 85, 80, 75, 70]
+    +
+    # Gradual rally: fast crosses above slow (generates BUY)
+    [75, 80, 85, 90, 95, 100, 105, 110, 115, 120, 125, 130, 135, 140, 145]
+    +
+    # Another decline: fast crosses below slow (generates SELL)
+    [140, 135, 130, 125, 120, 115, 110, 105, 100, 95]
+    +
+    # Another rally: fast crosses above slow (generates BUY)
+    [100, 105, 110, 115, 120, 125, 130, 135, 140, 145]
+)
+
+# Inverse pattern for bearish test: low baseline → rally → decline
+INVERSE_CROSSOVER_PRICES = (
+    [100] * 25  # Low baseline: fast SMA < slow SMA
+    +
+    # Gradual rally: fast crosses above slow (generates BUY)
+    [105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175]
+    +
+    # Gradual decline: fast crosses below slow (generates SELL)
+    [170, 165, 160, 155, 150, 145, 140, 135, 130, 125, 120, 115, 110, 105, 100]
+    +
+    # Another rally: fast crosses above slow (generates BUY)
+    [105, 110, 115, 120, 125, 130, 135, 140, 145, 150]
+    +
+    # Another decline: fast crosses below slow (generates SELL)
+    [145, 140, 135, 130, 125, 120, 115, 110, 105, 100]
+)
+
+
+@pytest.mark.asyncio
+async def test_strategy_bullish_crossover(state_store):
+    """Test bullish crossover generates BUY signal with deterministic data."""
+    strategy = SMACrossover(state_store)
+
+    # Use reliable crossover pattern (75 bars, needs 51 for SMA(20,50))
+    prices = RELIABLE_CROSSOVER_PRICES
+
     df = create_price_series(prices)
 
-    signals = []
+    # Process all bars and collect signals
+    all_signals = []
     for i in range(strategy.get_required_history(), len(df)):
-        signal = strategy.on_bar("AAPL", df.iloc[:i+1])
-        if signal:
-            signals.append(signal.side)
+        signals = await strategy.on_bar("AAPL", df.iloc[: i + 1])
+        all_signals.extend(signals)
 
-    # Should get alternating signals
-    assert len(signals) >= 2
-    # Signals should alternate
-    for i in range(len(signals) - 1):
-        assert signals[i] != signals[i + 1]
+    # Should get multiple signals including at least one BUY
+    assert (
+        len(all_signals) >= 2
+    ), f"Expected at least 2 signals, got {len(all_signals)}: {[s.signal_type for s in all_signals]}"
+
+    # Verify we have BUY signals
+    buy_signals = [s for s in all_signals if s.signal_type == "BUY"]
+    assert (
+        len(buy_signals) >= 1
+    ), f"Expected at least 1 BUY signal, got {[s.signal_type for s in all_signals]}"
+
+    # Verify signal properties
+    assert buy_signals[0].symbol == "AAPL"
+    assert "confidence" in buy_signals[0].metadata
+
+
+@pytest.mark.asyncio
+async def test_strategy_bearish_crossover(state_store):
+    """Test bearish crossover generates SELL signal with deterministic data."""
+    strategy = SMACrossover(state_store)
+
+    # Use inverse pattern that starts low and rallies first
+    prices = INVERSE_CROSSOVER_PRICES
+
+    df = create_price_series(prices)
+
+    # Process all bars and collect signals
+    all_signals = []
+    for i in range(strategy.get_required_history(), len(df)):
+        signals = await strategy.on_bar("AAPL", df.iloc[: i + 1])
+        all_signals.extend(signals)
+
+    # Should get multiple signals including at least one SELL
+    assert (
+        len(all_signals) >= 2
+    ), f"Expected at least 2 signals, got {len(all_signals)}: {[s.signal_type for s in all_signals]}"
+
+    # Verify we have SELL signals
+    sell_signals = [s for s in all_signals if s.signal_type == "SELL"]
+    assert (
+        len(sell_signals) >= 1
+    ), f"Expected at least 1 SELL signal, got {[s.signal_type for s in all_signals]}"
+
+    # Verify signal properties
+    assert sell_signals[0].symbol == "AAPL"
+    assert "confidence" in sell_signals[0].metadata
+
+
+@pytest.mark.asyncio
+async def test_sma_crossover_prevents_duplicate_consecutive_signals(state_store):
+    """Strategy should not emit duplicate consecutive signals."""
+    strategy = SMACrossover(state_store)
+
+    # Create uptrend data
+    df = pd.DataFrame(
+        {
+            "close": list(range(100, 130)),
+        },
+        index=pd.DatetimeIndex(
+            [datetime(2024, 1, 1, 10, i, tzinfo=timezone.utc) for i in range(30)]
+        ),
+    )
+
+    # First signal
+    signals1 = await strategy.on_bar("AAPL", df)
+
+    # Same data again (no crossover)
+    signals2 = await strategy.on_bar("AAPL", df)
+
+    # Second call should not emit duplicate signals
+    # (same SMA period and direction)
+    if signals1 and signals2:
+        for s1 in signals1:
+            for s2 in signals2:
+                if s1.metadata["sma_period"] == s2.metadata["sma_period"]:
+                    # Same SMA period shouldn't repeat same signal
+                    assert not (s1.signal_type == s2.signal_type)
+
+
+@pytest.mark.asyncio
+async def test_sma_crossover_no_signal_without_crossover(state_store):
+    """Strategy should not emit signal if no crossover occurs."""
+    strategy = SMACrossover(state_store)
+
+    # Create flat data - no crossover possible (SMAs will be equal/parallel)
+    prices = [100.0] * 100  # Flat line - no cross
+    df = create_price_series(prices)
+
+    signals = await strategy.on_bar("AAPL", df)
+
+    # Flat data should never produce a crossover signal
+    assert (
+        len(signals) == 0
+    ), f"Expected no signals for flat data, got {len(signals)}: {[s.signal_type for s in signals]}"
+
+
+@pytest.mark.asyncio
+async def test_strategy_alternate_signals(state_store):
+    """Test strategy emits alternating BUY and SELL signals with clear trend changes."""
+    strategy = SMACrossover(state_store)
+
+    # Use reliable crossover pattern with multiple trend changes
+    prices = RELIABLE_CROSSOVER_PRICES
+
+    df = create_price_series(prices)
+
+    # Process bars and collect signals
+    all_signals = []
+    for i in range(strategy.get_required_history(), len(df)):
+        signals = await strategy.on_bar("AAPL", df.iloc[: i + 1])
+        all_signals.extend(signals)
+
+    # Should have multiple signals
+    signal_types = [s.signal_type for s in all_signals]
+
+    # Verify we have both BUY and SELL
+    assert "BUY" in signal_types, f"Expected BUY signals, got {signal_types}"
+    assert "SELL" in signal_types, f"Expected SELL signals, got {signal_types}"
+
+    # Should have at least 4 signals (2 SELL, 2 BUY from alternating trends)
+    assert (
+        len(all_signals) >= 4
+    ), f"Expected at least 4 signals, got {len(all_signals)}: {signal_types}"
+
+    # Verify signals alternate for the same SMA period
+    # (Strategy prevents duplicates via state tracking)
+    for i in range(len(all_signals) - 1):
+        if all_signals[i].metadata.get("sma_period") == all_signals[i + 1].metadata.get(
+            "sma_period"
+        ):
+            assert (
+                all_signals[i].signal_type != all_signals[i + 1].signal_type
+            ), f"Same SMA period should not emit consecutive {all_signals[i].signal_type} signals"
+
+
+@pytest.mark.asyncio
+async def test_strategy_returns_list(state_store):
+    """Test that strategy returns List[SignalEvent] not single SignalEvent."""
+    strategy = SMACrossover(state_store)
+
+    # Create simple data with enough bars
+    df = create_price_series(list(range(100, 160)))
+
+    # Get signals
+    signals = await strategy.on_bar("AAPL", df)
+
+    # Should be a list
+    assert isinstance(signals, list)
+
+    # If signals exist, they should be SignalEvent instances
+    for signal in signals:
+        assert isinstance(signal, SignalEvent)
