@@ -104,7 +104,9 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
     """
     # Validate that exit_config is a mapping
     if not isinstance(exit_config, dict):
-        raise ConfigError(f"exits config must be a mapping/dict, got {type(exit_config).__name__}")
+        raise ConfigError(
+            f"trading.exits (exit_config) must be a mapping/dict, got {type(exit_config).__name__}"
+        )
 
     # Coerce and validate numeric fields, raising ConfigError on bad types
     try:
