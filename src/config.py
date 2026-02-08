@@ -113,7 +113,7 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
         trailing_activation = float(exit_config.get("trailing_stop_activation_pct", 0.01))
         trailing_trail = float(exit_config.get("trailing_stop_trail_pct", 0.005))
     except (TypeError, ValueError) as e:
-        raise ConfigError(f"Exit config numeric fields must be numbers: {e}")
+        raise ConfigError(f"Exit config numeric fields must be numbers: {e}") from e
 
     if not 0 < stop_loss < 1:
         raise ConfigError(f"stop_loss_pct must be between 0 and 1, got {stop_loss}")
