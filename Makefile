@@ -94,8 +94,10 @@ spawn-agent:
 	@./scripts/spawn-with-standards.sh "$(TASK)"
 
 # Agent template instantiation
+AGENTS_DIR ?= $(HOME)/.openclaw/agents/templates
+
 list-agents:
-	@python /home/t-rox/.openclaw/agents/templates/instantiate-agent.py --list
+	@python $(AGENTS_DIR)/instantiate-agent.py --list
 
 instantiate-agent:
 	@if [ -z "$(AGENT)" ]; then \
@@ -103,10 +105,10 @@ instantiate-agent:
 		echo "Example: make instantiate-agent AGENT=business-analyst"; \
 		echo ""; \
 		echo "Available agents:"; \
-		python /home/t-rox/.openclaw/agents/templates/instantiate-agent.py --list; \
+		python $(AGENTS_DIR)/instantiate-agent.py --list; \
 		exit 1; \
 	fi
-	@python /home/t-rox/.openclaw/agents/templates/instantiate-agent.py $(AGENT)
+	@python $(AGENTS_DIR)/instantiate-agent.py $(AGENT)
 
 # Development
 test:
