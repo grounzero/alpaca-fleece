@@ -6,12 +6,14 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/home/t-rox/.openclaw/workspace/alpaca-fleece
+# Use %h for home directory (systemd specifier)
+WorkingDirectory=%h/.openclaw/workspace/alpaca-fleece
 Environment=PYTHONUNBUFFERED=1
-Environment=PATH=/home/t-rox/.openclaw/workspace/alpaca-fleece/.venv/bin:/usr/local/bin:/usr/bin:/bin
+Environment=BOT_ROOT=%h/.openclaw/workspace/alpaca-fleece
+Environment=PATH=%h/.openclaw/workspace/alpaca-fleece/.venv/bin:/usr/local/bin:/usr/bin:/bin
 
 # Use the virtual environment Python
-ExecStart=/home/t-rox/.openclaw/workspace/alpaca-fleece/.venv/bin/python -u orchestrator.py
+ExecStart=%h/.openclaw/workspace/alpaca-fleece/.venv/bin/python -u orchestrator.py
 
 # Graceful shutdown on stop
 TimeoutStopSec=30
@@ -22,14 +24,14 @@ Restart=on-failure
 RestartSec=10
 
 # Logging
-StandardOutput=append:/home/t-rox/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
-StandardError=append:/home/t-rox/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
+StandardOutput=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
+StandardError=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
 
 # Security hardening (optional but recommended)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=/home/t-rox/.openclaw/workspace/alpaca-fleece/data /home/t-rox/.openclaw/workspace/alpaca-fleece/logs
+ReadWritePaths=%h/.openclaw/workspace/alpaca-fleece/data %h/.openclaw/workspace/alpaca-fleece/logs
 
 [Install]
 WantedBy=default.target
