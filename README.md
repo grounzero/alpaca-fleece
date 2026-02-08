@@ -321,8 +321,6 @@ Run the test suite:
 .venv/bin/python -m pytest tests/ --cov=src
 ```
 
-**Current Status:** 109 tests passing
-
 ## Architecture
 
 The bot uses a phase-based architecture matching agent contracts:
