@@ -1,0 +1,12 @@
+version: 2
+updates:
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+    open-pull-requests-limit: 5
+    # Label dependency bump PRs for easy filtering
+    labels:
+      - "dependencies"
+    # We want Dependabot to surface updates; do not ignore the pinned packages here
+    # so maintainers can review and decide whether to update the pins.
