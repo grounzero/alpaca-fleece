@@ -129,12 +129,14 @@ class OrderManager:
             return False
 
         # Persist order intent BEFORE submission (crash safety)
+        metadata = getattr(signal, "metadata", {}) or {}
+        atr_value = metadata.get("atr") if isinstance(metadata, dict) else None
         self.state_store.save_order_intent(
             client_order_id=client_order_id,
             symbol=symbol,
             side=side,
             qty=float(qty),  # Convert Decimal to float for storage
-            atr=signal.metadata.get("atr") if hasattr(signal, "metadata") else None,
+            atr=atr_value,
             status="new",
         )
 

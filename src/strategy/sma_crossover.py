@@ -72,9 +72,16 @@ class SMACrossover(BaseStrategy):
 
         signals: list[SignalEvent] = []
         regime = self._detect_regime(df)
+
         # Compute ATR once and pass into signals for downstream use
-        atr_series = ta.atr(df["high"], df["low"], df["close"], length=14)
-        atr = float(atr_series.iloc[-1]) if atr_series is not None else None
+        ATR_LENGTH = 14
+        atr_series = ta.atr(df["high"], df["low"], df["close"], length=ATR_LENGTH)
+        atr = None
+        if atr_series is not None:
+            last_atr = atr_series.iloc[-1]
+            # Treat non-finite ATR as unavailable to avoid propagating NaN/inf
+            if np.isfinite(last_atr) and last_atr > 0:
+                atr = float(last_atr)
         # Check all SMA pairs
         for fast_period, slow_period in self.periods:
             signal = self._check_crossover(symbol, df, fast_period, slow_period, atr)

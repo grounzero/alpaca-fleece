@@ -33,16 +33,30 @@ def calculate_dynamic_stops(
     atr: float,
     atr_multiplier_stop: float = 1.5,
     atr_multiplier_target: float = 3.0,
+    side: str = "long",
 ) -> tuple[float, float]:
     """Calculate stop loss and profit target based on ATR.
 
-    Returns (stop_price, target_price) for long positions.
+    Returns `(stop_price, target_price)` for the given `side`.
+
+    For `long`:
+      - stop_price = entry_price - stop_distance
+      - target_price = entry_price + target_distance
+
+    For `short`:
+      - stop_price = entry_price + stop_distance
+      - target_price = entry_price - target_distance
     """
     stop_distance = atr * atr_multiplier_stop
     target_distance = atr * atr_multiplier_target
 
-    stop_price = entry_price - stop_distance
-    target_price = entry_price + target_distance
+    normalized_side = (side or "").lower()
+    if normalized_side == "short":
+        stop_price = entry_price + stop_distance
+        target_price = entry_price - target_distance
+    else:
+        stop_price = entry_price - stop_distance
+        target_price = entry_price + target_distance
 
     return stop_price, target_price
 
@@ -278,6 +292,7 @@ class ExitManager:
                 atr=position.atr,
                 atr_multiplier_stop=self.atr_multiplier_stop,
                 atr_multiplier_target=self.atr_multiplier_target,
+                side=position.side,
             )
 
             # Long position ATR-based checks

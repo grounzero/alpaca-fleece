@@ -155,6 +155,17 @@ class StateStore:
 
             conn.commit()
 
+            # Migration: ensure `atr` column exists on order_intents for older DBs
+            try:
+                cursor.execute("PRAGMA table_info(order_intents)")
+                oi_columns = [col[1] for col in cursor.fetchall()]
+                if "atr" not in oi_columns:
+                    cursor.execute("ALTER TABLE order_intents ADD COLUMN atr NUMERIC(10, 4)")
+                    conn.commit()
+            except Exception:
+                # Don't fail initialization if migration can't be applied here
+                pass
+
     def get_state(self, key: str) -> Optional[str]:
         """Get state value by key."""
         with sqlite3.connect(self.db_path) as conn:
