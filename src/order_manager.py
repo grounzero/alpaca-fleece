@@ -16,7 +16,7 @@ from typing import Any
 
 from src.broker import Broker
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
-from src.state_store import StateStore
+from src.state_store import StateStore, _parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -131,9 +131,7 @@ class OrderManager:
         # Persist order intent BEFORE submission (crash safety)
         metadata = getattr(signal, "metadata", {}) or {}
         atr_raw = metadata.get("atr") if isinstance(metadata, dict) else None
-        atr_value: float | None = None
-        if isinstance(atr_raw, (int, float)):
-            atr_value = float(atr_raw)
+        atr_value: float | None = _parse_optional_float(atr_raw)
         self.state_store.save_order_intent(
             client_order_id=client_order_id,
             symbol=symbol,

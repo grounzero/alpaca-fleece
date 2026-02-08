@@ -28,7 +28,7 @@ from src.position_sizer import calculate_position_size
 from src.position_tracker import PositionTracker
 from src.reconciliation import ReconciliationError, reconcile
 from src.risk_manager import RiskManager
-from src.state_store import StateStore
+from src.state_store import StateStore, _parse_optional_float
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
 
@@ -632,12 +632,7 @@ class Orchestrator:
         if side == "buy":
             # Start tracking position with actual fill price
             atr_raw = order_intent.get("atr") if order_intent else None
-            atr_value = None
-            if atr_raw is not None:
-                try:
-                    atr_value = float(atr_raw)
-                except (TypeError, ValueError):
-                    atr_value = None
+            atr_value = _parse_optional_float(atr_raw)
 
             self.position_tracker.start_tracking(
                 symbol=event.symbol,
