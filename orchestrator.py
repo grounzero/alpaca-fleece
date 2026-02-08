@@ -343,7 +343,7 @@ class Orchestrator:
             logger.info("   Position tracker ready")
 
             # Initialise exit manager
-            logger.info("Initialisinggit satus exit manager...")
+            logger.info("Initialising exit manager...")
 
             # Exit configuration validated earlier in `validate_config()`
             exits_config = self.trading_config.get("exits", {})
