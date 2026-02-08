@@ -205,8 +205,9 @@ sudo systemctl status alpaca-bot
 ```
 
 Notes:
-- The unit uses `${BOT_ROOT}` for `ExecStart`, `PATH`, `ReadWritePaths`, and log file paths. Ensure the user running the service has access to `${BOT_ROOT}/data` and `${BOT_ROOT}/logs`.
-- Logs are appended to `${BOT_ROOT}/logs/orchestrator.out` (or visible via `journalctl -u alpaca-bot`).
+- The unit uses `${BOT_ROOT}` for `ExecStart` (via a shell wrapper) so you can change the bot installation directory using the `/etc/default/alpaca-bot` override. However, not all unit directives expand arbitrary environment variables reliably.
+- In this unit `StandardOutput`/`StandardError` and `ReadWritePaths` use `%h` (the service user's home) as a safe default. If you set `BOT_ROOT` to a location outside the user's home, create a systemd drop-in to update `ReadWritePaths` and any absolute paths accordingly.
+- Logs are appended to `%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out` by default (also visible via `journalctl -u alpaca-bot`).
 
 
 ## Configuration
