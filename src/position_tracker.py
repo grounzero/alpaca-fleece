@@ -413,7 +413,7 @@ class PositionTracker:
             rows = cursor.fetchall()
 
             for row in rows:
-                # Normalize numeric DB values to floats when possible. SQLite
+                # Convert numeric DB values to floats when possible. SQLite
                 # may return NUMERIC columns as str/Decimal depending on insertion.
                 atr_val = parse_optional_float(row[4])
                 trailing_stop_val = parse_optional_float(row[7])

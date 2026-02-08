@@ -39,6 +39,8 @@ jobs:
               pytest-mock==3.15.1 \
               pytest-cov==7.0.0; \
           fi
+          # Install type stubs required by mypy
+          pip install types-PyYAML types-pytz types-python-dateutil || true
 
       - name: Run tests
         run: |

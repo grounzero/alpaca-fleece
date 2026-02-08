@@ -248,7 +248,7 @@ class StateStore:
             row = cursor.fetchone()
             if row:
                 atr_val = _parse_optional_float(row[4])
-                # Normalize required numeric fields to float and optional ones
+                # Convert required numeric fields to float and optional ones
                 # via the shared helper to avoid leaking Decimal/str values.
                 return {
                     "client_order_id": row[0],
