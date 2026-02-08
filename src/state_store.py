@@ -8,8 +8,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TypedDict
-
+from typing import Any, Optional, TypedDict
 
 logger = logging.getLogger(__name__)
 
@@ -281,7 +280,7 @@ class StateStore:
                 )
 
             rows = cursor.fetchall()
-            def map_row(row):
+            def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
                 atr_raw = row[4]
                 atr_val: Optional[float] = None
                 if atr_raw is not None:
