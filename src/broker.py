@@ -14,12 +14,16 @@ Clock (/v2/clock) is owned EXCLUSIVELY by this module.
 Calendar (/v2/calendar) is NOT owned here; use alpaca_api.calendar instead.
 """
 
-from typing import Any, Optional, TypedDict, Union
+from concurrent.futures import ThreadPoolExecutor
+from concurrent.futures import TimeoutError as FutureTimeoutError
+from typing import Any, Callable, Optional, TypedDict, TypeVar, Union
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.models import Clock, Order, Position, TradeAccount
 from alpaca.trading.requests import MarketOrderRequest
+
+T = TypeVar("T")
 
 
 class AccountInfo(TypedDict, total=False):
@@ -70,22 +74,60 @@ class BrokerError(Exception):
 
 
 class Broker:
-    """Execution-only broker client."""
+    """Execution-only broker client with timeout protection."""
 
-    def __init__(self, api_key: str, secret_key: str, paper: bool = True) -> None:
+    def __init__(
+        self,
+        api_key: str,
+        secret_key: str,
+        paper: bool = True,
+        query_timeout: float = 10.0,
+        submit_timeout: float = 15.0,
+    ) -> None:
         """Initialise broker client.
 
         Args:
             api_key: Alpaca API key
             secret_key: Alpaca secret key
             paper: True for paper trading, False for live
+            query_timeout: Timeout in seconds for query operations (account, positions, orders, clock)
+            submit_timeout: Timeout in seconds for order submission/cancellation
         """
         self.paper: bool = paper
+        self._default_timeout: float = query_timeout
+        self._submit_timeout: float = submit_timeout
+        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=2)
         self.client: TradingClient = TradingClient(
             api_key=api_key,
             secret_key=secret_key,
             paper=paper,
         )
+
+    def _call_with_timeout(
+        self,
+        func: Callable[[], T],
+        timeout: Optional[float] = None,
+        operation_name: str = "broker call",
+    ) -> T:
+        """Execute a function with timeout protection.
+
+        Args:
+            func: The function to execute
+            timeout: Timeout in seconds (uses default if None)
+            operation_name: Name of operation for error messages
+
+        Returns:
+            Result of func()
+
+        Raises:
+            BrokerError: If the call times out or fails
+        """
+        timeout = timeout or self._default_timeout
+        future = self._executor.submit(func)
+        try:
+            return future.result(timeout=timeout)
+        except FutureTimeoutError:
+            raise BrokerError(f"Broker call '{operation_name}' timed out after {timeout}s")
 
     def get_account(self) -> AccountInfo:
         """Get account info (equity, buying_power, etc).
@@ -94,7 +136,11 @@ class Broker:
             Dict with keys: equity, buying_power, cash, etc
         """
         try:
-            account: Union[TradeAccount, dict[str, Any]] = self.client.get_account()
+            account: Union[TradeAccount, dict[str, Any]] = self._call_with_timeout(
+                self.client.get_account,
+                timeout=self._default_timeout,
+                operation_name="get_account",
+            )
             # Handle both SDK object and dict responses
             if isinstance(account, dict):
                 return {
@@ -112,6 +158,8 @@ class Broker:
                         float(account.portfolio_value) if account.portfolio_value else 0.0
                     ),
                 }
+        except BrokerError:
+            raise
         except Exception as e:
             raise BrokerError(f"Failed to get account: {e}")
 
@@ -122,7 +170,11 @@ class Broker:
             List of dicts with keys: symbol, qty, avg_entry_price, current_price
         """
         try:
-            positions_raw: Union[list[Position], dict[str, Any]] = self.client.get_all_positions()
+            positions_raw: Union[list[Position], dict[str, Any]] = self._call_with_timeout(
+                self.client.get_all_positions,
+                timeout=self._default_timeout,
+                operation_name="get_positions",
+            )
             positions: list[Any] = positions_raw if isinstance(positions_raw, list) else []
             result: list[PositionInfo] = []
             for p in positions:
@@ -137,6 +189,8 @@ class Broker:
                     }
                 )
             return result
+        except BrokerError:
+            raise
         except Exception as e:
             raise BrokerError(f"Failed to get positions: {e}")
 
@@ -148,7 +202,11 @@ class Broker:
         """
         try:
             # Get orders and filter to open ones manually
-            orders_raw: Union[list[Order], dict[str, Any]] = self.client.get_orders()
+            orders_raw: Union[list[Order], dict[str, Any]] = self._call_with_timeout(
+                self.client.get_orders,
+                timeout=self._default_timeout,
+                operation_name="get_open_orders",
+            )
             orders: list[Any] = orders_raw if isinstance(orders_raw, list) else []
             open_orders: list[Union[Order, str]] = [
                 o
@@ -178,6 +236,8 @@ class Broker:
                     }
                 )
             return result
+        except BrokerError:
+            raise
         except Exception as e:
             raise BrokerError(f"Failed to get open orders: {e}")
 
@@ -191,7 +251,11 @@ class Broker:
             Dict with keys: is_open, next_open, next_close, timestamp
         """
         try:
-            clock: Union[Clock, dict[str, Any]] = self.client.get_clock()
+            clock: Union[Clock, dict[str, Any]] = self._call_with_timeout(
+                self.client.get_clock,
+                timeout=self._default_timeout,
+                operation_name="get_clock",
+            )
             # Handle both SDK object and dict responses
             if isinstance(clock, dict):
                 return {
@@ -207,6 +271,8 @@ class Broker:
                     "next_close": clock.next_close.isoformat() if clock.next_close else None,
                     "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,
                 }
+        except BrokerError:
+            raise
         except Exception as e:
             raise BrokerError(f"Failed to get clock: {e}")
 
@@ -257,7 +323,11 @@ class Broker:
             else:
                 raise BrokerError(f"Invalid order_type: {order_type}")
 
-            order_result: Union[Order, dict[str, Any]] = self.client.submit_order(order_data)
+            order_result: Union[Order, dict[str, Any]] = self._call_with_timeout(
+                lambda: self.client.submit_order(order_data),
+                timeout=self._submit_timeout,
+                operation_name="submit_order",
+            )
             # Handle both SDK object and dict responses
             if isinstance(order_result, dict):
                 return {
@@ -293,6 +363,8 @@ class Broker:
                         else None
                     ),
                 }
+        except BrokerError:
+            raise
         except Exception as e:
             raise BrokerError(f"Failed to submit order: {e}")
 
@@ -303,6 +375,12 @@ class Broker:
             order_id: Alpaca order ID
         """
         try:
-            self.client.cancel_order_by_id(order_id)
+            self._call_with_timeout(
+                lambda: self.client.cancel_order_by_id(order_id),
+                timeout=self._submit_timeout,
+                operation_name="cancel_order",
+            )
+        except BrokerError:
+            raise
         except Exception as e:
             raise BrokerError(f"Failed to cancel order {order_id}: {e}")
