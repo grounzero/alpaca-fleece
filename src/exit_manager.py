@@ -16,19 +16,23 @@ Exit Rules Priority:
 
 import asyncio
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.broker import Broker
 from src.data_handler import DataHandler
+<<<<<<< HEAD
 from src.event_bus import EventBus
+=======
+from src.event_bus import EventBus, ExitSignalEvent
+>>>>>>> 7e787d8 (Clean trading bot implementation)
 from src.position_tracker import PositionData, PositionTracker
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
 
+<<<<<<< HEAD
 @dataclass(frozen=True)
 class ExitSignalEvent:
     """Exit signal for position management.
@@ -47,6 +51,8 @@ class ExitSignalEvent:
     timestamp: datetime
 
 
+=======
+>>>>>>> 7e787d8 (Clean trading bot implementation)
 class ExitManagerError(Exception):
     """Raised when exit manager operation fails."""
 
@@ -196,6 +202,11 @@ class ExitManager:
 
         for position in positions:
             try:
+                # Skip if exit signal already pending (deduplication)
+                if position.pending_exit:
+                    logger.debug(f"Skipping {position.symbol} - exit signal pending")
+                    continue
+
                 # Get current price
                 snapshot = self.data_handler.get_snapshot(position.symbol)
                 if not snapshot:
@@ -214,6 +225,9 @@ class ExitManager:
                 signal = self._evaluate_exit_rules(position, current_price)
                 if signal:
                     signals.append(signal)
+                    # Mark position as having pending exit
+                    position.pending_exit = True
+                    self.position_tracker._persist_position(position)
                     await self.event_bus.publish(signal)
                     logger.info(
                         f"Exit signal: {signal.symbol} {signal.reason} "
