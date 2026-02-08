@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from src.broker import Broker, OrderInfo
-from src.state_store import StateStore, OrderIntentRow
+from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
