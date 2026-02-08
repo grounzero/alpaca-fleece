@@ -1,6 +1,6 @@
 [Unit]
 Description=Alpaca Trading Bot
-Documentation=https://github.com/alpaca-trade-api
+Documentation=https://github.com/grounzero/alpaca-fleece#readme
 After=network-online.target
 Wants=network-online.target
 
