@@ -13,6 +13,20 @@ from typing import Any, Optional, TypedDict
 logger = logging.getLogger(__name__)
 
 
+def _parse_optional_float(value: Any) -> Optional[float]:
+    """Coerce a DB value to float if possible, otherwise return None.
+
+    SQLite can return NUMERIC columns as str or Decimal depending on how
+    it was inserted. Normalize to a Python float for downstream logic.
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 class OrderIntentRow(TypedDict, total=False):
     """Order intent row from database."""
 
@@ -241,13 +255,7 @@ class StateStore:
             )
             row = cursor.fetchone()
             if row:
-                atr_raw = row[4]
-                atr_val: Optional[float] = None
-                if atr_raw is not None:
-                    try:
-                        atr_val = float(atr_raw)
-                    except (TypeError, ValueError):
-                        atr_val = None
+                atr_val = _parse_optional_float(row[4])
 
                 return {
                     "client_order_id": row[0],
@@ -285,13 +293,7 @@ class StateStore:
             rows = cursor.fetchall()
 
             def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
-                atr_raw = row[4]
-                atr_val: Optional[float] = None
-                if atr_raw is not None:
-                    try:
-                        atr_val = float(atr_raw)
-                    except (TypeError, ValueError):
-                        atr_val = None
+                atr_val = _parse_optional_float(row[4])
 
                 return {
                     "client_order_id": row[0],

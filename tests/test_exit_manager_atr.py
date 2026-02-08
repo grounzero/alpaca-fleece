@@ -1,5 +1,7 @@
 from datetime import datetime, timezone
 
+import pytest
+
 from src.exit_manager import calculate_dynamic_stops, ExitManager
 from src.position_tracker import PositionData
 
@@ -109,9 +111,57 @@ def test_evaluate_exit_rules_atr_short_profit_target() -> None:
 
 
 def test_calculate_dynamic_stops_invalid_side_raises() -> None:
-    try:
+    with pytest.raises(ValueError):
         calculate_dynamic_stops(entry_price=100.0, atr=2.0, side="weird")
-        raised = False
-    except ValueError:
-        raised = True
-    assert raised
+
+
+def test_evaluate_exit_rules_atr_long_profit_target() -> None:
+    entry = 100.0
+    atr = 2.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=atr,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None)
+
+    # For long: target = entry + atr*3 = 106.0 -> price 106 triggers profit target
+    sig = mgr._evaluate_exit_rules(position, current_price=106.0)
+    assert sig is not None
+    assert sig.reason == "profit_target"
+    assert sig.side == "sell"
+
+
+def test_evaluate_exit_rules_skip_atr_when_invalid() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    # ATR of 0 should be treated as unavailable and fallback to percent stop
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=0.0,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None)
+
+    # ATR invalid -> fallback percent stop (1%). Price 98 triggers -2% stop
+    sig = mgr._evaluate_exit_rules(position, current_price=98.0)
+    assert sig is not None
+    assert sig.reason == "stop_loss"
+    assert sig.side == "sell"
