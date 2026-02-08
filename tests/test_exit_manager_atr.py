@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 
 import pytest
 
-from src.exit_manager import calculate_dynamic_stops, ExitManager
+from src.exit_manager import ExitManager, calculate_dynamic_stops
 from src.position_tracker import PositionData
 
 
