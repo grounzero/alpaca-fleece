@@ -15,7 +15,7 @@ from typing import Optional
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
 from src.broker import Broker
-from src.config import load_env, load_trading_config, validate_config
+from src.config import load_env, load_trading_config, validate_config, validate_exit_config
 from src.data_handler import DataHandler
 from src.event_bus import BarEvent, EventBus, ExitSignalEvent, OrderUpdateEvent, SignalEvent
 from src.exit_manager import ExitManager
@@ -345,8 +345,10 @@ class Orchestrator:
             # Initialise exit manager
             logger.info("Initialising exit manager...")
 
-            # Exit configuration validated earlier in `validate_config()`
+            # Validate exit configuration explicitly
             exits_config = self.trading_config.get("exits", {})
+            validate_exit_config(exits_config)
+            logger.info("   Exit config validated")
 
             self.exit_manager = ExitManager(
                 broker=self.broker,
@@ -509,8 +511,30 @@ class Orchestrator:
                                     metrics.record_signal_filtered_risk()
                                     continue
                             except Exception as e:
+                                error_msg = str(e)
                                 logger.error(f"Risk check failed: {e}")
                                 metrics.record_signal_filtered_risk()
+
+                                # Send alerts for critical risk failures
+                                if "kill-switch active" in error_msg.lower():
+                                    await self.send_critical_alert("kill_switch_activated", {})
+                                elif "circuit breaker tripped" in error_msg.lower():
+                                    cb_count = self.state_store.get_circuit_breaker_count()
+                                    await self.send_critical_alert(
+                                        "circuit_breaker_tripped", {"failure_count": cb_count}
+                                    )
+                                elif "daily loss limit exceeded" in error_msg.lower():
+                                    daily_pnl = self.state_store.get_daily_pnl()
+                                    account = self.broker.get_account()
+                                    equity = account.get("equity", 0)
+                                    risk_config = self.trading_config.get("risk", {})
+                                    daily_loss_limit = equity * risk_config.get(
+                                        "daily_loss_limit_pct", 0.05
+                                    )
+                                    await self.send_critical_alert(
+                                        "daily_loss_exceeded",
+                                        {"daily_pnl": daily_pnl, "limit": daily_loss_limit},
+                                    )
                                 continue
 
                             # Submit order with position sizing
@@ -553,6 +577,14 @@ class Orchestrator:
                             except Exception as e:
                                 logger.error(f"Order submission failed: {e}")
                                 metrics.record_order_rejected()
+
+                                # Check if circuit breaker was tripped
+                                cb_state = self.state_store.get_state("circuit_breaker_state")
+                                if cb_state == "tripped":
+                                    cb_count = self.state_store.get_circuit_breaker_count()
+                                    await self.send_critical_alert(
+                                        "circuit_breaker_tripped", {"failure_count": cb_count}
+                                    )
 
                     elif isinstance(event, ExitSignalEvent):
                         # Handle exit signal from exit manager
@@ -679,35 +711,15 @@ class Orchestrator:
         logger.info("Metrics writer started (60s interval)")
         try:
             while True:
-                try:
-                    # Update gauge values before writing
-                    positions = []
-                    if self.broker:
-                        try:
-                            maybe_positions = self.broker.get_positions()
-                            if inspect.isawaitable(maybe_positions):
-                                positions = await maybe_positions
-                            else:
-                                positions = maybe_positions
-                        except Exception:
-                            logger.exception("Failed to read positions from broker; using 0")
+                # Update gauge values before writing
+                positions = self.broker.get_positions() if self.broker else []
+                metrics.update_open_positions(len(positions))
+                metrics.update_daily_pnl(self.state_store.get_daily_pnl())
+                metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
 
-                    # Safely compute open positions count
-                    open_positions_count = 0
-                    try:
-                        open_positions_count = len(positions) if positions is not None else 0
-                    except Exception:
-                        open_positions_count = 0
-
-                    metrics.update_open_positions(open_positions_count)
-                    metrics.update_daily_pnl(self.state_store.get_daily_pnl())
-                    metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
-
-                    # Write metrics to file
-                    write_metrics_to_file("data/metrics.json")
-                    logger.debug("Metrics written to data/metrics.json")
-                except Exception:
-                    logger.exception("Error in metrics writer loop; continuing")
+                # Write metrics to file
+                write_metrics_to_file("data/metrics.json")
+                logger.debug("Metrics written to data/metrics.json")
 
                 await asyncio.sleep(60)
         except asyncio.CancelledError:

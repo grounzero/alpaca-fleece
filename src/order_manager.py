@@ -16,6 +16,7 @@ from typing import Any
 
 from src.broker import Broker
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
+from src.metrics import metrics
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -174,6 +175,9 @@ class OrderManager:
                 )
             )
 
+            # Track order submitted
+            metrics.record_order_submitted()
+
             logger.info(f"Order submitted: {client_order_id} (alpaca_id: {order.get('id')})")
             return True
         except Exception as e:
@@ -185,5 +189,8 @@ class OrderManager:
             if cb_failures >= 5:
                 self.state_store.set_state("circuit_breaker_state", "tripped")
                 logger.error(f"Circuit breaker tripped after {cb_failures} failures")
+
+            # Track order rejected
+            metrics.record_order_rejected()
 
             raise OrderManagerError(f"Order submission failed: {e}")

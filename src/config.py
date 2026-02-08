@@ -93,7 +93,7 @@ def load_trading_config(path: str) -> dict[str, Any]:
     return config
 
 
-def validate_exit_config(exit_config: dict[str, Any]) -> None:
+def validate_exit_config(exit_config: dict) -> None:
     """Validate exit manager configuration.
 
     Args:
@@ -102,20 +102,10 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
     Raises:
         ConfigError: If any exit configuration value is invalid
     """
-    # Validate that exit_config is a mapping
-    if not isinstance(exit_config, dict):
-        raise ConfigError(
-            f"trading.exits (exit_config) must be a mapping/dict, got {type(exit_config).__name__}"
-        )
-
-    # Coerce and validate numeric fields, raising ConfigError on bad types
-    try:
-        stop_loss = float(exit_config.get("stop_loss_pct", 0.01))
-        profit_target = float(exit_config.get("profit_target_pct", 0.02))
-        trailing_activation = float(exit_config.get("trailing_stop_activation_pct", 0.01))
-        trailing_trail = float(exit_config.get("trailing_stop_trail_pct", 0.005))
-    except (TypeError, ValueError) as e:
-        raise ConfigError(f"Exit config numeric fields must be numbers: {e}") from e
+    stop_loss = exit_config.get("stop_loss_pct", 0.01)
+    profit_target = exit_config.get("profit_target_pct", 0.02)
+    trailing_activation = exit_config.get("trailing_stop_activation_pct", 0.01)
+    trailing_trail = exit_config.get("trailing_stop_trail_pct", 0.005)
 
     if not 0 < stop_loss < 1:
         raise ConfigError(f"stop_loss_pct must be between 0 and 1, got {stop_loss}")

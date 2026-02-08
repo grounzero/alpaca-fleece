@@ -26,6 +26,7 @@ from typing import Any
 from src.broker import Broker
 from src.data_handler import DataHandler
 from src.event_bus import SignalEvent
+from src.metrics import metrics
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -179,6 +180,7 @@ class RiskManager:
                 f"Signal {signal.symbol} {signal.signal_type} "
                 f"confidence {confidence:.2f} < {MIN_CONFIDENCE} (filtered)"
             )
+            metrics.record_signal_filtered_confidence()
             return False
 
         # FILTER TIER (may skip signal without error)

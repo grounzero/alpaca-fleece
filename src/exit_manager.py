@@ -22,6 +22,7 @@ from typing import Any, Optional
 from src.broker import Broker
 from src.data_handler import DataHandler
 from src.event_bus import EventBus, ExitSignalEvent
+from src.metrics import metrics
 from src.position_tracker import PositionData, PositionTracker
 from src.state_store import StateStore
 
@@ -200,6 +201,8 @@ class ExitManager:
                 signal = self._evaluate_exit_rules(position, current_price)
                 if signal:
                     signals.append(signal)
+                    # Track exit triggered
+                    metrics.record_exit_triggered()
                     # Publish exit signal BEFORE marking pending_exit to avoid
                     # persisting a stuck pending_exit if publishing fails.
                     try:

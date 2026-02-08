@@ -196,3 +196,11 @@ class AlertNotifier:
             message=f"Symbol: {symbol}\nError: {error}",
             severity="ERROR",
         )
+
+    def alert_kill_switch_activated(self) -> bool:
+        """Alert: Kill switch activated (Tier 1)."""
+        return self.send_alert(
+            title="🛑 KILL SWITCH ACTIVATED",
+            message="Trading has been halted due to kill switch activation",
+            severity="CRITICAL",
+        )

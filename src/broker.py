@@ -14,11 +14,15 @@ Clock (/v2/clock) is owned EXCLUSIVELY by this module.
 Calendar (/v2/calendar) is NOT owned here; use alpaca_api.calendar instead.
 """
 
+import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
 from typing import Any, Callable, Optional, TypedDict, TypeVar, Union
 
 from alpaca.trading.client import TradingClient
+
+logger = logging.getLogger(__name__)
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.models import Clock, Order, Position, TradeAccount
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
@@ -128,6 +132,49 @@ class Broker:
             return future.result(timeout=timeout)
         except FutureTimeoutError:
             raise BrokerError(f"Broker call '{operation_name}' timed out after {timeout}s")
+        except BrokerError:
+            raise
+        except Exception as e:
+            raise BrokerError(f"Broker call '{operation_name}' failed: {e}")
+
+    def _retry_with_backoff(
+        self,
+        func: Callable[[], T],
+        max_retries: int = 3,
+        base_delay: float = 1.0,
+        operation_name: str = "broker call",
+    ) -> T:
+        """Retry function with exponential backoff.
+
+        Only use for idempotent GET operations (get_account, get_positions, get_orders, get_clock).
+        Do NOT use for submit_order or cancel_order.
+
+        Args:
+            func: The function to execute
+            max_retries: Maximum number of retry attempts
+            base_delay: Initial delay in seconds between retries
+            operation_name: Name of operation for error messages
+
+        Returns:
+            Result of func()
+
+        Raises:
+            BrokerError: If all retries fail
+        """
+        last_error: Optional[BrokerError] = None
+        for attempt in range(max_retries):
+            try:
+                return self._call_with_timeout(func, operation_name=operation_name)
+            except BrokerError as e:
+                last_error = e
+                if attempt < max_retries - 1:
+                    delay = base_delay * (2**attempt)
+                    logger.warning(
+                        f"{operation_name} failed (attempt {attempt + 1}/{max_retries}), "
+                        f"retrying in {delay}s: {e}"
+                    )
+                    time.sleep(delay)
+        raise BrokerError(f"{operation_name} failed after {max_retries} attempts: {last_error}")
 
     def get_account(self) -> AccountInfo:
         """Get account info (equity, buying_power, etc).
@@ -136,9 +183,8 @@ class Broker:
             Dict with keys: equity, buying_power, cash, etc
         """
         try:
-            account: Union[TradeAccount, dict[str, Any]] = self._call_with_timeout(
+            account: Union[TradeAccount, dict[str, Any]] = self._retry_with_backoff(
                 self.client.get_account,
-                timeout=self._default_timeout,
                 operation_name="get_account",
             )
             # Handle both SDK object and dict responses
@@ -170,9 +216,8 @@ class Broker:
             List of dicts with keys: symbol, qty, avg_entry_price, current_price
         """
         try:
-            positions_raw: Union[list[Position], dict[str, Any]] = self._call_with_timeout(
+            positions_raw: Union[list[Position], dict[str, Any]] = self._retry_with_backoff(
                 self.client.get_all_positions,
-                timeout=self._default_timeout,
                 operation_name="get_positions",
             )
             positions: list[Any] = positions_raw if isinstance(positions_raw, list) else []
@@ -202,9 +247,8 @@ class Broker:
         """
         try:
             # Get orders and filter to open ones manually
-            orders_raw: Union[list[Order], dict[str, Any]] = self._call_with_timeout(
+            orders_raw: Union[list[Order], dict[str, Any]] = self._retry_with_backoff(
                 self.client.get_orders,
-                timeout=self._default_timeout,
                 operation_name="get_open_orders",
             )
             orders: list[Any] = orders_raw if isinstance(orders_raw, list) else []
@@ -251,9 +295,8 @@ class Broker:
             Dict with keys: is_open, next_open, next_close, timestamp
         """
         try:
-            clock: Union[Clock, dict[str, Any]] = self._call_with_timeout(
+            clock: Union[Clock, dict[str, Any]] = self._retry_with_backoff(
                 self.client.get_clock,
-                timeout=self._default_timeout,
                 operation_name="get_clock",
             )
             # Handle both SDK object and dict responses
@@ -385,3 +428,7 @@ class Broker:
             raise
         except Exception as e:
             raise BrokerError(f"Failed to cancel order {order_id}: {e}")
+
+    def close(self) -> None:
+        """Clean up resources (executor, connections)."""
+        self._executor.shutdown(wait=False)
