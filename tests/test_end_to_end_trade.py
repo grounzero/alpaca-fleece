@@ -9,7 +9,6 @@ import pytest
 from src.event_bus import EventBus, SignalEvent
 from src.order_manager import OrderManager
 from src.risk_manager import RiskManager
-from src.strategy.sma_crossover import SMACrossover
 
 
 @pytest.fixture
@@ -79,8 +78,6 @@ class TestEndToEndTrade:
         """Test: Valid BUY signal passes risk checks and submits order."""
 
         # SETUP: Create components
-        SMACrossover(state_store, crypto_symbols=[])
-
         # Create properly mocked data handler
         data_handler = Mock()
         data_handler.get_snapshot = mock_broker.get_snapshot
