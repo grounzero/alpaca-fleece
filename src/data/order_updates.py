@@ -8,8 +8,8 @@ Publishes to EventBus.
 """
 
 import logging
-from typing import Any
 from datetime import datetime, timezone
+from typing import Any
 
 from src.event_bus import EventBus, OrderUpdateEvent
 from src.state_store import StateStore

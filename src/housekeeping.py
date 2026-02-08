@@ -206,7 +206,6 @@ class Housekeeping:
                     today = now_et.date().isoformat()
 
                     if now_et.hour == 9 and now_et.minute >= 30 and last_reset_date != today:
-
                         logger.info("Daily reset at 09:30 ET")
                         self.state_store.set_state("daily_trade_count", "0")
                         self.state_store.set_state("daily_pnl", "0")

@@ -124,10 +124,12 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
     cursor = conn.cursor()
 
     # Get latest positions snapshot
-    cursor.execute("""
+    cursor.execute(
+        """
         SELECT symbol, qty, avg_entry_price FROM positions_snapshot
         WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
-    """)
+    """
+    )
     sqlite_positions_rows = cursor.fetchall()
     conn.close()
 
