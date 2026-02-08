@@ -7,6 +7,7 @@ import pandas as pd
 import pandas_ta as ta
 
 from src.event_bus import SignalEvent
+from src.metrics import metrics
 from src.strategy.base import BaseStrategy
 
 
@@ -78,11 +79,20 @@ class SMACrossover(BaseStrategy):
             signal = self._check_crossover(symbol, df, fast_period, slow_period)
 
             if signal:
+                # Track signal generated
+                metrics.record_signal_generated()
+
                 # Score confidence based on regime and SMA period
                 confidence = self._score_confidence(fast_period, slow_period, regime)
                 signal.metadata["confidence"] = confidence
                 signal.metadata["regime"] = regime["regime"]
                 signal.metadata["regime_strength"] = regime["strength"]
+
+                # Track confidence-filtered signals (ranging regime with low confidence)
+                if regime["regime"] == "ranging" and confidence < 0.4:
+                    metrics.record_signal_filtered_confidence()
+                    continue  # Skip low-confidence signals in ranging markets
+
                 signals.append(signal)
 
         return signals
