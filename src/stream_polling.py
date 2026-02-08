@@ -6,34 +6,15 @@ This module provides the same interface as Stream but uses HTTP polling instead 
 import asyncio
 import logging
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Iterator, List, Optional, Sequence
+from typing import Any, Callable, List, Optional
 
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 
+from src.utils import batch_iter
+
 logger = logging.getLogger(__name__)
-
-
-def batch_iter(iterable: Sequence[Any], batch_size: int) -> Iterator[list[Any]]:
-    """Yield successive batches from iterable.
-
-    Args:
-        iterable: Sequence to batch
-        batch_size: Size of each batch
-
-    Yields:
-        Lists of batch_size items (last batch may be smaller)
-
-    Example:
-        >>> list(batch_iter([1,2,3,4,5], 2))
-        [[1,2], [3,4], [5]]
-    """
-    from itertools import islice
-
-    iterator = iter(iterable)
-    while batch := list(islice(iterator, batch_size)):
-        yield batch
 
 
 class PollingBar:
