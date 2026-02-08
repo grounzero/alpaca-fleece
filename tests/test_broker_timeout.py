@@ -1,4 +1,4 @@
-"""Unit tests for broker timeout functionality."""
+"""Unit tests for `Broker` timeout and related executor behavior."""
 
 import time
 from unittest.mock import MagicMock, patch
