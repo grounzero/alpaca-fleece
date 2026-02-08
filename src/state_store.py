@@ -11,6 +11,9 @@ from pathlib import Path
 from typing import Optional, TypedDict
 
 
+logger = logging.getLogger(__name__)
+
+
 class OrderIntentRow(TypedDict, total=False):
     """Order intent row from database."""
 
@@ -165,7 +168,6 @@ class StateStore:
                     cursor.execute("ALTER TABLE order_intents ADD COLUMN atr NUMERIC(10, 4)")
                     conn.commit()
             except sqlite3.Error as e:
-                logger = logging.getLogger(__name__)
                 logger.warning("Could not migrate order_intents to add atr column: %s", e)
 
     def get_state(self, key: str) -> Optional[str]:
