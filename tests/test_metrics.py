@@ -184,27 +184,35 @@ class TestBotMetrics:
 
     def test_signal_timestamp_updated(self):
         """Test that record_signal_generated updates last_signal_time."""
+        from unittest.mock import patch
+
         m = BotMetrics()
         old_time = m.last_signal_time
+        future_time = old_time + timedelta(seconds=1)
 
-        import time
+        # Patch datetime.now in the metrics module
+        with patch("src.metrics.datetime") as mock_datetime:
+            mock_datetime.now.return_value = future_time
+            mock_datetime.timezone = timezone
+            m.record_signal_generated()
 
-        time.sleep(0.01)  # Small delay to ensure time difference
-        m.record_signal_generated()
-
-        assert m.last_signal_time >= old_time
+        assert m.last_signal_time == future_time
 
     def test_fill_timestamp_updated(self):
         """Test that record_order_filled updates last_fill_time."""
+        from unittest.mock import patch
+
         m = BotMetrics()
         old_time = m.last_fill_time
+        future_time = old_time + timedelta(seconds=1)
 
-        import time
+        # Patch datetime.now in the metrics module
+        with patch("src.metrics.datetime") as mock_datetime:
+            mock_datetime.now.return_value = future_time
+            mock_datetime.timezone = timezone
+            m.record_order_filled()
 
-        time.sleep(0.01)  # Small delay to ensure time difference
-        m.record_order_filled()
-
-        assert m.last_fill_time >= old_time
+        assert m.last_fill_time == future_time
 
 
 class TestWriteMetricsToFile:
