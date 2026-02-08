@@ -297,7 +297,9 @@ class StateStore:
         value = self.get_state("daily_trade_count")
         return int(value) if value else 0
 
-    def save_last_signal(self, symbol: str, signal_type: str, sma_period: tuple[int, int] = (10, 30)) -> None:
+    def save_last_signal(
+        self, symbol: str, signal_type: str, sma_period: tuple[int, int] = (10, 30)
+    ) -> None:
         """Persist last signal per symbol per SMA period (Win #3).
 
         Args:

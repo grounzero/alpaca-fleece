@@ -135,8 +135,7 @@ class Broker:
             open_orders = [
                 o
                 for o in orders
-                if o.status
-                and o.status.value not in ["filled", "canceled", "expired", "rejected"]
+                if o.status and o.status.value not in ["filled", "canceled", "expired", "rejected"]
             ]
 
             return [

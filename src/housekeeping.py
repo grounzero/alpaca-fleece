@@ -110,7 +110,7 @@ class Housekeeping:
                         side=side,
                         qty=abs_qty,
                         client_order_id=client_order_id,
-                        order_type="market"
+                        order_type="market",
                     )
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to close positions: {e}")

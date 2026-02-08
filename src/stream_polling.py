@@ -187,7 +187,7 @@ class StreamPolling:
 
             # Process each symbol's bars
             # BarSet.data is a dict: {symbol: [bar1, bar2, ...]}
-            bars_data = getattr(bars_by_symbol, 'data', {})
+            bars_data = getattr(bars_by_symbol, "data", {})
             for symbol, bar_list in bars_data.items():
                 await self._process_bar_list(symbol, bar_list)
 
