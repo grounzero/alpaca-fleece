@@ -51,6 +51,10 @@ def calculate_dynamic_stops(
     target_distance = atr * atr_multiplier_target
 
     converted_side = (side or "").lower()
+    # Validate side explicitly to avoid silently treating unknown values as `long`.
+    if converted_side not in ("long", "short"):
+        raise ValueError(f"Invalid side for dynamic stop calculation: {side!r}")
+
     if converted_side == "short":
         stop_price = entry_price + stop_distance
         target_price = entry_price - target_distance

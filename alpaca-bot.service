@@ -7,13 +7,18 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Use %h for home directory (systemd specifier)
-WorkingDirectory=%h/.openclaw/workspace/alpaca-fleece
-Environment=PYTHONUNBUFFERED=1
-Environment=BOT_ROOT=%h/.openclaw/workspace/alpaca-fleece
-Environment=PATH=%h/.openclaw/workspace/alpaca-fleece/.venv/bin:/usr/local/bin:/usr/bin:/bin
+# Allow administrators to override environment via /etc/default/alpaca-bot
+EnvironmentFile=-/etc/default/alpaca-bot
 
-# Use the virtual environment Python
-ExecStart=%h/.openclaw/workspace/alpaca-fleece/.venv/bin/python -u orchestrator.py
+# Set a default BOT_ROOT relative to the service user's home directory
+Environment=BOT_ROOT=%h/.openclaw/workspace/alpaca-fleece
+Environment=PYTHONUNBUFFERED=1
+
+# Ensure PATH includes the virtualenv inside BOT_ROOT
+Environment=PATH=${BOT_ROOT}/.venv/bin:/usr/local/bin:/usr/bin:/bin
+
+# Use the virtual environment Python inside BOT_ROOT
+ExecStart=${BOT_ROOT}/.venv/bin/python -u ${BOT_ROOT}/orchestrator.py
 
 # Graceful shutdown on stop
 TimeoutStopSec=30
@@ -24,14 +29,14 @@ Restart=on-failure
 RestartSec=10
 
 # Logging
-StandardOutput=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
-StandardError=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
+StandardOutput=append:${BOT_ROOT}/logs/orchestrator.out
+StandardError=append:${BOT_ROOT}/logs/orchestrator.out
 
 # Security hardening (optional but recommended)
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-ReadWritePaths=%h/.openclaw/workspace/alpaca-fleece/data %h/.openclaw/workspace/alpaca-fleece/logs
+ReadWritePaths=${BOT_ROOT}/data ${BOT_ROOT}/logs
 
 [Install]
 WantedBy=default.target
