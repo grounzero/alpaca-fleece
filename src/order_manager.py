@@ -130,7 +130,10 @@ class OrderManager:
 
         # Persist order intent BEFORE submission (crash safety)
         metadata = getattr(signal, "metadata", {}) or {}
-        atr_value = metadata.get("atr") if isinstance(metadata, dict) else None
+        atr_raw = metadata.get("atr") if isinstance(metadata, dict) else None
+        atr_value: float | None = None
+        if isinstance(atr_raw, (int, float)):
+            atr_value = float(atr_raw)
         self.state_store.save_order_intent(
             client_order_id=client_order_id,
             symbol=symbol,
