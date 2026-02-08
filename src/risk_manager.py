@@ -119,8 +119,17 @@ class RiskManager:
 
             now_et = datetime.now(ZoneInfo("America/New_York"))
         except ImportError:
-            # Fallback for Python < 3.9
-            now_et = datetime.now(timezone.utc).astimezone()
+            # Fallback for Python < 3.9: Use fixed ET offset (UTC-5 or UTC-4 DST)
+            # Import here to avoid issues if dateutil isn't installed
+            try:
+                from dateutil.tz import gettz
+
+                now_et = datetime.now(gettz("America/New_York"))
+            except ImportError:
+                # Last resort: Use pytz if available
+                import pytz
+
+                now_et = datetime.now(pytz.timezone("America/New_York"))
 
         # Regular hours: 9:30 AM - 4:00 PM ET
         market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)

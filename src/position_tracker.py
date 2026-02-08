@@ -88,6 +88,17 @@ class PositionTracker:
                     updated_at TEXT NOT NULL
                 )
             """)
+
+            # Migration: Add pending_exit column if it doesn't exist (for older DBs)
+            cursor.execute(
+                "PRAGMA table_info(position_tracking)"
+            )  # Returns list of (cid, name, type, notnull, dflt_value, pk)
+            columns = [col[1] for col in cursor.fetchall()]
+            if "pending_exit" not in columns:
+                cursor.execute(
+                    "ALTER TABLE position_tracking ADD COLUMN pending_exit INTEGER DEFAULT 0"
+                )
+
             conn.commit()
 
     def start_tracking(

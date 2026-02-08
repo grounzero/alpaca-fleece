@@ -225,10 +225,17 @@ class ExitManager:
                 signal = self._evaluate_exit_rules(position, current_price)
                 if signal:
                     signals.append(signal)
-                    # Mark position as having pending exit
+                    # Publish exit signal BEFORE marking pending_exit to avoid
+                    # persisting a stuck pending_exit if publishing fails.
+                    try:
+                        await self.event_bus.publish(signal)
+                    except Exception as e:
+                        logger.error(f"Failed to publish exit signal for {position.symbol}: {e}")
+                        # Do not mark pending_exit so the position can be retried
+                        continue
+                    # Mark position as having pending exit only after successful publish
                     position.pending_exit = True
                     self.position_tracker._persist_position(position)
-                    await self.event_bus.publish(signal)
                     logger.info(
                         f"Exit signal: {signal.symbol} {signal.reason} "
                         f"(P&L: {signal.pnl_pct*100:.1f}%)"

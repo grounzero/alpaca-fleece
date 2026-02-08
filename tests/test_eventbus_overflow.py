@@ -40,7 +40,7 @@ async def test_event_bus_logs_dropped_events(caplog):
 
     # This one should be dropped (queue at capacity)
     with caplog.at_level("ERROR"):
-        BarEvent(
+        event3 = BarEvent(
             symbol="GOOGL",
             timestamp=datetime.now(timezone.utc),
             open=300,
@@ -49,9 +49,11 @@ async def test_event_bus_logs_dropped_events(caplog):
             close=300.5,
             volume=3000,
         )
-        await asyncio.sleep(0.1)  # Let timeout occur
-        # Note: Due to async nature, we need to manually trigger timeout
-        # In real scenario, the asyncio.wait_for timeout in publish() will handle this
+        # Publish third event - should timeout and be dropped (not critical)
+        await bus.publish(event3)  # Won't raise because it's not ExitSignalEvent
+        await asyncio.sleep(0.1)  # Let processing occur
+        # Verify drop was logged
+        assert "timed out" in caplog.text or bus.dropped_count > 0
 
     await bus.stop()
 
@@ -119,7 +121,7 @@ async def test_exit_signal_event_drop_raises_error():
 
 
 @pytest.mark.asyncio
-async def test_non_critical_event_drop_logged_only():
+async def test_non_critical_event_drop_logged_only(caplog):
     """Non-critical event drops are logged but don't raise."""
     bus = EventBus(maxsize=1)
     await bus.start()
@@ -137,7 +139,7 @@ async def test_non_critical_event_drop_logged_only():
     await bus.publish(event1)
 
     # Try to publish non-critical event (should not raise, just log)
-    BarEvent(
+    event2 = BarEvent(
         symbol="GOOGL",
         timestamp=datetime.now(timezone.utc),
         open=300,
@@ -148,8 +150,10 @@ async def test_non_critical_event_drop_logged_only():
     )
 
     # This should timeout but NOT raise (unless it's ExitSignalEvent)
+    await bus.publish(event2)  # Won't raise because it's not critical
     await asyncio.sleep(0.1)  # Brief wait
-    # Note: Actual drop happens due to queue timeout in publish()
+    # Verify drop was logged and counter incremented
+    assert bus.dropped_count >= 1 or "timed out" in caplog.text
 
     await bus.stop()
 
