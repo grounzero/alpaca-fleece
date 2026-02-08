@@ -30,6 +30,7 @@ class PositionData:
     highest_price: float  # For trailing stop calculation
     trailing_stop_price: Optional[float] = None
     trailing_stop_activated: bool = False
+    pending_exit: bool = False  # Set when exit signal generated, cleared when order fills/rejected
 
 
 class PositionTrackerError(Exception):
@@ -83,9 +84,21 @@ class PositionTracker:
                     highest_price NUMERIC(10, 4) NOT NULL,
                     trailing_stop_price NUMERIC(10, 4),
                     trailing_stop_activated INTEGER DEFAULT 0,
+                    pending_exit INTEGER DEFAULT 0,
                     updated_at TEXT NOT NULL
                 )
             """)
+
+            # Migration: Add pending_exit column if it doesn't exist (for older DBs)
+            cursor.execute(
+                "PRAGMA table_info(position_tracking)"
+            )  # Returns list of (cid, name, type, notnull, dflt_value, pk)
+            columns = [col[1] for col in cursor.fetchall()]
+            if "pending_exit" not in columns:
+                cursor.execute(
+                    "ALTER TABLE position_tracking ADD COLUMN pending_exit INTEGER DEFAULT 0"
+                )
+
             conn.commit()
 
     def start_tracking(
@@ -219,6 +232,10 @@ class PositionTracker:
     def calculate_pnl(self, symbol: str, current_price: float) -> tuple[float, float]:
         """Calculate unrealised P&L for position.
 
+        Handles both long and short positions:
+        - Long: price_diff = current - entry, profit when current > entry
+        - Short: price_diff = entry - current, profit when current < entry
+
         Args:
             symbol: Stock symbol
             current_price: Current market price
@@ -230,7 +247,14 @@ class PositionTracker:
         if not position:
             return 0.0, 0.0
 
-        price_diff = current_price - position.entry_price
+        if position.entry_price <= 0:
+            return 0.0, 0.0  # Guard against division by zero
+
+        if position.side == "long":
+            price_diff = current_price - position.entry_price
+        else:  # short
+            price_diff = position.entry_price - current_price
+
         pnl_amount = price_diff * position.qty
         pnl_pct = price_diff / position.entry_price
 
@@ -329,8 +353,8 @@ class PositionTracker:
                 """
                 INSERT OR REPLACE INTO position_tracking
                 (symbol, side, qty, entry_price, entry_time, highest_price,
-                 trailing_stop_price, trailing_stop_activated, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                 trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     position.symbol,
@@ -341,6 +365,7 @@ class PositionTracker:
                     position.highest_price,
                     position.trailing_stop_price,
                     1 if position.trailing_stop_activated else 0,
+                    1 if position.pending_exit else 0,
                     now,
                 ),
             )
@@ -372,7 +397,8 @@ class PositionTracker:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol, side, qty, entry_price, entry_time, highest_price,
-                       trailing_stop_price, trailing_stop_activated
+                       trailing_stop_price, trailing_stop_activated, 
+                       COALESCE(pending_exit, 0)
                 FROM position_tracking
             """)
             rows = cursor.fetchall()
@@ -387,6 +413,7 @@ class PositionTracker:
                     highest_price=row[5],
                     trailing_stop_price=row[6],
                     trailing_stop_activated=bool(row[7]),
+                    pending_exit=bool(row[8]),
                 )
                 self._positions[position.symbol] = position
                 positions.append(position)

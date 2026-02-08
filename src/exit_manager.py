@@ -16,35 +16,16 @@ Exit Rules Priority:
 
 import asyncio
 import logging
-from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.broker import Broker
 from src.data_handler import DataHandler
-from src.event_bus import EventBus
+from src.event_bus import EventBus, ExitSignalEvent
 from src.position_tracker import PositionData, PositionTracker
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass(frozen=True)
-class ExitSignalEvent:
-    """Exit signal for position management.
-
-    Published when exit threshold is breached.
-    """
-
-    symbol: str
-    side: str  # "sell" for long positions, "buy" for short positions
-    qty: float
-    reason: str  # "stop_loss", "trailing_stop", "profit_target", "emergency"
-    entry_price: float
-    current_price: float
-    pnl_pct: float
-    pnl_amount: float
-    timestamp: datetime
 
 
 class ExitManagerError(Exception):
@@ -196,6 +177,11 @@ class ExitManager:
 
         for position in positions:
             try:
+                # Skip if exit signal already pending (deduplication)
+                if position.pending_exit:
+                    logger.debug(f"Skipping {position.symbol} - exit signal pending")
+                    continue
+
                 # Get current price
                 snapshot = self.data_handler.get_snapshot(position.symbol)
                 if not snapshot:
@@ -214,7 +200,17 @@ class ExitManager:
                 signal = self._evaluate_exit_rules(position, current_price)
                 if signal:
                     signals.append(signal)
-                    await self.event_bus.publish(signal)
+                    # Publish exit signal BEFORE marking pending_exit to avoid
+                    # persisting a stuck pending_exit if publishing fails.
+                    try:
+                        await self.event_bus.publish(signal)
+                    except Exception as e:
+                        logger.error(f"Failed to publish exit signal for {position.symbol}: {e}")
+                        # Do not mark pending_exit so the position can be retried
+                        continue
+                    # Mark position as having pending exit only after successful publish
+                    position.pending_exit = True
+                    self.position_tracker._persist_position(position)
                     logger.info(
                         f"Exit signal: {signal.symbol} {signal.reason} "
                         f"(P&L: {signal.pnl_pct*100:.1f}%)"

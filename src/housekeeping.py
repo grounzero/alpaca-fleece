@@ -11,7 +11,7 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 
-import pytz  # type: ignore[import-untyped]
+import pytz
 
 from src.broker import Broker
 from src.state_store import StateStore

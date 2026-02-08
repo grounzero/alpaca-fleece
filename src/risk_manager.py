@@ -105,13 +105,28 @@ class RiskManager:
             return "extended"  # Crypto uses extended limits
 
         # For equities, detect session based on current time
-        now = datetime.now(timezone.utc)
-        # Convert to ET (UTC-5 in winter)
-        et_offset = -5  # Simplified; could use pytz for daylight savings
-        et_hour = (now.hour + et_offset) % 24
+        try:
+            from zoneinfo import ZoneInfo
 
-        # Regular hours: 9:30-16:00 ET (9.5-16.0)
-        if 9.5 <= et_hour < 16.0:
+            now_et = datetime.now(ZoneInfo("America/New_York"))
+        except ImportError:
+            # Fallback for Python < 3.9: Use fixed ET offset (UTC-5 or UTC-4 DST)
+            # Import here to avoid issues if dateutil isn't installed
+            try:
+                from dateutil.tz import gettz
+
+                now_et = datetime.now(gettz("America/New_York"))
+            except ImportError:
+                # Last resort: Use pytz if available
+                import pytz
+
+                now_et = datetime.now(pytz.timezone("America/New_York"))
+
+        # Regular hours: 9:30 AM - 4:00 PM ET
+        market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)
+        market_close = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
+
+        if market_open <= now_et < market_close:
             return "regular"
         else:
             return "extended"
@@ -134,6 +149,12 @@ class RiskManager:
     async def check_signal(self, signal: SignalEvent) -> bool:
         """Check if signal should be executed.
 
+        Check order (CRITICAL):
+        1. SAFETY tier (kill-switch, circuit breaker, market hours) - hard refuse
+        2. RISK tier (daily loss, trade count, position limits) - hard refuse
+        3. Confidence filter - soft reject (log, don't error)
+        4. FILTER tier (spread, time of day) - soft skip
+
         Args:
             signal: SignalEvent from strategy
 
@@ -143,8 +164,13 @@ class RiskManager:
         Raises:
             RiskManagerError if safety check fails (hard refuse)
         """
-        # CONFIDENCE FILTER (Win #2: multi-timeframe SMA)
-        # Filter low-confidence signals to reduce false positives
+        # SAFETY TIER (must pass - hard refuse)
+        await self._check_safety_tier()
+
+        # RISK TIER (must pass - hard refuse)
+        await self._check_risk_tier(signal.symbol, signal.signal_type)
+
+        # CONFIDENCE FILTER (soft reject - log only)
         confidence_val: Any = signal.metadata.get("confidence", 0.5)
         confidence: float = float(confidence_val) if confidence_val is not None else 0.5
         MIN_CONFIDENCE: float = 0.5
@@ -154,12 +180,6 @@ class RiskManager:
                 f"confidence {confidence:.2f} < {MIN_CONFIDENCE} (filtered)"
             )
             return False
-
-        # SAFETY TIER
-        await self._check_safety_tier()
-
-        # RISK TIER
-        await self._check_risk_tier(signal.symbol, signal.signal_type)
 
         # FILTER TIER (may skip signal without error)
         if not await self._check_filter_tier(signal):

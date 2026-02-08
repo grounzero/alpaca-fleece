@@ -17,9 +17,9 @@ def state_store(tmp_path):
 
 
 @pytest.fixture
-def strategy(state_store):
-    """Create multi-timeframe SMA strategy."""
-    return SMACrossover(state_store)
+def strategy():
+    """Create multi-timeframe SMA strategy (strategy no longer carries StateStore)."""
+    return SMACrossover()
 
 
 @pytest.fixture

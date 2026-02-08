@@ -5,9 +5,18 @@ All internal events flow through here.
 """
 
 import asyncio
+import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
+
+logger = logging.getLogger(__name__)
+
+
+class EventBusError(Exception):
+    """Raised when event bus operation fails."""
+
+    pass
 
 
 # Event types
@@ -89,12 +98,16 @@ class EventBus:
         """
         self.queue: asyncio.Queue[object] = asyncio.Queue(maxsize=maxsize)
         self.running = False
+        self._dropped_count = 0
 
     async def publish(self, event: object) -> None:
         """Publish event to queue.
 
         Args:
             event: Event object (BarEvent, SignalEvent, etc)
+
+        Raises:
+            EventBusError: If critical event (ExitSignalEvent) cannot be published
         """
         if not self.running:
             return
@@ -102,8 +115,18 @@ class EventBus:
         try:
             await asyncio.wait_for(self.queue.put(event), timeout=5.0)
         except asyncio.TimeoutError:
-            # Queue full, skip (log elsewhere)
-            pass
+            self._dropped_count += 1
+            event_type = type(event).__name__
+            logger.error(
+                f"EventBus queue full - DROPPED event: type={event_type}, "
+                f"total_dropped={self._dropped_count}",
+                extra={"event_type": event_type, "dropped_count": self._dropped_count},
+            )
+            # Critical events should not be silently dropped
+            if isinstance(event, ExitSignalEvent):
+                raise EventBusError(
+                    f"Failed to publish critical ExitSignalEvent: queue full after {self._dropped_count} drops"
+                )
 
     async def subscribe(self) -> Optional[object]:
         """Get next event from queue (blocking).
@@ -139,3 +162,8 @@ class EventBus:
     def size(self) -> int:
         """Get current queue size."""
         return self.queue.qsize()
+
+    @property
+    def dropped_count(self) -> int:
+        """Get total dropped events count."""
+        return self._dropped_count

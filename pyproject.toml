@@ -25,6 +25,7 @@ dev = [
     "mypy>=1.7.0",
     "types-pyyaml>=6.0.0",
     "types-python-dateutil>=2.8.0",
+    "types-pytz",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -42,6 +43,7 @@ dev = [
     "mypy>=1.7.0",
     "types-pyyaml>=6.0.0",
     "types-python-dateutil>=2.8.0",
+    "types-pytz",
 ]
 
 [tool.mypy]

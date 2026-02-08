@@ -279,9 +279,9 @@ class Orchestrator:
 
             if strategy_name == "sma_crossover":
                 # Multi-timeframe SMA (no longer accepts fast_period/slow_period)
+                # Note: Deduplication moved to OrderManager (separation of concerns)
                 crypto_symbols = symbols_config.get("crypto_symbols", [])
                 self.strategy = SMACrossover(
-                    state_store=self.state_store,
                     crypto_symbols=crypto_symbols,
                 )
             else:

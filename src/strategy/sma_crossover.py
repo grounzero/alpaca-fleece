@@ -7,7 +7,6 @@ import pandas as pd
 import pandas_ta as ta
 
 from src.event_bus import SignalEvent
-from src.state_store import StateStore
 from src.strategy.base import BaseStrategy
 
 
@@ -25,14 +24,12 @@ class SMACrossover(BaseStrategy):
     - Unknown: Medium confidence (0.5-0.7)
     """
 
-    def __init__(self, state_store: StateStore, crypto_symbols: Optional[list[str]] = None) -> None:
+    def __init__(self, crypto_symbols: Optional[list[str]] = None) -> None:
         """Initialise multi-timeframe strategy.
 
         Args:
-            state_store: State store for tracking last signals
             crypto_symbols: List of crypto symbols for warmup detection (Hybrid)
         """
-        self.state_store = state_store
         self.crypto_symbols = crypto_symbols or []  # Hybrid: crypto symbol list
 
         # Define SMA periods (fast, slow) for each strategy
@@ -124,13 +121,9 @@ class SMACrossover(BaseStrategy):
 
         signal_type = "BUY" if upward_cross else "SELL"
 
-        # Prevent duplicate consecutive signals per SMA period (Win #3: persisted)
-        last_signal = self.state_store.get_last_signal(symbol, (fast, slow))  # Win #3: from DB
-
-        if last_signal == signal_type:
-            return None  # Duplicate, skip
-
-        self.state_store.save_last_signal(symbol, signal_type, (fast, slow))  # Win #3: persisted
+        # NOTE: Deduplication moved to OrderManager.submit_signal() to separate concerns.
+        # Strategy returns all crossover signals; OrderManager filters duplicates based on
+        # last submitted signal state (persisted in StateStore).
 
         return SignalEvent(
             symbol=symbol,
