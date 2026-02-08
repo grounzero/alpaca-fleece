@@ -171,10 +171,19 @@ class TestTrailingStop:
         # Activate trailing stop at $101.5
         position_tracker.update_current_price("AAPL", 101.5)
         position = position_tracker.get_position("AAPL")
-        stop_price = position.trailing_stop_price  # ~$101.0
+        old_stop_price = position.trailing_stop_price  # ~$101.0
 
-        # Price is above stop price
-        assert 101.2 > stop_price
+        # Price increases above stop price - trailing stop should stay activated
+        # and stop price should not decrease
+        position_tracker.update_current_price("AAPL", 101.2)
+
+        # Assert still activated
+        position = position_tracker.get_position("AAPL")
+        assert position.trailing_stop_activated is True
+
+        # Assert stop price didn't decrease (may increase if new high)
+        new_stop_price = position.trailing_stop_price
+        assert new_stop_price >= old_stop_price
 
     def test_highest_price_tracks_max(self, position_tracker):
         """Highest price tracks maximum seen price."""
