@@ -74,3 +74,38 @@ def test_evaluate_exit_rules_fallback_stop_when_atr_missing() -> None:
     assert sig is not None
     assert sig.reason == "stop_loss"
     assert sig.side == "sell"
+
+
+def test_evaluate_exit_rules_atr_short_profit_target() -> None:
+    entry = 100.0
+    atr = 2.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="short",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=atr,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None)
+
+    # For short: target = entry - atr*3 = 94.0 -> price 94 triggers profit target
+    sig = mgr._evaluate_exit_rules(position, current_price=94.0)
+    assert sig is not None
+    assert sig.reason == "profit_target"
+    assert sig.side == "buy"
+
+
+def test_calculate_dynamic_stops_invalid_side_raises() -> None:
+    try:
+        calculate_dynamic_stops(entry_price=100.0, atr=2.0, side="weird")
+        raised = False
+    except ValueError:
+        raised = True
+    assert raised
