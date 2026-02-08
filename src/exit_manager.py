@@ -48,6 +48,17 @@ def calculate_dynamic_stops(
       - stop_price = entry_price + stop_distance
       - target_price = entry_price - target_distance
     """
+    # Validate inputs to avoid producing non-finite or nonsensical thresholds.
+    if not (isinstance(atr, (int, float)) and math.isfinite(atr) and atr > 0.0):
+        raise ValueError(f"Invalid atr for dynamic stop calculation: {atr!r}")
+
+    for name, val in (
+        ("atr_multiplier_stop", atr_multiplier_stop),
+        ("atr_multiplier_target", atr_multiplier_target),
+    ):
+        if not (isinstance(val, (int, float)) and math.isfinite(val) and val >= 0.0):
+            raise ValueError(f"Invalid multiplier {name}: {val!r}")
+
     stop_distance = atr * atr_multiplier_stop
     target_distance = atr * atr_multiplier_target
 
