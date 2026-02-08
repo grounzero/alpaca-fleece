@@ -169,7 +169,7 @@ class Stream:
         logger.info(f"Subscribing to {len(symbols)} symbols in batches of {batch_size}")
         num_batches = (len(symbols) + batch_size - 1) // batch_size
         for i, batch in enumerate(batch_iter(symbols, batch_size)):
-            logger.info(f"Subscribing batch {i+1}: {batch}")
+            logger.info(f"Subscribing batch {i+1}/{num_batches} size={len(batch)}")
             self.market_data_stream.subscribe_bars(handle_bar, *batch)
 
             # Delay between batches (except after last batch)
