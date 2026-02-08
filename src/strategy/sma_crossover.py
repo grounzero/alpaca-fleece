@@ -8,6 +8,9 @@ import pandas_ta as ta
 
 from src.event_bus import SignalEvent
 from src.strategy.base import BaseStrategy
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 class SMACrossover(BaseStrategy):
@@ -96,6 +99,19 @@ class SMACrossover(BaseStrategy):
                 signal.metadata["confidence"] = confidence
                 signal.metadata["regime"] = regime["regime"]
                 signal.metadata["regime_strength"] = regime["strength"]
+                # Log signal with regime metadata for runtime analysis
+                logger.info(
+                    "signal=%s symbol=%s sma=%s confidence=%.3f regime=%s strength=%.3f atr=%s close=%.2f",
+                    signal.signal_type,
+                    symbol,
+                    signal.metadata.get("sma_period"),
+                    confidence,
+                    regime.get("regime"),
+                    float(regime.get("strength", 0.0)),
+                    signal.metadata.get("atr"),
+                    signal.metadata.get("close"),
+                )
+
                 signals.append(signal)
 
         return signals
