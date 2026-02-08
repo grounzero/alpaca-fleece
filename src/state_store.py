@@ -51,8 +51,7 @@ class StateStore:
             cursor = conn.cursor()
 
             # Order intents table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS order_intents (
                     client_order_id TEXT PRIMARY KEY,
                     symbol TEXT NOT NULL,
@@ -64,12 +63,10 @@ class StateStore:
                     created_at_utc TEXT NOT NULL,
                     updated_at_utc TEXT NOT NULL
                 )
-            """
-            )
+            """)
 
             # Trades table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS trades (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp_utc TEXT NOT NULL,
@@ -80,35 +77,29 @@ class StateStore:
                     order_id TEXT NOT NULL,
                     client_order_id TEXT NOT NULL
                 )
-            """
-            )
+            """)
 
             # Equity curve table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS equity_curve (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp_utc TEXT NOT NULL,
                     equity NUMERIC(12, 2) NOT NULL,
                     daily_pnl NUMERIC(12, 2) NOT NULL
                 )
-            """
-            )
+            """)
 
             # Bot state table (key-value)
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS bot_state (
                     key TEXT PRIMARY KEY,
                     value TEXT NOT NULL,
                     updated_at_utc TEXT NOT NULL
                 )
-            """
-            )
+            """)
 
             # Bars table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS bars (
                     symbol TEXT NOT NULL,
                     timeframe TEXT NOT NULL,
@@ -117,12 +108,10 @@ class StateStore:
                     volume INTEGER, trade_count INTEGER, vwap NUMERIC(10, 4),
                     PRIMARY KEY (symbol, timeframe, timestamp_utc)
                 )
-            """
-            )
+            """)
 
             # Positions snapshot table
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS positions_snapshot (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
                     timestamp_utc TEXT NOT NULL,
@@ -130,51 +119,38 @@ class StateStore:
                     qty NUMERIC(10, 4) NOT NULL,
                     avg_entry_price NUMERIC(10, 4) NOT NULL
                 )
-            """
-            )
+            """)
 
             # Create indexes for frequently queried columns
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_order_intents_status 
                 ON order_intents(status)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_order_intents_symbol 
                 ON order_intents(symbol)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_trades_symbol_timestamp 
                 ON trades(symbol, timestamp_utc)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_bars_symbol_timestamp 
                 ON bars(symbol, timestamp_utc)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_positions_snapshot_timestamp 
                 ON positions_snapshot(timestamp_utc)
-            """
-            )
+            """)
 
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_equity_curve_timestamp 
                 ON equity_curve(timestamp_utc)
-            """
-            )
+            """)
 
             conn.commit()
 
