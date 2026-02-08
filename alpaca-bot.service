@@ -14,17 +14,18 @@ EnvironmentFile=-/etc/default/alpaca-bot
 Environment=BOT_ROOT=%h/.openclaw/workspace/alpaca-fleece
 Environment=PYTHONUNBUFFERED=1
 
-# Ensure PATH includes the virtualenv inside BOT_ROOT. We avoid relying on
-# systemd expanding ${BOT_ROOT} in all unit settings by invoking a small
-# POSIX shell which performs the expansion. Administrators can still override
-# BOT_ROOT via /etc/default/alpaca-bot (EnvironmentFile above).
-Environment=PATH=%h/.openclaw/workspace/alpaca-fleece/.venv/bin:/usr/local/bin:/usr/bin:/bin
+# Do NOT hard-code `PATH` to the venv here. `Environment` lines are evaluated
+# by systemd and do not reliably expand user-provided `BOT_ROOT` from the
+# EnvironmentFile across all systemd versions. Instead we use a shell wrapper
+# in `ExecStart` (below) to expand `${BOT_ROOT}` and exec the venv's python.
+# If administrators set `BOT_ROOT` in /etc/default/alpaca-bot they should also
+# create a drop-in to update `ReadWritePaths` or provide absolute paths there.
 
 # Use a shell wrapper for reliable variable expansion. This runs a short
-# one-liner that execs the venv python inside BOT_ROOT so ${BOT_ROOT} is
-# expanded by the shell rather than relying on systemd doing it in every
-# directive.
-ExecStart=/bin/sh -c 'exec "${BOT_ROOT:-%h/.openclaw/workspace/alpaca-fleece}"/.venv/bin/python -u "${BOT_ROOT:-%h/.openclaw/workspace/alpaca-fleece}"/orchestrator.py'
+# one-liner that expands `${BOT_ROOT}` at runtime and execs the venv python
+# inside it. This avoids relying on systemd to expand environment variables
+# in multiple unit fields.
+ExecStart=/bin/sh -c 'BOT_ROOT="${BOT_ROOT:-%h/.openclaw/workspace/alpaca-fleece}"; exec "$BOT_ROOT"/.venv/bin/python -u "$BOT_ROOT"/orchestrator.py'
 
 # Graceful shutdown on stop
 TimeoutStopSec=30
@@ -43,9 +44,18 @@ StandardError=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
-# Use %h defaults for ReadWritePaths to avoid inconsistent expansion behavior
-# across systemd versions. If BOT_ROOT is overridden via /etc/default/alpaca-bot
-# and points elsewhere, admins can set absolute paths in an override file.
+# Use %h defaults for `ReadWritePaths` to provide a safe out-of-the-box
+# configuration. NOTE: `ReadWritePaths` does not expand arbitrary unit
+# environment variables, so if administrators override `BOT_ROOT` they must
+# either set absolute paths in a systemd drop-in (e.g. /etc/systemd/system/
+# alpaca-bot.service.d/override.conf) or leave `BOT_ROOT` pointing inside the
+# user's home directory. Example drop-in to adjust paths:
+#
+# [Service]
+# ReadWritePaths=/opt/my-bot/data /opt/my-bot/logs
+#
+# Leaving the default `%h` paths keeps the unit portable and avoids relying
+# on shell expansion in unit files.
 ReadWritePaths=%h/.openclaw/workspace/alpaca-fleece/data %h/.openclaw/workspace/alpaca-fleece/logs
 
 [Install]
