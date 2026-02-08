@@ -9,7 +9,7 @@ from src.event_bus import BarEvent, EventBus, EventBusError, ExitSignalEvent
 
 
 @pytest.mark.asyncio
-async def test_event_bus_logs_dropped_events(caplog):
+async def test_event_bus_logs_dropped_events(caplog, monkeypatch):
     """EventBus logs error when queue is full and event is dropped."""
     # Create a small queue to force overflow
     bus = EventBus(maxsize=2)
@@ -51,6 +51,12 @@ async def test_event_bus_logs_dropped_events(caplog):
         )
         # Publish third event - should timeout and be dropped (not critical)
         await bus.publish(event3)  # Won't raise because it's not ExitSignalEvent
+
+        # Speed up test by no-oping asyncio.sleep
+        async def _noop_sleep(*a, **k):
+            return None
+
+        monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
         await asyncio.sleep(0.1)  # Let processing occur
         # Verify drop was logged
         assert "timed out" in caplog.text or bus.dropped_count > 0
@@ -121,7 +127,7 @@ async def test_exit_signal_event_drop_raises_error():
 
 
 @pytest.mark.asyncio
-async def test_non_critical_event_drop_logged_only(caplog):
+async def test_non_critical_event_drop_logged_only(caplog, monkeypatch):
     """Non-critical event drops are logged but don't raise."""
     bus = EventBus(maxsize=1)
     await bus.start()
@@ -151,6 +157,12 @@ async def test_non_critical_event_drop_logged_only(caplog):
 
     # This should timeout but NOT raise (unless it's ExitSignalEvent)
     await bus.publish(event2)  # Won't raise because it's not critical
+
+    # Speed up test by no-oping asyncio.sleep
+    async def _noop_sleep(*a, **k):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
     await asyncio.sleep(0.1)  # Brief wait
     # Verify drop was logged and counter incremented
     assert bus.dropped_count >= 1 or "timed out" in caplog.text

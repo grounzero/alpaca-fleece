@@ -44,7 +44,9 @@ def test_atr_dynamic_stop_long_triggers_stop_and_target():
         trailing_stop_activated=False,
     )
 
-    stop_price, target_price = calculate_dynamic_stops(100.0, atr=2.0, atr_multiplier_stop=1.5, atr_multiplier_target=3.0, side="long")
+    stop_price, target_price = calculate_dynamic_stops(
+        100.0, atr=2.0, atr_multiplier_stop=1.5, atr_multiplier_target=3.0, side="long"
+    )
 
     # Price below stop -> stop_loss
     sig = em._evaluate_exit_rules(pos, current_price=stop_price - 0.1)
@@ -70,7 +72,9 @@ def test_atr_dynamic_stop_short_triggers_stop_and_target():
         trailing_stop_activated=False,
     )
 
-    stop_price, target_price = calculate_dynamic_stops(100.0, atr=1.0, atr_multiplier_stop=2.0, atr_multiplier_target=3.0, side="short")
+    stop_price, target_price = calculate_dynamic_stops(
+        100.0, atr=1.0, atr_multiplier_stop=2.0, atr_multiplier_target=3.0, side="short"
+    )
 
     # For short, stop triggers when current_price >= stop_price
     sig = em._evaluate_exit_rules(pos, current_price=stop_price + 0.1)
@@ -85,7 +89,7 @@ def test_atr_precedence_skips_fallback_fixed_pct():
     # If ATR thresholds are computed, fallback fixed-percentage stop should not fire
     # even when pnl_pct exceeds stop_loss_pct.
     # Configure DummyTracker to report large negative pnl_pct for symbol 'C'
-    pnl_map = {"C": ( -10.0, -0.5 )}  # -50% P&L
+    pnl_map = {"C": (-10.0, -0.5)}  # -50% P&L
     em = make_exit_manager(pnl_map=pnl_map)
 
     pos = PositionData(

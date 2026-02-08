@@ -1,4 +1,4 @@
-import asyncio
+import pytest
 from datetime import datetime, timezone
 
 from src.exit_manager import ExitManager
@@ -73,7 +73,8 @@ def test_fallback_fixed_stop_triggers_when_no_atr():
     assert sig is not None and sig.reason == "stop_loss"
 
 
-def test_close_all_positions_publishes_events():
+@pytest.mark.asyncio
+async def test_close_all_positions_publishes_events():
     # Create one tracked position and ensure close_all_positions publishes one event
     pos = PositionData(
         symbol="Y",
@@ -98,5 +99,5 @@ def test_close_all_positions_publishes_events():
     )
 
     # Run close_all_positions (async)
-    asyncio.run(em.close_all_positions(reason="test"))
+    await em.close_all_positions(reason="test")
     assert len(event_bus.published) == 1

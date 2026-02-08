@@ -51,13 +51,24 @@ async def test_start_market_stream_subscribes_in_batches(monkeypatch):
 
     monkeypatch.setattr(stream_mod, "StockDataStream", DummyStockDataStream)
 
+    # Speed up test by no-oping asyncio.sleep used in dummy _run_forever
+    async def _noop_sleep(*a, **k):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
+
     s = stream_mod.Stream(api_key="k", secret_key="s", feed="iex")
 
     # register a simple async handler
     async def on_bar(bar):
         return None
 
-    s.register_handlers(on_bar=on_bar, on_order_update=lambda u: None, on_market_disconnect=lambda: None, on_trade_disconnect=lambda: None)
+    s.register_handlers(
+        on_bar=on_bar,
+        on_order_update=lambda u: None,
+        on_market_disconnect=lambda: None,
+        on_trade_disconnect=lambda: None,
+    )
 
     # Run start market stream with 3 symbols, batch_size=2
     await s._start_market_stream(["A", "B", "C"], batch_size=2, batch_delay=0)
@@ -88,6 +99,12 @@ async def test_start_trade_stream_subscribes_and_sets_connected(monkeypatch):
             return None
 
     monkeypatch.setattr(stream_mod, "TradingStream", DummyTradingStream)
+
+    # Speed up test by no-oping asyncio.sleep used in dummy _run_forever
+    async def _noop_sleep(*a, **k):
+        return None
+
+    monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
 
     s = stream_mod.Stream(api_key="k", secret_key="s")
     await s._start_trade_stream()

@@ -1,5 +1,4 @@
 from datetime import datetime, timezone
-import math
 
 from src.exit_manager import ExitManager, calculate_dynamic_stops
 from src.position_tracker import PositionData

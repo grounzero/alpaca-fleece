@@ -16,12 +16,10 @@ from __future__ import annotations
 import argparse
 import re
 from pathlib import Path
-import sys
 
 try:
     import pandas as pd
-    import numpy as np
-except Exception as e:  # pragma: no cover - optional runtime dependency
+except Exception:  # pragma: no cover - optional runtime dependency
     print("This tool requires pandas and numpy. Install via: pip install pandas numpy")
     raise
 
@@ -99,7 +97,7 @@ def summarize(df: pd.DataFrame) -> None:
     # Correlation between confidence and regime strength
     if df["strength"].notna().any():
         # Pearson correlation
-        valid = df[ ["confidence", "strength"] ].dropna()
+        valid = df[["confidence", "strength"]].dropna()
         if len(valid) >= 2:
             corr = valid["confidence"].corr(valid["strength"])
             print(f"Correlation (confidence vs regime_strength): {corr:.3f}")
