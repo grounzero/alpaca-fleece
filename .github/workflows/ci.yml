@@ -23,7 +23,9 @@ jobs:
 
       - name: Install dependencies
         run: |
-          python -m pip install --upgrade pip
+          # Pin pip and pip-tools to the versions used to generate
+          # requirements.txt to ensure reproducible behavior in CI.
+          python -m pip install pip==23.3.1 pip-tools==7.5.2
           # Install pinned, hashed requirements for reproducible installs
           pip install --require-hashes -r requirements.txt
           # Install development tooling directly (avoid installing pip-tools and

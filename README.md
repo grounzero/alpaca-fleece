@@ -23,17 +23,20 @@ A production-ready, event-driven trading bot for Alpaca Markets. Implements SMA 
 
 This project uses `pip-tools` to generate pinned, hashed `requirements.txt` artifacts used by CI for reproducible installs.
 
-- Recommended (example) tools to match CI: `pip==23.2.1`, `pip-tools==7.5.2`.
+- Recommended (exact) tooling to match CI: `pip==23.3.1`, `pip-tools==7.5.2`.
 - To regenerate the pinned/hashes files locally (developer machine):
 
 ```bash
 # from project root, with a clean virtualenv activated
-pip install "pip==23.2.1" "pip-tools==7.5.2"
-pip-compile --output-file=requirements.txt requirements.in --generate-hashes
-pip-compile --output-file=requirements-dev.txt requirements-dev.in --generate-hashes
+python -m pip install --upgrade pip
+python -m pip install pip==23.3.1 pip-tools==7.5.2
+# Generate pinned, hashed production requirements
+pip-compile requirements.in --output-file=requirements.txt --generate-hashes --resolver=backtracking
+# (Optional) Generate dev requirements if you maintain a separate file
+pip-compile requirements-dev.in --output-file=requirements-dev.txt --generate-hashes --resolver=backtracking
 ```
 
-- Note: CI installs production `requirements.txt` with `--require-hashes`. Installing `requirements-dev.txt` with `--require-hashes` may fail because some build-time transitive packages (e.g., `setuptools`) are not hashed; CI installs dev deps without `--require-hashes` to avoid that failure.
+- Note: CI installs production `requirements.txt` with `--require-hashes`. Installing `requirements-dev.txt` with `--require-hashes` may fail because some build-time transitive packages (e.g., `setuptools`) are not hashed; the CI workflow installs dev tooling explicitly (without `--require-hashes`) to avoid that failure.
 
 
 ### Installation
