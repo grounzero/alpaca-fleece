@@ -1,5 +1,6 @@
 """Shared utility functions."""
 
+import math
 from typing import Any, Iterator, Sequence, TypeVar
 
 T = TypeVar("T")
@@ -36,6 +37,12 @@ def parse_optional_float(value: Any) -> float | None:
     if value is None:
         return None
     try:
-        return float(value)
+        v = float(value)
     except (TypeError, ValueError):
         return None
+
+    # Treat non-finite values (NaN/inf) as missing
+    if not math.isfinite(v):
+        return None
+
+    return v

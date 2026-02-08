@@ -290,6 +290,9 @@ class ExitManager:
         # Calculate P&L
         pnl_amount, pnl_pct = self.position_tracker.calculate_pnl(position.symbol, current_price)
 
+        # Whether ATR-based thresholds were computed and applied (skip fallbacks)
+        atr_computed = False
+
         # If ATR is available for this position, use ATR-based dynamic stops/targets
         if position.atr is not None and math.isfinite(position.atr) and position.atr > 0.0:
             atr_value = position.atr
@@ -321,6 +324,9 @@ class ExitManager:
                         atr_value,
                     )
                 else:
+                    # Mark that ATR-based thresholds were computed; if they are
+                    # valid we prefer them over fallback fixed-percentage rules.
+                    atr_computed = True
                     # Long position ATR-based checks
                     if converted_side == "long":
                         if current_price <= stop_price:
@@ -377,7 +383,7 @@ class ExitManager:
                             )
 
         # Priority 1: Stop loss (highest priority) - fallback to fixed pct
-        if pnl_pct <= -self.stop_loss_pct:
+        if not atr_computed and pnl_pct <= -self.stop_loss_pct:
             return ExitSignalEvent(
                 symbol=position.symbol,
                 side="sell" if position.side == "long" else "buy",
@@ -411,7 +417,7 @@ class ExitManager:
                 )
 
         # Priority 3: Profit target
-        if pnl_pct >= self.profit_target_pct:
+        if not atr_computed and pnl_pct >= self.profit_target_pct:
             return ExitSignalEvent(
                 symbol=position.symbol,
                 side="sell" if position.side == "long" else "buy",
