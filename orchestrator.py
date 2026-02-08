@@ -636,6 +636,7 @@ class Orchestrator:
                 fill_price=fill_price,
                 qty=event.filled_qty,
                 side="long",
+                atr=order_intent.get("atr") if order_intent else None,
             )
             logger.info(
                 f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} " f"qty={event.filled_qty}"

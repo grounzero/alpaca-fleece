@@ -72,10 +72,12 @@ class SMACrossover(BaseStrategy):
 
         signals: list[SignalEvent] = []
         regime = self._detect_regime(df)
-
+        # Compute ATR once and pass into signals for downstream use
+        atr_series = ta.atr(df["high"], df["low"], df["close"], length=14)
+        atr = float(atr_series.iloc[-1]) if atr_series is not None else None
         # Check all SMA pairs
         for fast_period, slow_period in self.periods:
-            signal = self._check_crossover(symbol, df, fast_period, slow_period)
+            signal = self._check_crossover(symbol, df, fast_period, slow_period, atr)
 
             if signal:
                 # Score confidence based on regime and SMA period
@@ -88,7 +90,7 @@ class SMACrossover(BaseStrategy):
         return signals
 
     def _check_crossover(
-        self, symbol: str, df: pd.DataFrame, fast: int, slow: int
+        self, symbol: str, df: pd.DataFrame, fast: int, slow: int, atr: float | None = None
     ) -> SignalEvent | None:
         """Check for SMA crossover on given periods.
 
@@ -134,6 +136,7 @@ class SMACrossover(BaseStrategy):
                 "fast_sma": float(fast_now),
                 "slow_sma": float(slow_now),
                 "close": float(df["close"].iloc[-1]),
+                "atr": float(atr) if atr is not None else None,
             },
         )
 

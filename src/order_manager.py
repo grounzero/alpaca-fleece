@@ -134,6 +134,7 @@ class OrderManager:
             symbol=symbol,
             side=side,
             qty=float(qty),  # Convert Decimal to float for storage
+            atr=signal.metadata.get("atr") if hasattr(signal, "metadata") else None,
             status="new",
         )
 

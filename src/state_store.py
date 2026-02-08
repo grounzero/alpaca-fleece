@@ -57,6 +57,7 @@ class StateStore:
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
                     qty NUMERIC(10, 4) NOT NULL,
+                    atr NUMERIC(10, 4),
                     status TEXT NOT NULL,
                     filled_qty NUMERIC(10, 4) DEFAULT 0,
                     alpaca_order_id TEXT,
@@ -180,6 +181,7 @@ class StateStore:
         side: str,
         qty: float,
         status: str = "new",
+        atr: float | None = None,
     ) -> None:
         """Save order intent before submission (crash safety)."""
         now = datetime.now(timezone.utc).isoformat()
@@ -187,9 +189,9 @@ class StateStore:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO order_intents 
-                   (client_order_id, symbol, side, qty, status, created_at_utc, updated_at_utc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (client_order_id, symbol, side, qty, status, now, now),
+                   (client_order_id, symbol, side, qty, atr, status, created_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (client_order_id, symbol, side, qty, atr, status, now, now),
             )
             conn.commit()
 
@@ -217,7 +219,7 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
+                "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
                 (client_order_id,),
             )
             row = cursor.fetchone()
@@ -227,9 +229,10 @@ class StateStore:
                     "symbol": row[1],
                     "side": row[2],
                     "qty": row[3],
-                    "status": row[4],
-                    "filled_qty": row[5],
-                    "alpaca_order_id": row[6],
+                    "atr": row[4],
+                    "status": row[5],
+                    "filled_qty": row[6],
+                    "alpaca_order_id": row[7],
                 }
             return None
 
@@ -246,12 +249,12 @@ class StateStore:
             cursor = conn.cursor()
             if status:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents WHERE status = ?",
+                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents WHERE status = ?",
                     (status,),
                 )
             else:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents"
+                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents"
                 )
 
             rows = cursor.fetchall()
@@ -261,9 +264,10 @@ class StateStore:
                     "symbol": row[1],
                     "side": row[2],
                     "qty": row[3],
-                    "status": row[4],
-                    "filled_qty": row[5],
-                    "alpaca_order_id": row[6],
+                    "atr": row[4],
+                    "status": row[5],
+                    "filled_qty": row[6],
+                    "alpaca_order_id": row[7],
                 }
                 for row in rows
             ]

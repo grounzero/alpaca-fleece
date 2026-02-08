@@ -28,6 +28,25 @@ from src.state_store import StateStore
 logger = logging.getLogger(__name__)
 
 
+def calculate_dynamic_stops(
+    entry_price: float,
+    atr: float,
+    atr_multiplier_stop: float = 1.5,
+    atr_multiplier_target: float = 3.0,
+) -> tuple[float, float]:
+    """Calculate stop loss and profit target based on ATR.
+
+    Returns (stop_price, target_price) for long positions.
+    """
+    stop_distance = atr * atr_multiplier_stop
+    target_distance = atr * atr_multiplier_target
+
+    stop_price = entry_price - stop_distance
+    target_price = entry_price + target_distance
+
+    return stop_price, target_price
+
+
 class ExitManagerError(Exception):
     """Raised when exit manager operation fails."""
 
@@ -51,6 +70,8 @@ class ExitManager:
         trailing_stop_trail_pct: float = 0.005,
         check_interval_seconds: int = 30,
         exit_on_circuit_breaker: bool = True,
+        atr_multiplier_stop: float = 1.5,
+        atr_multiplier_target: float = 3.0,
     ) -> None:
         """Initialise exit manager.
 
@@ -82,6 +103,10 @@ class ExitManager:
         self.check_interval_seconds = check_interval_seconds
         self.exit_on_circuit_breaker = exit_on_circuit_breaker
 
+        # ATR multipliers for dynamic stops/targets
+        self.atr_multiplier_stop = atr_multiplier_stop
+        self.atr_multiplier_target = atr_multiplier_target
+
         self._running = False
         self._monitor_task: Optional[asyncio.Task[Any]] = None
 
@@ -95,6 +120,9 @@ class ExitManager:
         logger.info(
             f"  Stop loss: -{self.stop_loss_pct*100:.1f}%, "
             f"Profit target: +{self.profit_target_pct*100:.1f}%"
+        )
+        logger.info(
+            f"  ATR multipliers: stop={self.atr_multiplier_stop}, target={self.atr_multiplier_target}"
         )
         if self.trailing_stop_enabled:
             logger.info(
@@ -243,7 +271,71 @@ class ExitManager:
         # Calculate P&L
         pnl_amount, pnl_pct = self.position_tracker.calculate_pnl(position.symbol, current_price)
 
-        # Priority 1: Stop loss (highest priority)
+        # If ATR is available for this position, use ATR-based dynamic stops/targets
+        if getattr(position, "atr", None) and position.atr > 0:
+            stop_price, target_price = calculate_dynamic_stops(
+                entry_price=position.entry_price,
+                atr=position.atr,
+                atr_multiplier_stop=self.atr_multiplier_stop,
+                atr_multiplier_target=self.atr_multiplier_target,
+            )
+
+            # Long position ATR-based checks
+            if position.side == "long":
+                if current_price <= stop_price:
+                    return ExitSignalEvent(
+                        symbol=position.symbol,
+                        side="sell",
+                        qty=position.qty,
+                        reason="stop_loss",
+                        entry_price=position.entry_price,
+                        current_price=current_price,
+                        pnl_pct=pnl_pct,
+                        pnl_amount=pnl_amount,
+                        timestamp=datetime.now(timezone.utc),
+                    )
+
+                if current_price >= target_price:
+                    return ExitSignalEvent(
+                        symbol=position.symbol,
+                        side="sell",
+                        qty=position.qty,
+                        reason="profit_target",
+                        entry_price=position.entry_price,
+                        current_price=current_price,
+                        pnl_pct=pnl_pct,
+                        pnl_amount=pnl_amount,
+                        timestamp=datetime.now(timezone.utc),
+                    )
+            else:
+                # Short position ATR-based checks (inverse)
+                if current_price >= stop_price:
+                    return ExitSignalEvent(
+                        symbol=position.symbol,
+                        side="buy",
+                        qty=position.qty,
+                        reason="stop_loss",
+                        entry_price=position.entry_price,
+                        current_price=current_price,
+                        pnl_pct=pnl_pct,
+                        pnl_amount=pnl_amount,
+                        timestamp=datetime.now(timezone.utc),
+                    )
+
+                if current_price <= target_price:
+                    return ExitSignalEvent(
+                        symbol=position.symbol,
+                        side="buy",
+                        qty=position.qty,
+                        reason="profit_target",
+                        entry_price=position.entry_price,
+                        current_price=current_price,
+                        pnl_pct=pnl_pct,
+                        pnl_amount=pnl_amount,
+                        timestamp=datetime.now(timezone.utc),
+                    )
+
+        # Priority 1: Stop loss (highest priority) - fallback to fixed pct
         if pnl_pct <= -self.stop_loss_pct:
             return ExitSignalEvent(
                 symbol=position.symbol,
