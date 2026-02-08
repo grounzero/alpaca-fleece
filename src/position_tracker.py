@@ -73,7 +73,8 @@ class PositionTracker:
 
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS position_tracking (
                     symbol TEXT PRIMARY KEY,
                     side TEXT NOT NULL,
@@ -85,7 +86,8 @@ class PositionTracker:
                     trailing_stop_activated INTEGER DEFAULT 0,
                     updated_at TEXT NOT NULL
                 )
-            """)
+            """
+            )
             conn.commit()
 
     def start_tracking(
@@ -357,11 +359,13 @@ class PositionTracker:
 
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 SELECT symbol, side, qty, entry_price, entry_time, highest_price,
                        trailing_stop_price, trailing_stop_activated
                 FROM position_tracking
-            """)
+            """
+            )
             rows = cursor.fetchall()
 
             for row in rows:
