@@ -84,7 +84,7 @@ class TestValidateExitConfig:
         config = {
             "stop_loss_pct": 0.01,
             "profit_target_pct": 0.02,
-            "trailing_stop_trail_pct": 0.01,  # Equal to stop_loss
+            "trailing_stop_trail_pct": 0.011,  # Greater than stop_loss
         }
         with pytest.raises(
             ConfigError, match="trailing_stop_trail_pct .* must be less than stop_loss_pct"

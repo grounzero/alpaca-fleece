@@ -252,7 +252,7 @@ class TestBrokerTimeout:
             assert result is not None
 
     def test_executor_shutdown_on_cleanup(self):
-        """Test that ThreadPoolExecutor is properly initialised."""
+        """Test that ThreadPoolExecutor is properly shutdown during cleanup."""
         with patch("src.broker.TradingClient"):
             broker = Broker(
                 api_key="test_key",

@@ -344,10 +344,8 @@ class Orchestrator:
             # Initialise exit manager
             logger.info("Initialisinggit satus exit manager...")
 
-            # Validate exit configuration explicitly
+            # Exit configuration validated earlier in `validate_config()`
             exits_config = self.trading_config.get("exits", {})
-            validate_exit_config(exits_config)
-            logger.info("   Exit config validated")
 
             self.exit_manager = ExitManager(
                 broker=self.broker,
@@ -680,15 +678,18 @@ class Orchestrator:
         logger.info("Metrics writer started (60s interval)")
         try:
             while True:
-                # Update gauge values before writing
-                positions = self.broker.get_positions() if self.broker else []
-                metrics.update_open_positions(len(positions))
-                metrics.update_daily_pnl(self.state_store.get_daily_pnl())
-                metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
+                try:
+                    # Update gauge values before writing
+                    positions = self.broker.get_positions() if self.broker else []
+                    metrics.update_open_positions(len(positions))
+                    metrics.update_daily_pnl(self.state_store.get_daily_pnl())
+                    metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
 
-                # Write metrics to file
-                write_metrics_to_file("data/metrics.json")
-                logger.debug("Metrics written to data/metrics.json")
+                    # Write metrics to file
+                    write_metrics_to_file("data/metrics.json")
+                    logger.debug("Metrics written to data/metrics.json")
+                except Exception:
+                    logger.exception("Error in metrics writer loop; continuing")
 
                 await asyncio.sleep(60)
         except asyncio.CancelledError:
