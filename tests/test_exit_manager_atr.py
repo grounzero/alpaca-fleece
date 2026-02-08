@@ -132,7 +132,9 @@ def test_evaluate_exit_rules_atr_long_profit_target() -> None:
     )
 
     tracker = DummyTracker(entry_price=entry, qty=qty)
-    mgr = ExitManager(broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
 
     # For long: target = entry + atr*3 = 106.0 -> price 106 triggers profit target
     sig = mgr._evaluate_exit_rules(position, current_price=106.0)
@@ -158,7 +160,9 @@ def test_evaluate_exit_rules_skip_atr_when_invalid() -> None:
     )
 
     tracker = DummyTracker(entry_price=entry, qty=qty)
-    mgr = ExitManager(broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
 
     # ATR invalid -> fallback percent stop (1%). Price 98 triggers -2% stop
     sig = mgr._evaluate_exit_rules(position, current_price=98.0)
