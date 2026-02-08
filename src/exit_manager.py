@@ -393,7 +393,7 @@ class ExitManager:
         # Priority 2: Trailing stop (if activated and enabled)
         if self.trailing_stop_enabled and position.trailing_stop_activated:
             if (
-                position.trailing_stop_price
+                position.trailing_stop_price is not None
                 and isinstance(position.trailing_stop_price, (int, float))
                 and math.isfinite(position.trailing_stop_price)
                 and current_price <= position.trailing_stop_price
