@@ -516,8 +516,30 @@ class Orchestrator:
                                     metrics.record_signal_filtered_risk()
                                     continue
                             except Exception as e:
+                                error_msg = str(e)
                                 logger.error(f"Risk check failed: {e}")
                                 metrics.record_signal_filtered_risk()
+
+                                # Send alerts for critical risk failures
+                                if "kill-switch active" in error_msg.lower():
+                                    await self.send_critical_alert("kill_switch_activated", {})
+                                elif "circuit breaker tripped" in error_msg.lower():
+                                    cb_count = self.state_store.get_circuit_breaker_count()
+                                    await self.send_critical_alert(
+                                        "circuit_breaker_tripped", {"failure_count": cb_count}
+                                    )
+                                elif "daily loss limit exceeded" in error_msg.lower():
+                                    daily_pnl = self.state_store.get_daily_pnl()
+                                    account = self.broker.get_account()
+                                    equity = account.get("equity", 0)
+                                    risk_config = self.trading_config.get("risk", {})
+                                    daily_loss_limit = equity * risk_config.get(
+                                        "daily_loss_limit_pct", 0.05
+                                    )
+                                    await self.send_critical_alert(
+                                        "daily_loss_exceeded",
+                                        {"daily_pnl": daily_pnl, "limit": daily_loss_limit},
+                                    )
                                 continue
 
                             # Submit order with position sizing
@@ -560,6 +582,14 @@ class Orchestrator:
                             except Exception as e:
                                 logger.error(f"Order submission failed: {e}")
                                 metrics.record_order_rejected()
+
+                                # Check if circuit breaker was tripped
+                                cb_state = self.state_store.get_state("circuit_breaker_state")
+                                if cb_state == "tripped":
+                                    cb_count = self.state_store.get_circuit_breaker_count()
+                                    await self.send_critical_alert(
+                                        "circuit_breaker_tripped", {"failure_count": cb_count}
+                                    )
 
                     elif isinstance(event, ExitSignalEvent):
                         # Handle exit signal from exit manager

@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from src.metrics import metrics
+
 logger = logging.getLogger(__name__)
 
 
@@ -116,6 +118,7 @@ class EventBus:
             await asyncio.wait_for(self.queue.put(event), timeout=5.0)
         except asyncio.TimeoutError:
             self._dropped_count += 1
+            metrics.record_event_dropped()
             event_type = type(event).__name__
             logger.error(
                 f"EventBus queue full - DROPPED event: type={event_type}, "
