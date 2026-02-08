@@ -89,9 +89,9 @@ class MarketDataClient(AlpacaDataClient):
                 "ask": float(q.ask_price) if q.ask_price else None,
                 "bid_size": float(q.bid_size) if q.bid_size else None,
                 "ask_size": float(q.ask_size) if q.ask_size else None,
-                "last_quote_time": q.timestamp.isoformat()
-                if hasattr(q, "timestamp") and q.timestamp
-                else None,
+                "last_quote_time": (
+                    q.timestamp.isoformat() if hasattr(q, "timestamp") and q.timestamp else None
+                ),
             }
         except Exception as e:
             raise AlpacaDataClientError(f"Failed to get snapshot for {symbol}: {e}")

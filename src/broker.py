@@ -108,9 +108,9 @@ class Broker:
                     "equity": float(account.equity) if account.equity else 0.0,
                     "buying_power": float(account.buying_power) if account.buying_power else 0.0,
                     "cash": float(account.cash) if account.cash else 0.0,
-                    "portfolio_value": float(account.portfolio_value)
-                    if account.portfolio_value
-                    else 0.0,
+                    "portfolio_value": (
+                        float(account.portfolio_value) if account.portfolio_value else 0.0
+                    ),
                 }
         except Exception as e:
             raise BrokerError(f"Failed to get account: {e}")
@@ -171,9 +171,9 @@ class Broker:
                         "qty": float(o.qty) if o.qty else None,
                         "status": o.status.value if o.status else None,
                         "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
-                        "filled_avg_price": float(o.filled_avg_price)
-                        if o.filled_avg_price
-                        else None,
+                        "filled_avg_price": (
+                            float(o.filled_avg_price) if o.filled_avg_price else None
+                        ),
                         "created_at": o.created_at.isoformat() if o.created_at else None,
                     }
                 )
@@ -267,9 +267,9 @@ class Broker:
                     "side": str(order_result.get("side")) if order_result.get("side") else None,
                     "qty": float(order_result["qty"]) if order_result.get("qty") else None,
                     "status": str(order_result["status"]) if order_result.get("status") else None,
-                    "filled_qty": float(order_result["filled_qty"])
-                    if order_result.get("filled_qty")
-                    else 0,
+                    "filled_qty": (
+                        float(order_result["filled_qty"]) if order_result.get("filled_qty") else 0
+                    ),
                     "filled_avg_price": (
                         float(order_result["filled_avg_price"])
                         if order_result.get("filled_avg_price")
@@ -279,9 +279,9 @@ class Broker:
             else:
                 return {
                     "id": str(order_result.id) if order_result.id else "",
-                    "client_order_id": order_result.client_order_id
-                    if order_result.client_order_id
-                    else "",
+                    "client_order_id": (
+                        order_result.client_order_id if order_result.client_order_id else ""
+                    ),
                     "symbol": order_result.symbol if order_result.symbol else "",
                     "side": order_result.side.value if order_result.side else None,
                     "qty": float(order_result.qty) if order_result.qty else None,
