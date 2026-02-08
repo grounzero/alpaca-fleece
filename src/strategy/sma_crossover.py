@@ -2,6 +2,7 @@
 
 from typing import Any, Optional
 
+import numpy as np
 import pandas as pd
 import pandas_ta as ta
 
@@ -167,7 +168,10 @@ class SMACrossover(BaseStrategy):
 
         # Trend strength: distance from slow SMA / ATR
         distance = close - sma_50
-        trend_strength = min(abs(distance) / atr, 2.0)  # Cap at 2.0
+        if atr == 0 or not np.isfinite(atr):
+            trend_strength = 0.0  # Unknown/ranging regime
+        else:
+            trend_strength = min(abs(distance) / atr, 2.0)  # Cap at 2.0
 
         # Detect regime
         if trend_strength > 1.5:
