@@ -93,7 +93,7 @@ def load_trading_config(path: str) -> dict[str, Any]:
     return config
 
 
-def validate_exit_config(exit_config: dict) -> None:
+def validate_exit_config(exit_config: dict[str, Any]) -> None:
     """Validate exit manager configuration.
 
     Args:
