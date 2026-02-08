@@ -85,9 +85,9 @@ class AssetsClient:
                     # Fetch full watchlist to get assets
                     if not hasattr(wl, "id"):
                         continue
-                    full_wl_result: Union[
-                        Watchlist, dict[str, Any]
-                    ] = self.client.get_watchlist_by_id(wl.id)
+                    full_wl_result: Union[Watchlist, dict[str, Any]] = (
+                        self.client.get_watchlist_by_id(wl.id)
+                    )
                     if isinstance(full_wl_result, dict):
                         continue
                     if hasattr(full_wl_result, "assets") and full_wl_result.assets:
