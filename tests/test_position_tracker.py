@@ -130,7 +130,7 @@ class TestTrailingStop:
         assert position.trailing_stop_price is not None
         # Trailing stop should be 0.5% below current price
         expected_stop = new_price * 0.995
-        assert position.trailing_stop_price == pytest.approx(expected_stop, 0.001)
+        assert position.trailing_stop_price == pytest.approx(expected_stop, abs=0.001)
 
     def test_trailing_stop_rises_with_price(self, position_tracker):
         """Trailing stop price increases as price rises."""
