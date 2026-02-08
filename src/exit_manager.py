@@ -413,19 +413,28 @@ class ExitManager:
                 position.trailing_stop_price is not None
                 and isinstance(position.trailing_stop_price, (int, float))
                 and math.isfinite(position.trailing_stop_price)
-                and current_price <= position.trailing_stop_price
             ):
-                return ExitSignalEvent(
-                    symbol=position.symbol,
-                    side="sell" if position.side == "long" else "buy",
-                    qty=position.qty,
-                    reason="trailing_stop",
-                    entry_price=position.entry_price,
-                    current_price=current_price,
-                    pnl_pct=pnl_pct,
-                    pnl_amount=pnl_amount,
-                    timestamp=datetime.now(timezone.utc),
+                converted_side = (position.side or "").lower()
+                # Long positions trigger when price falls to or below trailing stop;
+                # short positions trigger when price rises to or above trailing stop.
+                trigger = (
+                    current_price <= position.trailing_stop_price
+                    if converted_side == "long"
+                    else current_price >= position.trailing_stop_price
                 )
+
+                if trigger:
+                    return ExitSignalEvent(
+                        symbol=position.symbol,
+                        side="sell" if position.side == "long" else "buy",
+                        qty=position.qty,
+                        reason="trailing_stop",
+                        entry_price=position.entry_price,
+                        current_price=current_price,
+                        pnl_pct=pnl_pct,
+                        pnl_amount=pnl_amount,
+                        timestamp=datetime.now(timezone.utc),
+                    )
 
         # Priority 3: Profit target
         if not atr_computed and pnl_pct >= self.profit_target_pct:
