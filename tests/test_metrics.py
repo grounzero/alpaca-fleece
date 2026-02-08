@@ -2,8 +2,58 @@
 
 import json
 from datetime import datetime, timedelta, timezone
+from unittest.mock import patch
+
+import pytest
 
 from src.metrics import BotMetrics, metrics, write_metrics_to_file
+
+
+@pytest.fixture(autouse=True)
+def reset_global_metrics():
+    """Reset global metrics singleton before each test to ensure isolation."""
+    # Save original state
+    original_state = {
+        "signals_generated": metrics.signals_generated,
+        "signals_filtered_confidence": metrics.signals_filtered_confidence,
+        "signals_filtered_risk": metrics.signals_filtered_risk,
+        "orders_submitted": metrics.orders_submitted,
+        "orders_filled": metrics.orders_filled,
+        "orders_rejected": metrics.orders_rejected,
+        "exits_triggered": metrics.exits_triggered,
+        "events_dropped": metrics.events_dropped,
+        "open_positions": metrics.open_positions,
+        "daily_pnl": metrics.daily_pnl,
+        "daily_trade_count": metrics.daily_trade_count,
+    }
+
+    # Reset to zeros for test
+    metrics.signals_generated = 0
+    metrics.signals_filtered_confidence = 0
+    metrics.signals_filtered_risk = 0
+    metrics.orders_submitted = 0
+    metrics.orders_filled = 0
+    metrics.orders_rejected = 0
+    metrics.exits_triggered = 0
+    metrics.events_dropped = 0
+    metrics.open_positions = 0
+    metrics.daily_pnl = 0.0
+    metrics.daily_trade_count = 0
+
+    yield
+
+    # Restore original state after test
+    metrics.signals_generated = original_state["signals_generated"]
+    metrics.signals_filtered_confidence = original_state["signals_filtered_confidence"]
+    metrics.signals_filtered_risk = original_state["signals_filtered_risk"]
+    metrics.orders_submitted = original_state["orders_submitted"]
+    metrics.orders_filled = original_state["orders_filled"]
+    metrics.orders_rejected = original_state["orders_rejected"]
+    metrics.exits_triggered = original_state["exits_triggered"]
+    metrics.events_dropped = original_state["events_dropped"]
+    metrics.open_positions = original_state["open_positions"]
+    metrics.daily_pnl = original_state["daily_pnl"]
+    metrics.daily_trade_count = original_state["daily_trade_count"]
 
 
 class TestBotMetrics:
@@ -184,8 +234,6 @@ class TestBotMetrics:
 
     def test_signal_timestamp_updated(self):
         """Test that record_signal_generated updates last_signal_time."""
-        from unittest.mock import patch
-
         m = BotMetrics()
         old_time = m.last_signal_time
         future_time = old_time + timedelta(seconds=1)
@@ -200,8 +248,6 @@ class TestBotMetrics:
 
     def test_fill_timestamp_updated(self):
         """Test that record_order_filled updates last_fill_time."""
-        from unittest.mock import patch
-
         m = BotMetrics()
         old_time = m.last_fill_time
         future_time = old_time + timedelta(seconds=1)
