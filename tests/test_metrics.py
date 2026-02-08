@@ -1,7 +1,7 @@
 """Tests for metrics collection module."""
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 
 from src.metrics import BotMetrics, metrics, write_metrics_to_file
 
@@ -173,13 +173,13 @@ class TestBotMetrics:
 
     def test_uptime_seconds(self):
         """Test that uptime_seconds is calculated correctly."""
-        # Create metrics with started_at in the past
-        past_time = datetime.now(timezone.utc)
+        # Create metrics with started_at 5 seconds ago
+        past_time = datetime.now(timezone.utc) - timedelta(seconds=5)
         m = BotMetrics(started_at=past_time)
 
         result = m.to_dict()
-        # Uptime should be non-negative (might be 0 if test runs fast)
-        assert result["uptime_seconds"] >= 0
+        # Uptime should be at least 5 seconds
+        assert result["uptime_seconds"] >= 5
         assert isinstance(result["uptime_seconds"], int)
 
     def test_signal_timestamp_updated(self):
