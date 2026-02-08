@@ -200,36 +200,73 @@ class PositionTracker:
 
         state_changed = False
 
-        # Update highest price if current is higher
-        if current_price > position.highest_price:
-            position.highest_price = current_price
-            state_changed = True
+        converted_side = (position.side or "").lower()
 
-            # Update trailing stop if activated
-            if self.trailing_stop_enabled and position.trailing_stop_activated:
-                new_trailing_stop = current_price * (1 - self.trailing_stop_trail_pct)
-                # Trailing stop only moves up, never down
-                if (
-                    position.trailing_stop_price is None
-                    or new_trailing_stop > position.trailing_stop_price
-                ):
-                    position.trailing_stop_price = new_trailing_stop
+        # Long positions: track highest price and move trailing stop up
+        if converted_side == "long":
+            if current_price > position.highest_price:
+                position.highest_price = current_price
+                state_changed = True
+
+                # Update trailing stop if activated
+                if self.trailing_stop_enabled and position.trailing_stop_activated:
+                    new_trailing_stop = current_price * (1 - self.trailing_stop_trail_pct)
+                    # Trailing stop only moves up, never down
+                    if (
+                        position.trailing_stop_price is None
+                        or new_trailing_stop > position.trailing_stop_price
+                    ):
+                        position.trailing_stop_price = new_trailing_stop
+                        state_changed = True
+                        logger.debug(
+                            f"{symbol} trailing stop raised to ${position.trailing_stop_price:.2f}"
+                        )
+
+            # Check if trailing stop should be activated for long
+            if self.trailing_stop_enabled and not position.trailing_stop_activated:
+                unrealised_pct = (current_price - position.entry_price) / position.entry_price
+                if unrealised_pct >= self.trailing_stop_activation_pct:
+                    position.trailing_stop_activated = True
+                    position.trailing_stop_price = current_price * (1 - self.trailing_stop_trail_pct)
                     state_changed = True
-                    logger.debug(
-                        f"{symbol} trailing stop raised to ${position.trailing_stop_price:.2f}"
+                    logger.info(
+                        f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
+                        f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
                     )
 
-        # Check if trailing stop should be activated
-        if self.trailing_stop_enabled and not position.trailing_stop_activated:
-            unrealised_pct = (current_price - position.entry_price) / position.entry_price
-            if unrealised_pct >= self.trailing_stop_activation_pct:
-                position.trailing_stop_activated = True
-                position.trailing_stop_price = current_price * (1 - self.trailing_stop_trail_pct)
+        # Short positions: track lowest price and move trailing stop down (closer to price)
+        else:
+            # For shorts we store the lowest observed price in the same field
+            if current_price < position.highest_price:
+                position.highest_price = current_price
                 state_changed = True
-                logger.info(
-                    f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
-                    f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
-                )
+
+                # Update trailing stop if activated: trailing stop moves down (to a lower price)
+                if self.trailing_stop_enabled and position.trailing_stop_activated:
+                    new_trailing_stop = current_price * (1 + self.trailing_stop_trail_pct)
+                    # For shorts, trailing stop only moves down (numerically smaller)
+                    if (
+                        position.trailing_stop_price is None
+                        or new_trailing_stop < position.trailing_stop_price
+                    ):
+                        position.trailing_stop_price = new_trailing_stop
+                        state_changed = True
+                        logger.debug(
+                            f"{symbol} trailing stop lowered to ${position.trailing_stop_price:.2f}"
+                        )
+
+            # Check if trailing stop should be activated for short
+            if self.trailing_stop_enabled and not position.trailing_stop_activated:
+                # For shorts, profit when price falls below entry
+                unrealised_pct = (position.entry_price - current_price) / position.entry_price
+                if unrealised_pct >= self.trailing_stop_activation_pct:
+                    position.trailing_stop_activated = True
+                    position.trailing_stop_price = current_price * (1 + self.trailing_stop_trail_pct)
+                    state_changed = True
+                    logger.info(
+                        f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
+                        f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
+                    )
 
         # Only persist if state actually changed
         if state_changed:
