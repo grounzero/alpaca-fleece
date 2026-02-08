@@ -14,7 +14,7 @@ from typing import Optional
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
 from src.broker import Broker
-from src.config import load_env, load_trading_config, validate_config, validate_exit_config
+from src.config import load_env, load_trading_config, validate_config
 from src.data_handler import DataHandler
 from src.event_bus import BarEvent, EventBus, ExitSignalEvent, OrderUpdateEvent, SignalEvent
 from src.exit_manager import ExitManager
