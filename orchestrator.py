@@ -16,11 +16,12 @@ from src.alpaca_api.market_data import MarketDataClient
 from src.broker import Broker
 from src.config import load_env, load_trading_config, validate_config
 from src.data_handler import DataHandler
-from src.event_bus import EventBus
+from src.event_bus import BarEvent, EventBus, ExitSignalEvent, OrderUpdateEvent, SignalEvent
 from src.exit_manager import ExitManager
 from src.housekeeping import Housekeeping
 from src.logger import setup_logger
 from src.order_manager import OrderManager
+from src.position_sizer import calculate_position_size
 from src.position_tracker import PositionTracker
 from src.reconciliation import ReconciliationError, reconcile
 from src.risk_manager import RiskManager
@@ -460,8 +461,6 @@ class Orchestrator:
                     continue
 
                 try:
-                    from src.event_bus import BarEvent, ExitSignalEvent, SignalEvent
-
                     if isinstance(event, BarEvent):
                         # Check sufficient history
                         if not self.data_handler.has_sufficient_history(
@@ -490,9 +489,41 @@ class Orchestrator:
                                 logger.error(f"Risk check failed: {e}")
                                 continue
 
-                            # Submit order
+                            # Submit order with position sizing
                             try:
-                                qty = 1  # TODO: Calculate position size
+                                # Get current price from latest bar
+                                current_price = (
+                                    float(df["close"].iloc[-1])
+                                    if df is not None and not df.empty
+                                    else 0.0
+                                )
+
+                                # Get account equity
+                                account = self.broker.get_account()
+                                account_equity = float(account.get("equity", 0))
+
+                                # Get risk config with defaults
+                                risk_config = self.trading_config.get("risk", {})
+
+                                # Calculate position size
+                                qty = calculate_position_size(
+                                    symbol=signal.symbol,
+                                    side=signal.signal_type.lower(),
+                                    account_equity=account_equity,
+                                    current_price=current_price,
+                                    max_position_pct=risk_config.get("max_position_pct", 0.10),
+                                    max_risk_per_trade_pct=risk_config.get(
+                                        "max_risk_per_trade_pct", 0.01
+                                    ),
+                                    stop_loss_pct=risk_config.get("stop_loss_pct", 0.01),
+                                )
+
+                                logger.info(
+                                    f"Calculated position size for {signal.symbol}: "
+                                    f"{qty} shares at ${current_price:.2f} "
+                                    f"(equity: ${account_equity:.2f})"
+                                )
+
                                 await self.order_manager.submit_order(signal, qty)
                             except Exception as e:
                                 logger.error(f"Order submission failed: {e}")
@@ -529,12 +560,69 @@ class Orchestrator:
                         except Exception as e:
                             logger.error(f"Exit order submission failed: {e}")
 
+                    elif isinstance(event, OrderUpdateEvent):
+                        # Handle order fill events for P&L tracking
+                        if event.status == "filled":
+                            await self._handle_order_fill(event)
+
                 except Exception as e:
                     logger.error(f"Event processing failed: {e}", exc_info=True)
 
         except asyncio.CancelledError:
             logger.info(f"Event processor cancelled after {iteration} iterations")
             raise
+
+    async def _handle_order_fill(self, event: OrderUpdateEvent) -> None:
+        """Handle order fill events for P&L tracking and position management.
+
+        Args:
+            event: OrderUpdateEvent with fill details
+        """
+        # Look up order intent to get side
+        order_intent = self.state_store.get_order_intent(event.client_order_id)
+        if not order_intent:
+            logger.warning(f"Fill received for unknown order: {event.client_order_id}")
+            return
+
+        side = order_intent.get("side", "")
+        fill_price = event.avg_fill_price
+
+        if side == "buy":
+            # Start tracking position with actual fill price
+            self.position_tracker.start_tracking(
+                symbol=event.symbol,
+                fill_price=fill_price,
+                qty=event.filled_qty,
+                side="long",
+            )
+            logger.info(
+                f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} " f"qty={event.filled_qty}"
+            )
+        elif side == "sell":
+            # Calculate realized P&L
+            position = self.position_tracker.get_position(event.symbol)
+            if position:
+                realized_pnl = (fill_price - position.entry_price) * event.filled_qty
+
+                # Update daily P&L
+                current_daily_pnl = self.state_store.get_daily_pnl()
+                new_daily_pnl = current_daily_pnl + realized_pnl
+                self.state_store.save_daily_pnl(new_daily_pnl)
+
+                # Update position tracker
+                self.position_tracker.stop_tracking(event.symbol)
+
+                # Increment daily trade count
+                count = self.state_store.get_daily_trade_count()
+                self.state_store.save_daily_trade_count(count + 1)
+
+                logger.info(
+                    f"Sell fill captured: {event.symbol} @ ${fill_price:.2f} "
+                    f"qty={event.filled_qty} realized_pnl=${realized_pnl:.2f} "
+                    f"daily_pnl=${new_daily_pnl:.2f}"
+                )
+            else:
+                logger.warning(f"Sell fill for untracked position: {event.symbol}")
 
     def _setup_signal_handlers(self) -> None:
         """Setup SIGTERM/SIGINT handlers for graceful shutdown."""
