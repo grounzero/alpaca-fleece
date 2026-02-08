@@ -13,7 +13,8 @@ from datetime import datetime, timezone
 from typing import Optional
 
 from src.broker import Broker
-from src.state_store import StateStore, _parse_optional_float
+from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -414,8 +415,8 @@ class PositionTracker:
             for row in rows:
                 # Normalize numeric DB values to floats when possible. SQLite
                 # may return NUMERIC columns as str/Decimal depending on insertion.
-                atr_val = _parse_optional_float(row[4])
-                trailing_stop_val = _parse_optional_float(row[7])
+                atr_val = parse_optional_float(row[4])
+                trailing_stop_val = parse_optional_float(row[7])
 
                 position = PositionData(
                     symbol=row[0],

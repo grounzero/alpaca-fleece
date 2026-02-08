@@ -10,21 +10,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
+from src.utils import parse_optional_float
+
 logger = logging.getLogger(__name__)
 
 
-def _parse_optional_float(value: Any) -> Optional[float]:
-    """Coerce a DB value to float if possible, otherwise return None.
-
-    SQLite can return NUMERIC columns as str or Decimal depending on how
-    it was inserted. Normalize to a Python float for downstream logic.
-    """
-    if value is None:
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+# Use the public utility from src.utils for DB numeric coercion
+_parse_optional_float = parse_optional_float
 
 
 class OrderIntentRow(TypedDict, total=False):
@@ -256,15 +248,16 @@ class StateStore:
             row = cursor.fetchone()
             if row:
                 atr_val = _parse_optional_float(row[4])
-
+                # Normalize required numeric fields to float and optional ones
+                # via the shared helper to avoid leaking Decimal/str values.
                 return {
                     "client_order_id": row[0],
                     "symbol": row[1],
                     "side": row[2],
-                    "qty": row[3],
+                    "qty": float(row[3]),
                     "atr": atr_val,
                     "status": row[5],
-                    "filled_qty": row[6],
+                    "filled_qty": _parse_optional_float(row[6]),
                     "alpaca_order_id": row[7],
                 }
             return None
@@ -294,15 +287,14 @@ class StateStore:
 
             def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
                 atr_val = _parse_optional_float(row[4])
-
                 return {
                     "client_order_id": row[0],
                     "symbol": row[1],
                     "side": row[2],
-                    "qty": row[3],
+                    "qty": float(row[3]),
                     "atr": atr_val,
                     "status": row[5],
-                    "filled_qty": row[6],
+                    "filled_qty": _parse_optional_float(row[6]),
                     "alpaca_order_id": row[7],
                 }
 

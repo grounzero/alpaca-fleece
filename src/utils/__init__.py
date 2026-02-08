@@ -25,3 +25,17 @@ def batch_iter(items: Sequence[T], batch_size: int) -> Iterator[list[T]]:
         return
     for i in range(0, len(items), batch_size):
         yield list(items[i : i + batch_size])
+
+
+def parse_optional_float(value: object) -> float | None:
+    """Coerce a DB or metadata value to float if possible, otherwise return None.
+
+    This helper lives in `src.utils` so multiple modules can import a stable,
+    public function (avoids importing module-private helpers across modules).
+    """
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None

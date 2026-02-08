@@ -16,6 +16,7 @@ Exit Rules Priority:
 
 import asyncio
 import logging
+import math
 from datetime import datetime, timezone
 from typing import Any, Optional
 
@@ -290,7 +291,7 @@ class ExitManager:
         pnl_amount, pnl_pct = self.position_tracker.calculate_pnl(position.symbol, current_price)
 
         # If ATR is available for this position, use ATR-based dynamic stops/targets
-        if position.atr is not None and position.atr > 0.0:
+        if position.atr is not None and math.isfinite(position.atr) and position.atr > 0.0:
             atr_value = position.atr
             converted_side = (position.side or "").lower()
 
@@ -310,12 +311,12 @@ class ExitManager:
                     side=converted_side,
                 )
 
-                # Basic validation of computed stop/target
-                if not isinstance(stop_price, (int, float)) or not isinstance(
-                    target_price, (int, float)
-                ):
+                # Basic validation of computed stop/target (ensure finite numbers)
+                if not (
+                    isinstance(stop_price, (int, float)) and isinstance(target_price, (int, float))
+                ) or not (math.isfinite(stop_price) and math.isfinite(target_price)):
                     logger.debug(
-                        "Computed non-numeric stop/target for %s (atr=%s) - skipping ATR logic",
+                        "Computed non-finite stop/target for %s (atr=%s) - skipping ATR logic",
                         position.symbol,
                         atr_value,
                     )
@@ -391,7 +392,12 @@ class ExitManager:
 
         # Priority 2: Trailing stop (if activated and enabled)
         if self.trailing_stop_enabled and position.trailing_stop_activated:
-            if position.trailing_stop_price and current_price <= position.trailing_stop_price:
+            if (
+                position.trailing_stop_price
+                and isinstance(position.trailing_stop_price, (int, float))
+                and math.isfinite(position.trailing_stop_price)
+                and current_price <= position.trailing_stop_price
+            ):
                 return ExitSignalEvent(
                     symbol=position.symbol,
                     side="sell" if position.side == "long" else "buy",
