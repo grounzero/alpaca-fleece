@@ -3,13 +3,12 @@
 # Run: pre-commit run --all-files
 
 repos:
-  # Ruff - Fast Python linter + formatter
+  # Ruff - Fast Python linter
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.2.0
     hooks:
       - id: ruff
         args: [--fix]
-      - id: ruff-format
 
   # Black - Code formatter
   - repo: https://github.com/psf/black
