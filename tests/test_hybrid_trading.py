@@ -133,22 +133,14 @@ class TestStrategyWithCrypto:
     def test_strategy_accepts_crypto_symbols(self, state_store):
         """Strategy should accept crypto symbols parameter."""
         crypto_symbols = ["BTCUSD", "ETHUSD"]
-<<<<<<< HEAD
-        strategy = SMACrossover(state_store=state_store, crypto_symbols=crypto_symbols)
-=======
         strategy = SMACrossover(crypto_symbols=crypto_symbols)
->>>>>>> 7e787d8 (Clean trading bot implementation)
 
         assert strategy.crypto_symbols == crypto_symbols
 
     def test_strategy_warmup_same_for_all(self, state_store):
         """Warmup period should be same for crypto and equities."""
         crypto_symbols = ["BTCUSD", "ETHUSD"]
-<<<<<<< HEAD
-        strategy = SMACrossover(state_store=state_store, crypto_symbols=crypto_symbols)
-=======
         strategy = SMACrossover(crypto_symbols=crypto_symbols)
->>>>>>> 7e787d8 (Clean trading bot implementation)
 
         # All symbols need same warmup
         warmup_btc = strategy.get_required_history("BTCUSD")

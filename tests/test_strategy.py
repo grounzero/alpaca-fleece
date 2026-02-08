@@ -72,11 +72,7 @@ INVERSE_CROSSOVER_PRICES = (
 @pytest.mark.asyncio
 async def test_strategy_bullish_crossover(state_store):
     """Test bullish crossover generates BUY signal with deterministic data."""
-<<<<<<< HEAD
-    strategy = SMACrossover(state_store)
-=======
     strategy = SMACrossover()
->>>>>>> 7e787d8 (Clean trading bot implementation)
 
     # Use reliable crossover pattern (75 bars, needs 51 for SMA(20,50))
     prices = RELIABLE_CROSSOVER_PRICES

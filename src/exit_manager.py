@@ -21,38 +21,13 @@ from typing import Any, Optional
 
 from src.broker import Broker
 from src.data_handler import DataHandler
-<<<<<<< HEAD
-from src.event_bus import EventBus
-=======
 from src.event_bus import EventBus, ExitSignalEvent
->>>>>>> 7e787d8 (Clean trading bot implementation)
 from src.position_tracker import PositionData, PositionTracker
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
 
-<<<<<<< HEAD
-@dataclass(frozen=True)
-class ExitSignalEvent:
-    """Exit signal for position management.
-
-    Published when exit threshold is breached.
-    """
-
-    symbol: str
-    side: str  # "sell" for long positions, "buy" for short positions
-    qty: float
-    reason: str  # "stop_loss", "trailing_stop", "profit_target", "emergency"
-    entry_price: float
-    current_price: float
-    pnl_pct: float
-    pnl_amount: float
-    timestamp: datetime
-
-
-=======
->>>>>>> 7e787d8 (Clean trading bot implementation)
 class ExitManagerError(Exception):
     """Raised when exit manager operation fails."""
 

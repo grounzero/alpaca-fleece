@@ -9,15 +9,6 @@ import logging
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
-<<<<<<< HEAD
-
-
-# Event types
-@dataclass(frozen=True)
-class BarEvent:
-    """Market bar received and persisted."""
-
-=======
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +24,6 @@ class EventBusError(Exception):
 class BarEvent:
     """Market bar received and persisted."""
 
->>>>>>> 7e787d8 (Clean trading bot implementation)
     symbol: str
     timestamp: datetime
     open: float
@@ -108,43 +98,13 @@ class EventBus:
         """
         self.queue: asyncio.Queue[object] = asyncio.Queue(maxsize=maxsize)
         self.running = False
-<<<<<<< HEAD
-=======
         self._dropped_count = 0
->>>>>>> 7e787d8 (Clean trading bot implementation)
 
     async def publish(self, event: object) -> None:
         """Publish event to queue.
 
         Args:
             event: Event object (BarEvent, SignalEvent, etc)
-<<<<<<< HEAD
-        """
-        if not self.running:
-            return
-
-        try:
-            await asyncio.wait_for(self.queue.put(event), timeout=5.0)
-        except asyncio.TimeoutError:
-            # Queue full, skip (log elsewhere)
-            pass
-
-    async def subscribe(self) -> Optional[object]:
-        """Get next event from queue (blocking).
-
-        Returns:
-            Event object or None if bus stopped
-        """
-        if not self.running:
-            return None
-
-        try:
-            event = await asyncio.wait_for(self.queue.get(), timeout=1.0)
-            return event
-        except asyncio.TimeoutError:
-            return None
-
-=======
 
         Raises:
             EventBusError: If critical event (ExitSignalEvent) cannot be published
@@ -183,7 +143,6 @@ class EventBus:
         except asyncio.TimeoutError:
             return None
 
->>>>>>> 7e787d8 (Clean trading bot implementation)
     async def start(self) -> None:
         """Start the bus."""
         self.running = True
@@ -203,11 +162,8 @@ class EventBus:
     def size(self) -> int:
         """Get current queue size."""
         return self.queue.qsize()
-<<<<<<< HEAD
-=======
 
     @property
     def dropped_count(self) -> int:
         """Get total dropped events count."""
         return self._dropped_count
->>>>>>> 7e787d8 (Clean trading bot implementation)

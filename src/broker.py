@@ -21,11 +21,7 @@ from typing import Any, Callable, Optional, TypedDict, TypeVar, Union
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.models import Clock, Order, Position, TradeAccount
-<<<<<<< HEAD
-from alpaca.trading.requests import MarketOrderRequest
-=======
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
->>>>>>> 7e787d8 (Clean trading bot implementation)
 
 T = TypeVar("T")
 
@@ -305,10 +301,7 @@ class Broker:
             Dict with order details: id, client_order_id, symbol, status, etc
         """
         try:
-<<<<<<< HEAD
-=======
             order_data: Union[MarketOrderRequest, LimitOrderRequest]
->>>>>>> 7e787d8 (Clean trading bot implementation)
             if order_type == "market":
                 order_data = MarketOrderRequest(
                     symbol=symbol,
@@ -320,19 +313,11 @@ class Broker:
             elif order_type == "limit":
                 if limit_price is None:
                     raise BrokerError("limit_price required for limit orders")
-<<<<<<< HEAD
-                # For now, use market orders only; limit support comes later
-                order_data = MarketOrderRequest(
-                    symbol=symbol,
-                    qty=qty,
-                    side=OrderSide(side.lower()),
-=======
                 order_data = LimitOrderRequest(
                     symbol=symbol,
                     qty=qty,
                     side=OrderSide(side.lower()),
                     limit_price=limit_price,
->>>>>>> 7e787d8 (Clean trading bot implementation)
                     time_in_force=TimeInForce(time_in_force),
                     client_order_id=client_order_id,
                 )

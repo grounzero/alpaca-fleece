@@ -364,7 +364,6 @@ alpaca-fleece/
 ├── docker-compose.yml     # Docker orchestration
 └── Makefile               # Convenience commands
 ```
-<<<<<<< HEAD
 
 ### Making Changes
 
@@ -381,51 +380,3 @@ alpaca-fleece/
 - **Daily Limits**: Enforces max daily loss and trade count
 - **Reconciliation**: Validates state against Alpaca on startup
 - **Graceful Shutdown**: Closes positions and cancels orders on SIGTERM
-
-## Agent Spawning (with Language Standards)
-
-When spawning sub-agents for development tasks, always include British English language standards:
-
-```bash
-# Generate formatted task with standards
-make spawn-agent TASK="Refactor order manager to use async/await"
-
-# Or use the script directly
-./scripts/spawn-with-standards.sh "Your task description"
-
-# Or use the Python helper
-python scripts/spawn_agent.py "Your task description"
-```
-
-This ensures all spawned agents follow British English conventions (initialise, behaviour, colour, etc.)
-
-See `/home/t-rox/.openclaw/agents/LANGUAGE_STANDARDS.md` for the full rules.
-
-## Licence
-
-Private use only. Not for redistribution.
-=======
->>>>>>> 7e787d8 (Clean trading bot implementation)
-
-### Making Changes
-
-<<<<<<< HEAD
-For issues or questions, check:
-1. Logs: `logs/orchestrator.out`
-2. Tests: Run test suite to verify setup
-3. Configuration: Verify `.env` and `config/trading.yaml`
-=======
-1. Edit source code in `src/`
-2. Run tests: `.venv/bin/python -m pytest tests/`
-3. Test manually: `python orchestrator.py`
-4. Use `bot.sh` for production deployment
-
-## Safety Features
-
-- **Paper Trading Only**: Locked to Alpaca paper trading (cannot enable live)
-- **Kill Switch**: Set `KILL_SWITCH=true` in `.env` to halt all trading
-- **Circuit Breaker**: Halts after 5 consecutive order failures
-- **Daily Limits**: Enforces max daily loss and trade count
-- **Reconciliation**: Validates state against Alpaca on startup
-- **Graceful Shutdown**: Closes positions and cancels orders on SIGTERM
->>>>>>> 7e787d8 (Clean trading bot implementation)

@@ -105,15 +105,6 @@ class RiskManager:
             return "extended"  # Crypto uses extended limits
 
         # For equities, detect session based on current time
-<<<<<<< HEAD
-        now = datetime.now(timezone.utc)
-        # Convert to ET (UTC-5 in winter)
-        et_offset = -5  # Simplified; could use pytz for daylight savings
-        et_hour = (now.hour + et_offset) % 24
-
-        # Regular hours: 9:30-16:00 ET (9.5-16.0)
-        if 9.5 <= et_hour < 16.0:
-=======
         try:
             from zoneinfo import ZoneInfo
 
@@ -136,7 +127,6 @@ class RiskManager:
         market_close = now_et.replace(hour=16, minute=0, second=0, microsecond=0)
 
         if market_open <= now_et < market_close:
->>>>>>> 7e787d8 (Clean trading bot implementation)
             return "regular"
         else:
             return "extended"
@@ -159,19 +149,6 @@ class RiskManager:
     async def check_signal(self, signal: SignalEvent) -> bool:
         """Check if signal should be executed.
 
-<<<<<<< HEAD
-        Args:
-            signal: SignalEvent from strategy
-
-        Returns:
-            True if signal passes all checks, False if filtered/skipped
-
-        Raises:
-            RiskManagerError if safety check fails (hard refuse)
-        """
-        # CONFIDENCE FILTER (Win #2: multi-timeframe SMA)
-        # Filter low-confidence signals to reduce false positives
-=======
         Check order (CRITICAL):
         1. SAFETY tier (kill-switch, circuit breaker, market hours) - hard refuse
         2. RISK tier (daily loss, trade count, position limits) - hard refuse
@@ -194,7 +171,6 @@ class RiskManager:
         await self._check_risk_tier(signal.symbol, signal.signal_type)
 
         # CONFIDENCE FILTER (soft reject - log only)
->>>>>>> 7e787d8 (Clean trading bot implementation)
         confidence_val: Any = signal.metadata.get("confidence", 0.5)
         confidence: float = float(confidence_val) if confidence_val is not None else 0.5
         MIN_CONFIDENCE: float = 0.5
@@ -205,13 +181,6 @@ class RiskManager:
             )
             return False
 
-<<<<<<< HEAD
-        # SAFETY TIER
-        await self._check_safety_tier()
-
-        # RISK TIER
-        await self._check_risk_tier(signal.symbol, signal.signal_type)
-
         # FILTER TIER (may skip signal without error)
         if not await self._check_filter_tier(signal):
             return False
@@ -247,43 +216,6 @@ class RiskManager:
             # Get session-specific limits (Hybrid crypto support)
             limits = self._get_limits(symbol)
 
-=======
-        # FILTER TIER (may skip signal without error)
-        if not await self._check_filter_tier(signal):
-            return False
-
-        return True
-
-    async def _check_safety_tier(self) -> None:
-        """Check safety gates (kill-switch, circuit breaker, market open)."""
-        # Kill-switch
-        kill_switch = self.state_store.get_state("kill_switch") == "true"
-        if kill_switch:
-            raise RiskManagerError("Kill-switch active")
-
-        # Circuit breaker
-        cb_state = self.state_store.get_state("circuit_breaker_state")
-        if cb_state == "tripped":
-            raise RiskManagerError("Circuit breaker tripped")
-
-        # Market open (fresh clock call)
-        try:
-            clock = self.broker.get_clock()
-            if not clock["is_open"]:
-                raise RiskManagerError("Market not open")
-        except (ConnectionError, TimeoutError) as e:
-            raise RiskManagerError(f"Clock fetch failed: {e}")
-
-    async def _check_risk_tier(self, symbol: str, side: str) -> None:
-        """Check risk limits (daily loss, trade count, position size, concurrent positions).
-
-        Hybrid: Uses session-aware limits (equities vs crypto)
-        """
-        try:
-            # Get session-specific limits (Hybrid crypto support)
-            limits = self._get_limits(symbol)
-
->>>>>>> 7e787d8 (Clean trading bot implementation)
             account = self.broker.get_account()
             equity = account["equity"]
 
