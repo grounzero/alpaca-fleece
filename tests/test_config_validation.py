@@ -80,7 +80,7 @@ class TestValidateExitConfig:
             validate_exit_config(config)
 
     def test_trailing_trail_greater_than_stop_loss_raises_config_error(self):
-        """Test that trailing_stop_trail_pct >= stop_loss_pct raises ConfigError."""
+        """Test that trailing_stop_trail_pct > stop_loss_pct raises ConfigError."""
         config = {
             "stop_loss_pct": 0.01,
             "profit_target_pct": 0.02,
