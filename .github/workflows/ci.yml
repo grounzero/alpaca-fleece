@@ -26,7 +26,9 @@ jobs:
           python -m pip install --upgrade pip
           # Install pinned, hashed requirements for reproducible installs
           pip install --require-hashes -r requirements.txt
-          if [ -f requirements-dev.txt ]; then pip install --require-hashes -r requirements-dev.txt; fi
+          # Install development dependencies without --require-hashes to avoid
+          # requiring transitive system packages (e.g. setuptools) to be hashed.
+          if [ -f requirements-dev.txt ]; then pip install -r requirements-dev.txt; fi
 
       - name: Run tests
         run: |
