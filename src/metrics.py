@@ -128,5 +128,5 @@ def write_metrics_to_file(filepath: str | Path = "data/metrics.json") -> None:
     try:
         with open(path, "w") as f:
             json.dump(metrics.to_dict(), f, indent=2)
-    except Exception as e:
-        logger.error(f"Failed to write metrics file: {e}")
+    except Exception:
+        logger.exception(f"Failed to write metrics file to {path}")
