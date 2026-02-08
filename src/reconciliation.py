@@ -13,8 +13,9 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Any
 
-from src.broker import Broker, OrderInfo
+from src.broker import Broker
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -63,7 +64,7 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
         raise ReconciliationError(f"Failed to fetch state for reconciliation: {e}")
 
     # Check open orders
-    alpaca_order_ids: dict[str, OrderInfo] = {o["client_order_id"]: o for o in alpaca_orders}
+    alpaca_order_ids: dict[str, Any] = {o["client_order_id"]: o for o in alpaca_orders}
     {o["client_order_id"]: o for o in sqlite_orders if o["status"] in NON_TERMINAL_STATUSES}
 
     # Rule 1: Alpaca has order terminal, SQLite has non-terminal → UPDATE SQLite (safe)
@@ -72,8 +73,8 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
         alpaca_status = order["status"]
 
         if client_id in {o["client_order_id"] for o in sqlite_orders}:
-            sqlite_order = next(o for o in sqlite_orders if o["client_order_id"] == client_id)
-            sqlite_status = sqlite_order["status"]
+            sqlite_order: Any = next(o for o in sqlite_orders if o["client_order_id"] == client_id)
+            sqlite_status = str(sqlite_order.get("status") or "unknown")
 
             if alpaca_status in TERMINAL_STATUSES and sqlite_status in NON_TERMINAL_STATUSES:
                 # Update SQLite to match Alpaca (Alpaca is authoritative for terminal states)
@@ -86,23 +87,23 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
                 )
 
     # Rule 2: SQLite has order terminal, Alpaca reports non-terminal → DISCREPANCY
-    for order in sqlite_orders:
-        client_id = order["client_order_id"]
-        sqlite_status = order["status"]
+    for sqlite_order_item in sqlite_orders:
+        client_id = str(sqlite_order_item["client_order_id"])
+        sqlite_status_check: str = str(sqlite_order_item.get("status") or "")
 
-        if sqlite_status in TERMINAL_STATUSES:
+        if sqlite_status_check in TERMINAL_STATUSES:
             if client_id not in alpaca_order_ids:
                 # Order is terminal locally, not in Alpaca (possible timeout/already cleared)
                 continue
 
-            alpaca_status = alpaca_order_ids[client_id]["status"]
-            if alpaca_status in NON_TERMINAL_STATUSES:
+            alpaca_status_from_ids: str = alpaca_order_ids[client_id].get("status") or ""
+            if alpaca_status_from_ids in NON_TERMINAL_STATUSES:
                 discrepancies.append(
                     {
                         "type": "order_status_mismatch",
                         "client_order_id": client_id,
-                        "sqlite_status": sqlite_status,
-                        "alpaca_status": alpaca_status,
+                        "sqlite_status": sqlite_status_check,
+                        "alpaca_status": alpaca_status_from_ids,
                     }
                 )
 

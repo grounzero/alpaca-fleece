@@ -10,7 +10,7 @@ Provides query interface:
 """
 
 import logging
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -49,7 +49,7 @@ class DataHandler:
         self.snapshots = SnapshotsHandler(market_data_client)
         self.order_updates = OrderUpdatesHandler(state_store, event_bus)
 
-    async def on_bar(self, raw_bar) -> None:
+    async def on_bar(self, raw_bar: Any) -> None:
         """Route raw bar to bars handler.
 
         Args:
@@ -57,7 +57,7 @@ class DataHandler:
         """
         await self.bars.on_bar(raw_bar)
 
-    async def on_order_update(self, raw_update) -> None:
+    async def on_order_update(self, raw_update: Any) -> None:
         """Route raw order update to order_updates handler.
 
         Args:
@@ -88,7 +88,7 @@ class DataHandler:
         """
         return self.bars.has_sufficient_history(symbol, min_bars)
 
-    def get_snapshot(self, symbol: str) -> Optional[dict]:
+    def get_snapshot(self, symbol: str) -> Optional[dict[str, Any]]:
         """Get latest snapshot for spread checks.
 
         Args:

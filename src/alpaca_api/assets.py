@@ -1,5 +1,7 @@
 """Asset reference endpoints: /v2/assets, /v2/watchlists."""
 
+from typing import Any, Union
+
 from alpaca.trading.client import TradingClient
 
 from .base import AlpacaDataClientError
@@ -15,7 +17,9 @@ class AssetsClient:
             secret_key=secret_key,
         )
 
-    def get_assets(self, status: str = "active", asset_class: str = "us_equity") -> list[dict]:
+    def get_assets(
+        self, status: str = "active", asset_class: str = "us_equity"
+    ) -> list[dict[str, Any]]:
         """Fetch all assets matching criteria.
 
         Args:
@@ -28,18 +32,32 @@ class AssetsClient:
         try:
             # Note: get_all_assets() may not accept parameters in all versions
             # Fetch all and filter client-side if needed
-            assets = self.client.get_all_assets()
-            return [
-                {
-                    "symbol": a.symbol,
-                    "name": a.name,
-                    "status": a.status,
-                    "tradable": a.tradable,
-                    "asset_class": a.asset_class,
-                }
-                for a in assets
-                if a.tradable and a.asset_class == asset_class
-            ]
+
+            assets_result: Union[list[Any], dict[str, Any]] = self.client.get_all_assets()
+            if isinstance(assets_result, dict):
+                return []  # Error case
+
+            result: list[dict[str, Any]] = []
+            for a in assets_result:
+                if isinstance(a, str):
+                    continue  # Skip error strings
+                # Asset objects have these attributes directly
+                if (
+                    hasattr(a, "tradable")
+                    and a.tradable
+                    and hasattr(a, "asset_class")
+                    and a.asset_class == asset_class
+                ):
+                    result.append(
+                        {
+                            "symbol": a.symbol if hasattr(a, "symbol") else "",
+                            "name": a.name if hasattr(a, "name") else "",
+                            "status": str(a.status) if hasattr(a, "status") else "",
+                            "tradable": a.tradable,
+                            "asset_class": a.asset_class,
+                        }
+                    )
+            return result
         except Exception as e:
             raise AlpacaDataClientError(f"Failed to get assets: {e}")
 
@@ -53,8 +71,29 @@ class AssetsClient:
             List of symbols
         """
         try:
-            watchlist = self.client.get_watchlist(name)
-            return [a.symbol for a in watchlist.assets]
+            # get_watchlist_by_name returns a Watchlist object with assets
+            from alpaca.trading.models import Watchlist
+
+            watchlists_result: Union[list[Any], dict[str, Any]] = self.client.get_watchlists()
+            if isinstance(watchlists_result, dict):
+                raise AlpacaDataClientError("Failed to get watchlists")
+
+            for wl in watchlists_result:
+                if isinstance(wl, str):
+                    continue
+                if hasattr(wl, "name") and wl.name == name:
+                    # Fetch full watchlist to get assets
+                    if not hasattr(wl, "id"):
+                        continue
+                    full_wl_result: Union[
+                        Watchlist, dict[str, Any]
+                    ] = self.client.get_watchlist_by_id(wl.id)
+                    if isinstance(full_wl_result, dict):
+                        continue
+                    if hasattr(full_wl_result, "assets") and full_wl_result.assets:
+                        return [a.symbol for a in full_wl_result.assets if hasattr(a, "symbol")]
+                    return []
+            raise AlpacaDataClientError(f"Watchlist {name} not found")
         except Exception as e:
             raise AlpacaDataClientError(f"Failed to get watchlist {name}: {e}")
 

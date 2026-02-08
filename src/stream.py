@@ -17,7 +17,7 @@ import asyncio
 import logging
 import time
 from itertools import islice
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.live import StockDataStream
@@ -28,7 +28,7 @@ from src.rate_limiter import RateLimiter
 logger = logging.getLogger(__name__)
 
 
-def batch_iter(iterable, batch_size: int):
+def batch_iter(iterable: list[str], batch_size: int) -> Any:
     """Yield successive batches from iterable.
 
     Args:
@@ -85,10 +85,10 @@ class Stream:
         self.trade_updates_stream: Optional[TradingStream] = None
 
         # Callbacks (provided by DataHandler)
-        self.on_bar: Optional[Callable] = None
-        self.on_order_update: Optional[Callable] = None
-        self.on_market_disconnect: Optional[Callable] = None
-        self.on_trade_disconnect: Optional[Callable] = None
+        self.on_bar: Optional[Callable[..., Any]] = None
+        self.on_order_update: Optional[Callable[..., Any]] = None
+        self.on_market_disconnect: Optional[Callable[..., Any]] = None
+        self.on_trade_disconnect: Optional[Callable[..., Any]] = None
 
         # State
         self.market_connected = False
@@ -110,10 +110,10 @@ class Stream:
 
     def register_handlers(
         self,
-        on_bar: Callable,
-        on_order_update: Callable,
-        on_market_disconnect: Callable,
-        on_trade_disconnect: Callable,
+        on_bar: Callable[..., Any],
+        on_order_update: Callable[..., Any],
+        on_market_disconnect: Callable[..., Any],
+        on_trade_disconnect: Callable[..., Any],
     ) -> None:
         """Register callbacks from DataHandler.
 
@@ -146,6 +146,7 @@ class Stream:
     async def _start_market_stream(
         self, symbols: list[str], batch_size: int = 10, batch_delay: float = 1.0
     ) -> None:
+        """Start market data stream with batched subscriptions."""
         """Start market data stream with batched subscriptions.
 
         Args:
@@ -160,7 +161,7 @@ class Stream:
         )
 
         # Register bar handler (raw passthrough)
-        async def handle_bar(bar):
+        async def handle_bar(bar: Any) -> None:
             if self.on_bar:
                 await self.on_bar(bar)
 
@@ -191,14 +192,14 @@ class Stream:
         )
 
         # Register order update handler (raw passthrough)
-        async def handle_trade_update(update):
+        async def handle_trade_update(update: Any) -> None:
             if self.on_order_update:
                 await self.on_order_update(update)
 
         self.trade_updates_stream.subscribe_trade_updates(handle_trade_update)
 
         # Start stream using native async _run_forever() instead of sync run()
-        asyncio.create_task(self.trade_updates_stream._run_forever())
+        asyncio.create_task(self.trade_updates_stream._run_forever())  # type: ignore[no-untyped-call]
         self.trade_connected = True
         logger.info("Trade stream connected")
 

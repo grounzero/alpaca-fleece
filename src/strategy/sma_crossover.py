@@ -1,5 +1,7 @@
 """SMA Crossover strategy - Multi-timeframe with regime detection."""
 
+from typing import Any, Optional
+
 import pandas as pd
 import pandas_ta as ta
 
@@ -22,7 +24,7 @@ class SMACrossover(BaseStrategy):
     - Unknown: Medium confidence (0.5-0.7)
     """
 
-    def __init__(self, state_store: StateStore, crypto_symbols: list = None) -> None:
+    def __init__(self, state_store: StateStore, crypto_symbols: Optional[list[str]] = None) -> None:
         """Initialise multi-timeframe strategy.
 
         Args:
@@ -44,7 +46,7 @@ class SMACrossover(BaseStrategy):
         """Strategy name."""
         return "sma_crossover_multi"
 
-    def get_required_history(self, symbol: str = None) -> int:
+    def get_required_history(self, symbol: Optional[str] = None) -> int:
         """Minimum bars needed (symbol-aware for Hybrid crypto support).
 
         Args:
@@ -70,7 +72,7 @@ class SMACrossover(BaseStrategy):
         if len(df) < self.get_required_history():
             return []
 
-        signals = []
+        signals: list[SignalEvent] = []
         regime = self._detect_regime(df)
 
         # Check all SMA pairs
@@ -141,7 +143,7 @@ class SMACrossover(BaseStrategy):
             },
         )
 
-    def _detect_regime(self, df: pd.DataFrame) -> dict:
+    def _detect_regime(self, df: pd.DataFrame) -> dict[str, Any]:
         """Detect market regime: trending vs ranging.
 
         Args:
@@ -154,9 +156,14 @@ class SMACrossover(BaseStrategy):
             return {"regime": "unknown", "strength": 0.0, "direction": "none"}
 
         close = df["close"].iloc[-1]
-        ta.sma(df["close"], length=20).iloc[-1]
-        sma_50 = ta.sma(df["close"], length=50).iloc[-1]
-        atr = ta.atr(df["high"], df["low"], df["close"], length=14).iloc[-1]
+        sma_50_series = ta.sma(df["close"], length=50)
+        atr_series = ta.atr(df["high"], df["low"], df["close"], length=14)
+
+        if sma_50_series is None or atr_series is None:
+            return {"regime": "unknown", "strength": 0.0, "direction": "none"}
+
+        sma_50 = sma_50_series.iloc[-1]
+        atr = atr_series.iloc[-1]
 
         # Trend strength: distance from slow SMA / ATR
         distance = close - sma_50
@@ -182,7 +189,7 @@ class SMACrossover(BaseStrategy):
                 "direction": "none",
             }
 
-    def _score_confidence(self, fast: int, slow: int, regime: dict) -> float:
+    def _score_confidence(self, fast: int, slow: int, regime: dict[str, Any]) -> float:
         """Score signal confidence (0.0-1.0) based on SMA period and regime.
 
         Args:

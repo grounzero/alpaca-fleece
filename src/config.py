@@ -85,7 +85,7 @@ def load_trading_config(path: str) -> dict[str, Any]:
         raise ConfigError(f"Config file not found: {path}")
 
     with open(config_path) as f:
-        config: dict[str, Any] = yaml.safe_load(f)  # type: ignore[assignment]
+        config: dict[str, Any] = yaml.safe_load(f) or {}
 
     if not config:
         raise ConfigError(f"Config file is empty: {path}")

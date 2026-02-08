@@ -14,6 +14,7 @@ NOT for:
 """
 
 from datetime import datetime
+from typing import Any
 
 from alpaca.trading.client import TradingClient
 
@@ -34,19 +35,20 @@ class CalendarClient:
         self,
         start: datetime,
         end: datetime,
-    ) -> list[dict]:
+    ) -> list[dict[str, Any]]:
         """Fetch market calendar for date range.
 
         Returns:
             List of dicts with keys: date, open, close (in America/New_York time)
         """
         try:
-            calendar = self.client.get_calendar(start=start, end=end)
+            # get_calendar takes no arguments, returns list of Calendar objects
+            calendar = self.client.get_calendar()
             return [
                 {
-                    "date": c.date.isoformat(),
-                    "open": c.open.isoformat() if c.open else None,
-                    "close": c.close.isoformat() if c.close else None,
+                    "date": c.date.isoformat() if hasattr(c, "date") and c.date else "",
+                    "open": c.open.isoformat() if hasattr(c, "open") and c.open else None,
+                    "close": c.close.isoformat() if hasattr(c, "close") and c.close else None,
                 }
                 for c in calendar
             ]

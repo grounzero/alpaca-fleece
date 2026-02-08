@@ -14,10 +14,11 @@ Clock (/v2/clock) is owned EXCLUSIVELY by this module.
 Calendar (/v2/calendar) is NOT owned here; use alpaca_api.calendar instead.
 """
 
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict, Union
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
+from alpaca.trading.models import Clock, Order, Position, TradeAccount
 from alpaca.trading.requests import MarketOrderRequest
 
 
@@ -93,13 +94,24 @@ class Broker:
             Dict with keys: equity, buying_power, cash, etc
         """
         try:
-            account = self.client.get_account()
-            return {
-                "equity": float(account.equity),  # type: ignore[attr-defined]
-                "buying_power": float(account.buying_power),  # type: ignore[attr-defined]
-                "cash": float(account.cash),  # type: ignore[attr-defined]
-                "portfolio_value": float(account.portfolio_value),  # type: ignore[attr-defined]
-            }
+            account: Union[TradeAccount, dict[str, Any]] = self.client.get_account()
+            # Handle both SDK object and dict responses
+            if isinstance(account, dict):
+                return {
+                    "equity": float(account.get("equity", 0)),
+                    "buying_power": float(account.get("buying_power", 0)),
+                    "cash": float(account.get("cash", 0)),
+                    "portfolio_value": float(account.get("portfolio_value", 0)),
+                }
+            else:
+                return {
+                    "equity": float(account.equity) if account.equity else 0.0,
+                    "buying_power": float(account.buying_power) if account.buying_power else 0.0,
+                    "cash": float(account.cash) if account.cash else 0.0,
+                    "portfolio_value": float(account.portfolio_value)
+                    if account.portfolio_value
+                    else 0.0,
+                }
         except Exception as e:
             raise BrokerError(f"Failed to get account: {e}")
 
@@ -110,16 +122,21 @@ class Broker:
             List of dicts with keys: symbol, qty, avg_entry_price, current_price
         """
         try:
-            positions = self.client.get_all_positions()
-            return [
-                {
-                    "symbol": p.symbol,  # type: ignore[attr-defined]
-                    "qty": float(p.qty),  # type: ignore[attr-defined]
-                    "avg_entry_price": float(p.avg_entry_price) if p.avg_entry_price else None,  # type: ignore[attr-defined]
-                    "current_price": float(p.current_price) if p.current_price else None,  # type: ignore[attr-defined]
-                }
-                for p in positions
-            ]
+            positions_raw: Union[list[Position], dict[str, Any]] = self.client.get_all_positions()
+            positions: list[Any] = positions_raw if isinstance(positions_raw, list) else []
+            result: list[PositionInfo] = []
+            for p in positions:
+                if isinstance(p, str):
+                    continue  # Skip error strings
+                result.append(
+                    {
+                        "symbol": p.symbol,
+                        "qty": float(p.qty) if p.qty else 0.0,
+                        "avg_entry_price": float(p.avg_entry_price) if p.avg_entry_price else None,
+                        "current_price": float(p.current_price) if p.current_price else None,
+                    }
+                )
+            return result
         except Exception as e:
             raise BrokerError(f"Failed to get positions: {e}")
 
@@ -131,27 +148,36 @@ class Broker:
         """
         try:
             # Get orders and filter to open ones manually
-            orders = self.client.get_orders()
-            open_orders = [
+            orders_raw: Union[list[Order], dict[str, Any]] = self.client.get_orders()
+            orders: list[Any] = orders_raw if isinstance(orders_raw, list) else []
+            open_orders: list[Union[Order, str]] = [
                 o
                 for o in orders
-                if o.status and o.status.value not in ["filled", "canceled", "expired", "rejected"]
+                if isinstance(o, Order)
+                and o.status
+                and o.status.value not in ["filled", "canceled", "expired", "rejected"]
             ]
 
-            return [
-                {
-                    "id": str(o.id),  # type: ignore[attr-defined]
-                    "client_order_id": o.client_order_id,  # type: ignore[attr-defined]
-                    "symbol": o.symbol,  # type: ignore[attr-defined]
-                    "side": o.side.value if o.side else None,  # type: ignore[attr-defined]
-                    "qty": float(o.qty) if o.qty else None,  # type: ignore[attr-defined]
-                    "status": o.status.value if o.status else None,  # type: ignore[attr-defined]
-                    "filled_qty": float(o.filled_qty) if o.filled_qty else 0,  # type: ignore[attr-defined]
-                    "filled_avg_price": float(o.filled_avg_price) if o.filled_avg_price else None,  # type: ignore[attr-defined]
-                    "created_at": o.created_at.isoformat() if o.created_at else None,  # type: ignore[attr-defined]
-                }
-                for o in open_orders
-            ]
+            result: list[OrderInfo] = []
+            for o in open_orders:
+                if isinstance(o, str):
+                    continue  # Skip error strings
+                result.append(
+                    {
+                        "id": str(o.id) if o.id else "",
+                        "client_order_id": o.client_order_id if o.client_order_id else "",
+                        "symbol": o.symbol if o.symbol else "",
+                        "side": o.side.value if o.side else None,
+                        "qty": float(o.qty) if o.qty else None,
+                        "status": o.status.value if o.status else None,
+                        "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
+                        "filled_avg_price": float(o.filled_avg_price)
+                        if o.filled_avg_price
+                        else None,
+                        "created_at": o.created_at.isoformat() if o.created_at else None,
+                    }
+                )
+            return result
         except Exception as e:
             raise BrokerError(f"Failed to get open orders: {e}")
 
@@ -165,13 +191,22 @@ class Broker:
             Dict with keys: is_open, next_open, next_close, timestamp
         """
         try:
-            clock = self.client.get_clock()
-            return {
-                "is_open": clock.is_open,  # type: ignore[attr-defined]
-                "next_open": clock.next_open.isoformat() if clock.next_open else None,  # type: ignore[attr-defined]
-                "next_close": clock.next_close.isoformat() if clock.next_close else None,  # type: ignore[attr-defined]
-                "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,  # type: ignore[attr-defined]
-            }
+            clock: Union[Clock, dict[str, Any]] = self.client.get_clock()
+            # Handle both SDK object and dict responses
+            if isinstance(clock, dict):
+                return {
+                    "is_open": bool(clock.get("is_open", False)),
+                    "next_open": clock.get("next_open"),
+                    "next_close": clock.get("next_close"),
+                    "timestamp": clock.get("timestamp"),
+                }
+            else:
+                return {
+                    "is_open": clock.is_open if clock.is_open is not None else False,
+                    "next_open": clock.next_open.isoformat() if clock.next_open else None,
+                    "next_close": clock.next_close.isoformat() if clock.next_close else None,
+                    "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,
+                }
         except Exception as e:
             raise BrokerError(f"Failed to get clock: {e}")
 
@@ -222,19 +257,42 @@ class Broker:
             else:
                 raise BrokerError(f"Invalid order_type: {order_type}")
 
-            order = self.client.submit_order(order_data)
-            return {
-                "id": str(order.id),  # type: ignore[attr-defined]
-                "client_order_id": order.client_order_id,  # type: ignore[attr-defined]
-                "symbol": order.symbol,  # type: ignore[attr-defined]
-                "side": order.side.value if order.side else None,  # type: ignore[attr-defined]
-                "qty": float(order.qty) if order.qty else None,  # type: ignore[attr-defined]
-                "status": order.status.value if order.status else None,  # type: ignore[attr-defined]
-                "filled_qty": float(order.filled_qty) if order.filled_qty else 0,  # type: ignore[attr-defined]
-                "filled_avg_price": (
-                    float(order.filled_avg_price) if order.filled_avg_price else None  # type: ignore[attr-defined]
-                ),
-            }
+            order_result: Union[Order, dict[str, Any]] = self.client.submit_order(order_data)
+            # Handle both SDK object and dict responses
+            if isinstance(order_result, dict):
+                return {
+                    "id": str(order_result.get("id", "")),
+                    "client_order_id": str(order_result.get("client_order_id", "")),
+                    "symbol": str(order_result.get("symbol", "")),
+                    "side": str(order_result.get("side")) if order_result.get("side") else None,
+                    "qty": float(order_result["qty"]) if order_result.get("qty") else None,
+                    "status": str(order_result["status"]) if order_result.get("status") else None,
+                    "filled_qty": float(order_result["filled_qty"])
+                    if order_result.get("filled_qty")
+                    else 0,
+                    "filled_avg_price": (
+                        float(order_result["filled_avg_price"])
+                        if order_result.get("filled_avg_price")
+                        else None
+                    ),
+                }
+            else:
+                return {
+                    "id": str(order_result.id) if order_result.id else "",
+                    "client_order_id": order_result.client_order_id
+                    if order_result.client_order_id
+                    else "",
+                    "symbol": order_result.symbol if order_result.symbol else "",
+                    "side": order_result.side.value if order_result.side else None,
+                    "qty": float(order_result.qty) if order_result.qty else None,
+                    "status": order_result.status.value if order_result.status else None,
+                    "filled_qty": float(order_result.filled_qty) if order_result.filled_qty else 0,
+                    "filled_avg_price": (
+                        float(order_result.filled_avg_price)
+                        if order_result.filled_avg_price
+                        else None
+                    ),
+                }
         except Exception as e:
             raise BrokerError(f"Failed to submit order: {e}")
 
@@ -245,6 +303,6 @@ class Broker:
             order_id: Alpaca order ID
         """
         try:
-            self.client.cancel_order_by_id(order_id)  # type: ignore[attr-defined]
+            self.client.cancel_order_by_id(order_id)
         except Exception as e:
             raise BrokerError(f"Failed to cancel order {order_id}: {e}")

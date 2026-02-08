@@ -6,7 +6,7 @@ Caches briefly to avoid redundant calls.
 
 import logging
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from src.alpaca_api.market_data import MarketDataClient
 
@@ -27,9 +27,9 @@ class SnapshotsHandler:
         self.cache_ttl_sec = cache_ttl_sec
 
         # Simple cache: (timestamp, data)
-        self.cache: dict[str, tuple[datetime, dict]] = {}
+        self.cache: dict[str, tuple[datetime, dict[str, Any]]] = {}
 
-    def get_snapshot(self, symbol: str) -> Optional[dict]:
+    def get_snapshot(self, symbol: str) -> Optional[dict[str, Any]]:
         """Get latest snapshot for symbol.
 
         Uses cache if fresh, otherwise fetches from API.

@@ -1,11 +1,11 @@
 """Market data endpoints: /v2/stocks/bars, /v2/stocks/snapshots."""
 
 from datetime import datetime
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
-from alpaca.data.timeframe import TimeFrame
+from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from .base import AlpacaDataClient, AlpacaDataClientError
 
@@ -35,13 +35,13 @@ class MarketDataClient(AlpacaDataClient):
         """
         try:
             tf_map = {
-                "1Min": TimeFrame.MINUTE,
-                "5Min": TimeFrame(5, "minute"),
-                "15Min": TimeFrame(15, "minute"),
-                "1H": TimeFrame.HOUR,
-                "1D": TimeFrame.DAY,
+                "1Min": TimeFrame(1, TimeFrameUnit.Minute),
+                "5Min": TimeFrame(5, TimeFrameUnit.Minute),
+                "15Min": TimeFrame(15, TimeFrameUnit.Minute),
+                "1H": TimeFrame(1, TimeFrameUnit.Hour),
+                "1D": TimeFrame(1, TimeFrameUnit.Day),
             }
-            tf = tf_map.get(timeframe, TimeFrame.MINUTE)
+            tf = tf_map.get(timeframe, TimeFrame(1, TimeFrameUnit.Minute))
 
             request = StockBarsRequest(
                 symbol_or_symbols=symbol,
@@ -66,7 +66,7 @@ class MarketDataClient(AlpacaDataClient):
         except Exception as e:
             raise AlpacaDataClientError(f"Failed to get bars for {symbol}: {e}")
 
-    def get_snapshot(self, symbol: str) -> dict:
+    def get_snapshot(self, symbol: str) -> dict[str, Any]:
         """Fetch latest snapshot (bid/ask for spread calculation).
 
         Args:
@@ -83,12 +83,15 @@ class MarketDataClient(AlpacaDataClient):
                 return {}
 
             q = quote[symbol]
+            # Quote objects have bid_price, ask_price attributes (not last_quote_time)
             return {
                 "bid": float(q.bid_price) if q.bid_price else None,
                 "ask": float(q.ask_price) if q.ask_price else None,
                 "bid_size": float(q.bid_size) if q.bid_size else None,
                 "ask_size": float(q.ask_size) if q.ask_size else None,
-                "last_quote_time": q.last_quote_time.isoformat() if q.last_quote_time else None,
+                "last_quote_time": q.timestamp.isoformat()
+                if hasattr(q, "timestamp") and q.timestamp
+                else None,
             }
         except Exception as e:
             raise AlpacaDataClientError(f"Failed to get snapshot for {symbol}: {e}")

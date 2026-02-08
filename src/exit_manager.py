@@ -18,12 +18,12 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import datetime, timezone
-from typing import Optional
+from typing import Any, Optional
 
 from src.broker import Broker
 from src.data_handler import DataHandler
 from src.event_bus import EventBus
-from src.position_tracker import PositionTracker
+from src.position_tracker import PositionData, PositionTracker
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -102,7 +102,7 @@ class ExitManager:
         self.exit_on_circuit_breaker = exit_on_circuit_breaker
 
         self._running = False
-        self._monitor_task: Optional[asyncio.Task] = None
+        self._monitor_task: Optional[asyncio.Task[Any]] = None
 
     async def start(self) -> None:
         """Start the exit manager monitoring loop."""
@@ -178,7 +178,7 @@ class ExitManager:
         Returns:
             List of ExitSignalEvents generated
         """
-        signals = []
+        signals: list[ExitSignalEvent] = []
         positions = self.position_tracker.get_all_positions()
 
         if not positions:
@@ -227,7 +227,7 @@ class ExitManager:
 
     def _evaluate_exit_rules(
         self,
-        position,
+        position: PositionData,
         current_price: float,
     ) -> Optional[ExitSignalEvent]:
         """Evaluate exit rules for a position.
@@ -312,9 +312,12 @@ class ExitManager:
             try:
                 # Get current price
                 snapshot = self.data_handler.get_snapshot(position.symbol)
-                current_price = (
-                    snapshot.get("last_price") or snapshot.get("bid") or position.entry_price
-                )
+                if snapshot is None:
+                    current_price = position.entry_price
+                else:
+                    current_price = (
+                        snapshot.get("last_price") or snapshot.get("bid") or position.entry_price
+                    )
 
                 # Calculate P&L
                 pnl_amount, pnl_pct = self.position_tracker.calculate_pnl(
@@ -347,6 +350,7 @@ class ExitManager:
         return signals
 
     async def check_single_position(self, symbol: str) -> Optional[ExitSignalEvent]:
+        """Check a single position for exit conditions."""
         """Check a single position for exit conditions.
 
         Args:
@@ -364,7 +368,7 @@ class ExitManager:
         if not snapshot:
             return None
 
-        current_price = snapshot.get("last_price") or snapshot.get("bid")
+        current_price: Optional[float] = snapshot.get("last_price") or snapshot.get("bid")
         if not current_price:
             return None
 

@@ -30,9 +30,9 @@ class RateLimiter:
         self.max_delay = max_delay
         self.max_retries = max_retries
 
-        self.failures = 0
-        self.last_failure_time = 0
-        self.is_limited = False
+        self.failures: int = 0
+        self.last_failure_time: float = 0.0
+        self.is_limited: bool = False
 
     def get_backoff_delay(self) -> float:
         """Calculate exponential backoff delay.

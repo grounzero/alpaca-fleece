@@ -21,6 +21,7 @@ FILTER TIER (if enabled, must pass — no bypass):
 
 import logging
 from datetime import datetime, timezone
+from typing import Any
 
 from src.broker import Broker
 from src.data_handler import DataHandler
@@ -44,7 +45,7 @@ class RiskManager:
         broker: Broker,
         data_handler: DataHandler,
         state_store: StateStore,
-        config: dict,
+        config: dict[str, Any],
     ) -> None:
         """Initialise risk manager.
 
@@ -63,6 +64,8 @@ class RiskManager:
         risk_config = config.get("risk", {})
 
         # Support both old format (single limits) and new format (session-aware)
+        self.regular_limits: dict[str, Any]
+        self.extended_limits: dict[str, Any]
         if isinstance(risk_config.get("regular_hours"), dict):
             # New format: session-aware limits
             self.regular_limits = risk_config.get("regular_hours", {})
@@ -113,7 +116,7 @@ class RiskManager:
         else:
             return "extended"
 
-    def _get_limits(self, symbol: str) -> dict:
+    def _get_limits(self, symbol: str) -> dict[str, Any]:
         """Get risk limits for symbol (Hybrid: session-aware).
 
         Args:
@@ -142,8 +145,9 @@ class RiskManager:
         """
         # CONFIDENCE FILTER (Win #2: multi-timeframe SMA)
         # Filter low-confidence signals to reduce false positives
-        confidence = signal.metadata.get("confidence", 0.5)
-        MIN_CONFIDENCE = 0.5
+        confidence_val: Any = signal.metadata.get("confidence", 0.5)
+        confidence: float = float(confidence_val) if confidence_val is not None else 0.5
+        MIN_CONFIDENCE: float = 0.5
         if confidence < MIN_CONFIDENCE:
             logger.warning(
                 f"Signal {signal.symbol} {signal.signal_type} "
@@ -197,7 +201,7 @@ class RiskManager:
 
             # Daily loss limit (Win #3: persisted) + Session-aware
             daily_pnl = self.state_store.get_daily_pnl()  # Win #3: from DB
-            max_daily_loss = equity * limits.get("max_daily_loss_pct", 0.05)
+            max_daily_loss = equity * float(limits.get("max_daily_loss_pct", 0.05))
 
             if daily_pnl < -max_daily_loss:
                 raise RiskManagerError(f"Daily loss limit exceeded: ${daily_pnl:.2f}")
@@ -264,12 +268,18 @@ class RiskManager:
 
         # Time-of-day filter (if enabled)
         if self.avoid_first_minutes > 0 or self.avoid_last_minutes > 0:
-            from datetime import datetime
+            from datetime import datetime, timedelta
 
-            import pytz
+            # Use stdlib zoneinfo instead of pytz (avoids stub issues)
+            try:
+                from zoneinfo import ZoneInfo
 
-            ET = pytz.timezone("America/New_York")
-            now_et = datetime.now(ET)
+                now_et = datetime.now(ZoneInfo("America/New_York"))
+            except Exception:
+                # Fallback: calculate ET from UTC (UTC-5 standard, UTC-4 DST)
+                now_utc = datetime.now(timezone.utc)
+                # Simplified: assume EST (UTC-5) for calculation
+                now_et = now_utc - timedelta(hours=5)
 
             # Market hours (9:30 - 16:00 ET)
             market_open = now_et.replace(hour=9, minute=30, second=0, microsecond=0)

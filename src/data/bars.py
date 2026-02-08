@@ -9,7 +9,7 @@ Handles backfill on stream reconnect.
 
 import logging
 from collections import deque
-from typing import Optional
+from typing import Any, Optional
 
 import pandas as pd
 
@@ -44,9 +44,9 @@ class BarsHandler:
         self.history_size = history_size
 
         # In-memory rolling window per symbol
-        self.bars_deque: dict[str, deque] = {}
+        self.bars_deque: dict[str, deque[BarEvent]] = {}
 
-    async def on_bar(self, raw_bar) -> None:
+    async def on_bar(self, raw_bar: Any) -> None:
         """Process raw bar from stream.
 
         Args:
@@ -87,7 +87,7 @@ class BarsHandler:
             )
             raise
 
-    def _normalise_bar(self, raw_bar) -> BarEvent:
+    def _normalise_bar(self, raw_bar: Any) -> BarEvent:
         """Normalise raw SDK bar to BarEvent."""
         return BarEvent(
             symbol=raw_bar.symbol,
