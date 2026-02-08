@@ -76,3 +76,6 @@ data/*.pid
 
 docs/
 
+# Scripts directory (local utilities)
+scripts/
+
