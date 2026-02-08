@@ -21,7 +21,15 @@ def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logg
     Path(log_dir).mkdir(parents=True, exist_ok=True)
 
     logger = logging.getLogger("alpaca_bot")
-    logger.setLevel(getattr(logging, log_level))
+
+    # Remove existing handlers to prevent duplicates
+    for handler in logger.handlers[:]:
+        logger.removeHandler(handler)
+
+    # Normalize and validate log level
+    log_level = log_level.upper()
+    level = getattr(logging, log_level, logging.INFO)
+    logger.setLevel(level)
 
     # Run ID for tracking sessions
     run_id = str(uuid.uuid4())[:8]
