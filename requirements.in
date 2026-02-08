@@ -2,6 +2,8 @@ alpaca-py==0.43.2
 pandas==3.0.0
 pandas-ta==0.4.71b0
 numpy==2.2.6
+numba==0.61.2
+llvmlite==0.44.0
 PyYAML==6.0.3
 python-dotenv==1.2.1
 pytz==2025.2
