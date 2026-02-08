@@ -19,6 +19,26 @@ A production-ready, event-driven trading bot for Alpaca Markets. Implements SMA 
 - Alpaca API credentials (paper trading)
 - uv (for dependency management)
 
+### Dependency pinning & regeneration (pip-tools)
+
+This project uses `pip-tools` to generate pinned, hashed `requirements.txt` artifacts used by CI for reproducible installs.
+
+- Recommended (exact) tooling to match CI: `pip==23.3.1`, `pip-tools==7.5.2`.
+- To regenerate the pinned/hashes files locally (developer machine):
+
+```bash
+# from project root, with a clean virtualenv activated
+python -m pip install --upgrade pip
+python -m pip install pip==23.3.1 pip-tools==7.5.2
+# Generate pinned, hashed production requirements
+pip-compile requirements.in --output-file=requirements.txt --generate-hashes --resolver=backtracking
+# (Optional) Generate dev requirements if you maintain a separate file
+pip-compile requirements-dev.in --output-file=requirements-dev.txt --generate-hashes --resolver=backtracking
+```
+
+- Note: CI installs production `requirements.txt` with `--require-hashes`. Installing `requirements-dev.txt` with `--require-hashes` may fail because some build-time transitive packages (e.g., `setuptools`) are not hashed; the CI workflow installs dev tooling explicitly (without `--require-hashes`) to avoid that failure.
+
+
 ### Installation
 
 ```bash
@@ -166,6 +186,29 @@ journalctl -u alpaca-bot -f
 - Dependency management (waits for network)
 - Clean integration with Linux systems
 
+### Systemd: BOT_ROOT and Environment overrides
+
+The included unit file supports an override `EnvironmentFile` and a `BOT_ROOT` environment variable so administrators can choose the runtime install location without editing the unit file. Example override file (create `/etc/default/alpaca-bot` as root):
+
+```bash
+# /etc/default/alpaca-bot
+# Absolute path to the bot installation directory (contains .venv, orchestrator.py, data/, logs/)
+BOT_ROOT=/path/to/alpaca-fleece
+```
+
+After creating or updating the override file, reload and restart the systemd unit:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart alpaca-bot
+sudo systemctl status alpaca-bot
+```
+
+Notes:
+- The unit uses `${BOT_ROOT}` for `ExecStart`, `PATH`, `ReadWritePaths`, and log file paths. Ensure the user running the service has access to `${BOT_ROOT}/data` and `${BOT_ROOT}/logs`.
+- Logs are appended to `${BOT_ROOT}/logs/orchestrator.out` (or visible via `journalctl -u alpaca-bot`).
+
+
 ## Configuration
 
 ### Environment Variables (`.env`)
@@ -280,8 +323,6 @@ Run the test suite:
 # With coverage
 .venv/bin/python -m pytest tests/ --cov=src
 ```
-
-**Current Status:** 109 tests passing
 
 ## Architecture
 

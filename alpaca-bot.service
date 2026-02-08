@@ -7,13 +7,24 @@ Wants=network-online.target
 [Service]
 Type=simple
 # Use %h for home directory (systemd specifier)
-WorkingDirectory=%h/.openclaw/workspace/alpaca-fleece
-Environment=PYTHONUNBUFFERED=1
+# Allow administrators to override environment via /etc/default/alpaca-bot
+EnvironmentFile=-/etc/default/alpaca-bot
+
+# Set a default BOT_ROOT relative to the service user's home directory
 Environment=BOT_ROOT=%h/.openclaw/workspace/alpaca-fleece
+Environment=PYTHONUNBUFFERED=1
+
+# Ensure PATH includes the virtualenv inside BOT_ROOT. We avoid relying on
+# systemd expanding ${BOT_ROOT} in all unit settings by invoking a small
+# POSIX shell which performs the expansion. Administrators can still override
+# BOT_ROOT via /etc/default/alpaca-bot (EnvironmentFile above).
 Environment=PATH=%h/.openclaw/workspace/alpaca-fleece/.venv/bin:/usr/local/bin:/usr/bin:/bin
 
-# Use the virtual environment Python
-ExecStart=%h/.openclaw/workspace/alpaca-fleece/.venv/bin/python -u orchestrator.py
+# Use a shell wrapper for reliable variable expansion. This runs a short
+# one-liner that execs the venv python inside BOT_ROOT so ${BOT_ROOT} is
+# expanded by the shell rather than relying on systemd doing it in every
+# directive.
+ExecStart=/bin/sh -c 'exec "${BOT_ROOT:-%h/.openclaw/workspace/alpaca-fleece}"/.venv/bin/python -u "${BOT_ROOT:-%h/.openclaw/workspace/alpaca-fleece}"/orchestrator.py'
 
 # Graceful shutdown on stop
 TimeoutStopSec=30
@@ -23,7 +34,8 @@ KillSignal=SIGTERM
 Restart=on-failure
 RestartSec=10
 
-# Logging
+# Logging — use %h as a safe default for paths; administrators can override
+# BOT_ROOT in /etc/default/alpaca-bot if they want logs elsewhere.
 StandardOutput=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
 StandardError=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
 
@@ -31,6 +43,9 @@ StandardError=append:%h/.openclaw/workspace/alpaca-fleece/logs/orchestrator.out
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=true
+# Use %h defaults for ReadWritePaths to avoid inconsistent expansion behavior
+# across systemd versions. If BOT_ROOT is overridden via /etc/default/alpaca-bot
+# and points elsewhere, admins can set absolute paths in an override file.
 ReadWritePaths=%h/.openclaw/workspace/alpaca-fleece/data %h/.openclaw/workspace/alpaca-fleece/logs
 
 [Install]

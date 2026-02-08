@@ -1,4 +1,4 @@
-"""Unit tests for broker timeout functionality."""
+"""Unit tests for `Broker` timeout and related executor behavior."""
 
 import time
 from unittest.mock import MagicMock, patch
@@ -252,7 +252,7 @@ class TestBrokerTimeout:
             assert result is not None
 
     def test_executor_shutdown_on_cleanup(self):
-        """Test that ThreadPoolExecutor is properly initialized."""
+        """Test that ThreadPoolExecutor is properly shut down during cleanup."""
         with patch("src.broker.TradingClient"):
             broker = Broker(
                 api_key="test_key",

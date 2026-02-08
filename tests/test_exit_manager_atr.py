@@ -1,0 +1,240 @@
+from datetime import datetime, timezone
+
+import pytest
+
+from src.exit_manager import ExitManager, calculate_dynamic_stops
+from src.position_tracker import PositionData
+
+
+def test_calculate_dynamic_stops_long_short() -> None:
+    stop, target = calculate_dynamic_stops(entry_price=100.0, atr=2.0)
+    assert stop == 97.0
+    assert target == 106.0
+
+    stop_s, target_s = calculate_dynamic_stops(entry_price=100.0, atr=2.0, side="short")
+    assert stop_s == 103.0
+    assert target_s == 94.0
+
+
+class DummyTracker:
+    def __init__(self, entry_price: float, qty: float) -> None:
+        self.entry_price = entry_price
+        self.qty = qty
+
+    def calculate_pnl(self, symbol: str, current_price: float):
+        pnl_amount = (current_price - self.entry_price) * self.qty
+        pnl_pct = (current_price - self.entry_price) / self.entry_price
+        return pnl_amount, pnl_pct
+
+
+def test_evaluate_exit_rules_atr_long_stop() -> None:
+    entry = 100.0
+    atr = 2.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=atr,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
+
+    # ATR-based stop for long: stop = entry - atr*1.5 = 97.0 -> price 96 triggers stop
+    sig = mgr._evaluate_exit_rules(position, current_price=96.0)
+    assert sig is not None
+    assert sig.reason == "stop_loss"
+    assert sig.side == "sell"
+
+
+def test_evaluate_exit_rules_fallback_stop_when_atr_missing() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=None,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
+
+    # No ATR available: fallback to percent stop (default 1%). Price 98 -> -2% triggers stop
+    sig = mgr._evaluate_exit_rules(position, current_price=98.0)
+    assert sig is not None
+    assert sig.reason == "stop_loss"
+    assert sig.side == "sell"
+
+
+def test_evaluate_exit_rules_atr_short_profit_target() -> None:
+    entry = 100.0
+    atr = 2.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="short",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=atr,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
+
+    # For short: target = entry - atr*3 = 94.0 -> price 94 triggers profit target
+    sig = mgr._evaluate_exit_rules(position, current_price=94.0)
+    assert sig is not None
+    assert sig.reason == "profit_target"
+    assert sig.side == "buy"
+
+
+def test_calculate_dynamic_stops_invalid_side_raises() -> None:
+    with pytest.raises(ValueError):
+        calculate_dynamic_stops(entry_price=100.0, atr=2.0, side="weird")
+
+
+def test_evaluate_exit_rules_atr_long_profit_target() -> None:
+    entry = 100.0
+    atr = 2.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=atr,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
+
+    # For long: target = entry + atr*3 = 106.0 -> price 106 triggers profit target
+    sig = mgr._evaluate_exit_rules(position, current_price=106.0)
+    assert sig is not None
+    assert sig.reason == "profit_target"
+    assert sig.side == "sell"
+
+
+def test_evaluate_exit_rules_skip_atr_when_invalid() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    # ATR of 0 should be treated as unavailable and fallback to percent stop
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=0.0,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None, position_tracker=tracker, event_bus=None, state_store=None, data_handler=None
+    )
+
+    # ATR invalid -> fallback percent stop (1%). Price 98 triggers -2% stop
+    sig = mgr._evaluate_exit_rules(position, current_price=98.0)
+    assert sig is not None
+    assert sig.reason == "stop_loss"
+    assert sig.side == "sell"
+
+
+def test_trailing_stop_activation_triggers_exit() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    position = PositionData(
+        symbol="AAPL",
+        side="long",
+        qty=qty,
+        entry_price=entry,
+        entry_time=now,
+        highest_price=entry,
+        atr=None,
+        # Set trailing stop slightly above the percent stop threshold so a
+        # price can trigger trailing_stop without also hitting the fixed pct stop.
+        trailing_stop_price=99.5,
+        trailing_stop_activated=True,
+    )
+
+    tracker = DummyTracker(entry_price=entry, qty=qty)
+    mgr = ExitManager(
+        broker=None,
+        position_tracker=tracker,
+        event_bus=None,
+        state_store=None,
+        data_handler=None,
+        trailing_stop_enabled=True,
+    )
+
+    # Trailing stop at 99.5 -> current price 99.4 triggers trailing_stop exit
+    # while not triggering the fixed -1% stop_loss.
+    sig = mgr._evaluate_exit_rules(position, current_price=99.4)
+    assert sig is not None
+    assert sig.reason == "trailing_stop"
+    assert sig.side == "sell"
+
+
+def test_atr_nan_and_inf_fallback_to_percent_stop() -> None:
+    entry = 100.0
+    qty = 1.0
+    now = datetime.now(timezone.utc)
+
+    for bad_atr in (float("nan"), float("inf")):
+        position = PositionData(
+            symbol="AAPL",
+            side="long",
+            qty=qty,
+            entry_price=entry,
+            entry_time=now,
+            highest_price=entry,
+            atr=bad_atr,
+        )
+
+        tracker = DummyTracker(entry_price=entry, qty=qty)
+        mgr = ExitManager(
+            broker=None,
+            position_tracker=tracker,
+            event_bus=None,
+            state_store=None,
+            data_handler=None,
+        )
+
+        # ATR is non-finite -> fallback to percent stop (1%). Price 98 triggers stop
+        sig = mgr._evaluate_exit_rules(position, current_price=98.0)
+        assert sig is not None
+        assert sig.reason == "stop_loss"
+        assert sig.side == "sell"
