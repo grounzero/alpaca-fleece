@@ -17,6 +17,7 @@ from typing import Any
 from src.broker import Broker
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -79,9 +80,9 @@ class OrderManager:
         Returns:
             16-char hex string
         """
-        # Normalize side to prevent duplicate orders from formatting differences
-        normalized_side = side.strip().lower()
-        data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{normalized_side}"
+        # Convert side to a canonical form to prevent duplicate orders from formatting differences
+        converted_side = side.strip().lower()
+        data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{converted_side}"
         hash_val = hashlib.sha256(data.encode()).hexdigest()[:16]
         return hash_val
 
@@ -129,11 +130,15 @@ class OrderManager:
             return False
 
         # Persist order intent BEFORE submission (crash safety)
+        metadata = getattr(signal, "metadata", {}) or {}
+        atr_raw = metadata.get("atr") if isinstance(metadata, dict) else None
+        atr_value: float | None = parse_optional_float(atr_raw)
         self.state_store.save_order_intent(
             client_order_id=client_order_id,
             symbol=symbol,
             side=side,
             qty=float(qty),  # Convert Decimal to float for storage
+            atr=atr_value,
             status="new",
         )
 

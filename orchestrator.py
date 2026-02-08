@@ -6,6 +6,7 @@ structured phases matching the agent contracts in agents/.
 """
 
 import asyncio
+import inspect
 import logging
 import signal
 import sys
@@ -20,12 +21,15 @@ from src.event_bus import BarEvent, EventBus, ExitSignalEvent, OrderUpdateEvent,
 from src.exit_manager import ExitManager
 from src.housekeeping import Housekeeping
 from src.logger import setup_logger
+from src.metrics import metrics, write_metrics_to_file
+from src.notifier import AlertNotifier
 from src.order_manager import OrderManager
 from src.position_sizer import calculate_position_size
 from src.position_tracker import PositionTracker
 from src.reconciliation import ReconciliationError, reconcile
 from src.risk_manager import RiskManager
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
 
@@ -53,6 +57,7 @@ class Orchestrator:
         self.trading_config: Optional[dict] = None
         self.broker: Optional[Broker] = None
         self.state_store: Optional[StateStore] = None
+        self.notifier: Optional[AlertNotifier] = None
 
         # Phase 2: Data Layer components
         self.event_bus: Optional[EventBus] = None
@@ -91,23 +96,19 @@ class Orchestrator:
         warnings = []
 
         try:
-            # Load environment
             logger.info("Loading environment...")
             self.env = load_env()
             logger.info(f"   Env loaded (api_key={self.env['ALPACA_API_KEY'][:10]}...)")
 
-            # Load trading config
             logger.info("Loading trading config...")
             self.trading_config = load_trading_config(self.env["CONFIG_PATH"])
             strategy_name = self.trading_config.get("strategy", {}).get("name", "unknown")
             logger.info(f"   Config loaded (strategy={strategy_name})")
 
-            # Validate config
             logger.info("Validating config...")
             validate_config(self.env, self.trading_config)
             logger.info("   Config valid")
 
-            # Initialize broker
             logger.info("Connecting to broker...")
             self.broker = Broker(
                 api_key=self.env["ALPACA_API_KEY"],
@@ -120,10 +121,21 @@ class Orchestrator:
             logger.info(f"      Buying Power: ${account['buying_power']:,.2f}")
             logger.info(f"      Cash: ${account['cash']:,.2f}")
 
-            # Initialize state store
-            logger.info("Initializing state store...")
+            logger.info("Setting up state store...")
             self.state_store = StateStore(self.env["DATABASE_PATH"])
             logger.info(f"   State store ready ({self.env['DATABASE_PATH']})")
+
+            # Tier 1 alerts
+            logger.info("Starting alert notifier...")
+            alert_config = self.trading_config.get("alerts", {})
+            self.notifier = AlertNotifier(
+                alert_channel=alert_config.get("channel"),
+                alert_target=alert_config.get("target"),
+            )
+            if self.notifier.enabled:
+                logger.info(f"   Notifier ready ({alert_config.get('channel')})")
+            else:
+                logger.info("   Notifier ready (logging only)")
 
             # Run reconciliation
             logger.info("Running reconciliation...")
@@ -195,13 +207,13 @@ class Orchestrator:
         logger.info("=" * 60)
 
         try:
-            # Initialize event bus
-            logger.info("Initializing event bus...")
+            # Start event bus
+            logger.info("Starting event bus...")
             self.event_bus = EventBus()
             await self.event_bus.start()
             logger.info("   Event bus ready")
 
-            # Initialize stream manager (using polling for consistency)
+            # Start stream manager (using polling for consistency)
             logger.info("Preparing stream (polling mode)...")
             self.stream = StreamPolling(
                 api_key=self.env["ALPACA_API_KEY"],
@@ -211,8 +223,8 @@ class Orchestrator:
             )
             logger.info("   Stream ready (HTTP polling)")
 
-            # Initialize data clients
-            logger.info("Initializing data clients...")
+            # Start data clients
+            logger.info("Starting data clients...")
             self.market_data_client = MarketDataClient(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
@@ -222,8 +234,7 @@ class Orchestrator:
                 secret_key=self.env["ALPACA_SECRET_KEY"],
             )
 
-            # Initialize data handler
-            logger.info("Initializing data handler...")
+            logger.info("Starting data handler...")
             self.data_handler = DataHandler(
                 state_store=self.state_store,
                 event_bus=self.event_bus,
@@ -273,8 +284,8 @@ class Orchestrator:
             self.symbols = self.assets_client.validate_symbols(self.symbols)
             logger.info(f"   Trading symbols: {self.symbols}")
 
-            # Initialize strategy
-            logger.info("Initializing strategy...")
+            # Initialise strategy
+            logger.info("Initialising strategy...")
             strategy_config = self.trading_config.get("strategy", {})
             strategy_name = strategy_config.get("name")
 
@@ -290,8 +301,8 @@ class Orchestrator:
 
             logger.info(f"   Strategy ready ({strategy_name})")
 
-            # Initialize risk manager
-            logger.info("Initializing risk manager...")
+            # Initialise risk manager
+            logger.info("Initialising risk manager...")
             self.risk_manager = RiskManager(
                 broker=self.broker,
                 data_handler=self.data_handler,
@@ -300,8 +311,8 @@ class Orchestrator:
             )
             logger.info("   Risk manager ready")
 
-            # Initialize order manager
-            logger.info("Initializing order manager...")
+            # Initialise order manager
+            logger.info("Initialising order manager...")
             self.order_manager = OrderManager(
                 broker=self.broker,
                 state_store=self.state_store,
@@ -311,13 +322,13 @@ class Orchestrator:
             )
             logger.info("   Order manager ready")
 
-            # Initialize housekeeping
-            logger.info("Initializing housekeeping...")
+            # Initialise housekeeping
+            logger.info("Initialising housekeeping...")
             self.housekeeping = Housekeeping(self.broker, self.state_store)
             logger.info("   Housekeeping ready")
 
-            # Initialize position tracker
-            logger.info("Initializing position tracker...")
+            # Initialise position tracker
+            logger.info("Initialising position tracker...")
             exits_config = self.trading_config.get("exits", {})
             self.position_tracker = PositionTracker(
                 broker=self.broker,
@@ -332,8 +343,12 @@ class Orchestrator:
             await self.position_tracker.sync_with_broker()
             logger.info("   Position tracker ready")
 
-            # Initialize exit manager
-            logger.info("Initializing exit manager...")
+            # Initialise exit manager
+            logger.info("Initialising exit manager...")
+
+            # Exit configuration validated earlier in `validate_config()`
+            exits_config = self.trading_config.get("exits", {})
+
             self.exit_manager = ExitManager(
                 broker=self.broker,
                 position_tracker=self.position_tracker,
@@ -399,6 +414,11 @@ class Orchestrator:
         # Start exit manager
         logger.info("Starting exit manager...")
         await self.exit_manager.start()
+
+        # Start metrics writer
+        logger.info("Starting metrics writer...")
+        metrics_task = asyncio.create_task(self._metrics_writer(), name="metrics_writer")
+        self._tasks.append(metrics_task)
 
         # Setup signal handlers
         self._setup_signal_handlers()
@@ -478,15 +498,20 @@ class Orchestrator:
 
                         # Process each signal (multi-timeframe can emit 0-3)
                         for signal in signals:
+                            # Track signal generated
+                            metrics.record_signal_generated()
+
                             # Check risk
                             try:
                                 if not await self.risk_manager.check_signal(signal):
                                     logger.debug(
                                         f"Signal filtered: {signal.symbol} {signal.signal_type}"
                                     )
+                                    metrics.record_signal_filtered_risk()
                                     continue
                             except Exception as e:
                                 logger.error(f"Risk check failed: {e}")
+                                metrics.record_signal_filtered_risk()
                                 continue
 
                             # Submit order with position sizing
@@ -525,14 +550,30 @@ class Orchestrator:
                                 )
 
                                 await self.order_manager.submit_order(signal, qty)
+                                metrics.record_order_submitted()
                             except Exception as e:
                                 logger.error(f"Order submission failed: {e}")
+                                metrics.record_order_rejected()
 
                     elif isinstance(event, ExitSignalEvent):
                         # Handle exit signal from exit manager
                         logger.info(
                             f"Processing exit signal: {event.symbol} {event.reason} "
                             f"(P&L: {event.pnl_pct*100:.1f}%)"
+                        )
+
+                        # Track exit triggered
+                        metrics.record_exit_triggered()
+
+                        # Send alert for exit
+                        await self.send_critical_alert(
+                            "exit_triggered",
+                            {
+                                "symbol": event.symbol,
+                                "reason": event.reason,
+                                "pnl_pct": event.pnl_pct,
+                                "pnl_amount": event.pnl_amount,
+                            },
                         )
 
                         # Validate exit with simplified risk check
@@ -555,10 +596,12 @@ class Orchestrator:
                         # Submit exit order
                         try:
                             await self.order_manager.submit_order(exit_signal, event.qty)
+                            metrics.record_order_submitted()
                             # Stop tracking position after exit
                             self.position_tracker.stop_tracking(event.symbol)
                         except Exception as e:
                             logger.error(f"Exit order submission failed: {e}")
+                            metrics.record_order_rejected()
 
                     elif isinstance(event, OrderUpdateEvent):
                         # Handle order fill events for P&L tracking
@@ -589,11 +632,15 @@ class Orchestrator:
 
         if side == "buy":
             # Start tracking position with actual fill price
+            atr_raw = order_intent.get("atr") if order_intent else None
+            atr_value = parse_optional_float(atr_raw)
+
             self.position_tracker.start_tracking(
                 symbol=event.symbol,
                 fill_price=fill_price,
                 qty=event.filled_qty,
                 side="long",
+                atr=atr_value,
             )
             logger.info(
                 f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} " f"qty={event.filled_qty}"
@@ -623,6 +670,91 @@ class Orchestrator:
                 )
             else:
                 logger.warning(f"Sell fill for untracked position: {event.symbol}")
+
+        # Update metrics gauges
+        metrics.record_order_filled()
+        metrics.update_daily_pnl(self.state_store.get_daily_pnl())
+        metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
+
+    async def _metrics_writer(self) -> None:
+        """Periodically write metrics to file.
+
+        Writes metrics to data/metrics.json every 60 seconds.
+        """
+        logger.info("Metrics writer started (60s interval)")
+        try:
+            while True:
+                try:
+                    # Update gauge values before writing
+                    positions = []
+                    if self.broker:
+                        try:
+                            maybe_positions = self.broker.get_positions()
+                            if inspect.isawaitable(maybe_positions):
+                                positions = await maybe_positions
+                            else:
+                                positions = maybe_positions
+                        except Exception:
+                            logger.exception("Failed to read positions from broker; using 0")
+
+                    # Safely compute open positions count
+                    open_positions_count = 0
+                    try:
+                        open_positions_count = len(positions) if positions is not None else 0
+                    except Exception:
+                        open_positions_count = 0
+
+                    metrics.update_open_positions(open_positions_count)
+                    metrics.update_daily_pnl(self.state_store.get_daily_pnl())
+                    metrics.update_daily_trade_count(self.state_store.get_daily_trade_count())
+
+                    # Write metrics to file
+                    write_metrics_to_file("data/metrics.json")
+                    logger.debug("Metrics written to data/metrics.json")
+                except Exception:
+                    logger.exception("Error in metrics writer loop; continuing")
+
+                await asyncio.sleep(60)
+        except asyncio.CancelledError:
+            logger.info("Metrics writer cancelled")
+            raise
+
+    async def send_critical_alert(self, event_type: str, details: dict) -> bool:
+        """Send alert for critical events.
+
+        Args:
+            event_type: Type of critical event
+            details: Event-specific details
+
+        Returns:
+            True if alert sent successfully
+        """
+        if not self.notifier:
+            logger.warning(f"Notifier not initialised, cannot send {event_type} alert")
+            return False
+
+        try:
+            if event_type == "circuit_breaker_tripped":
+                return self.notifier.alert_circuit_breaker_tripped(details["failure_count"])
+            elif event_type == "daily_loss_exceeded":
+                return self.notifier.alert_daily_loss_limit_exceeded(
+                    details["daily_pnl"],
+                    details["limit"],
+                )
+            elif event_type == "exit_triggered":
+                return self.notifier.send_alert(
+                    title=f"Exit: {details['symbol']} ({details['reason']})",
+                    message=f"P&L: {details['pnl_pct']*100:.1f}% (${details['pnl_amount']:.2f})",
+                    severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
+                )
+            elif event_type == "kill_switch_activated":
+                return self.notifier.alert_kill_switch_activated()
+            else:
+                logger.warning(f"Unknown alert event type: {event_type}")
+                return False
+        except Exception as e:
+            logger.error(f"Failed to send {event_type} alert: {e}")
+            return False
 
     def _setup_signal_handlers(self) -> None:
         """Setup SIGTERM/SIGINT handlers for graceful shutdown."""

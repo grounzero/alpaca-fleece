@@ -4,10 +4,18 @@ Provides a crash-safe persistence layer for order intents, trades, equity curve,
 and bot state. All financial values use NUMERIC for precision.
 """
 
+import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional, TypedDict
+from typing import Any, Optional, TypedDict
+
+from src.utils import parse_optional_float
+
+logger = logging.getLogger(__name__)
+
+
+# Use the public utility from src.utils for DB numeric coercion directly.
 
 
 class OrderIntentRow(TypedDict, total=False):
@@ -17,8 +25,9 @@ class OrderIntentRow(TypedDict, total=False):
     symbol: str
     side: str
     qty: float
+    atr: Optional[float]
     status: str
-    filled_qty: float
+    filled_qty: Optional[float]
     alpaca_order_id: Optional[str]
 
 
@@ -57,6 +66,7 @@ class StateStore:
                     symbol TEXT NOT NULL,
                     side TEXT NOT NULL,
                     qty NUMERIC(10, 4) NOT NULL,
+                    atr NUMERIC(10, 4),
                     status TEXT NOT NULL,
                     filled_qty NUMERIC(10, 4) DEFAULT 0,
                     alpaca_order_id TEXT,
@@ -154,6 +164,19 @@ class StateStore:
 
             conn.commit()
 
+            # Migration: ensure `atr` column exists on order_intents for older DBs
+            try:
+                cursor.execute("PRAGMA table_info(order_intents)")
+                oi_columns = [col[1] for col in cursor.fetchall()]
+                if "atr" not in oi_columns:
+                    cursor.execute("ALTER TABLE order_intents ADD COLUMN atr NUMERIC(10, 4)")
+                    conn.commit()
+            except sqlite3.Error as e:
+                # Use the module-level logger (defined at top of this module)
+                # rather than creating a new logger instance here. This keeps
+                # logging consistent and is safe during early init/migration.
+                logger.warning("Could not migrate order_intents to add atr column: %s", e)
+
     def get_state(self, key: str) -> Optional[str]:
         """Get state value by key."""
         with sqlite3.connect(self.db_path) as conn:
@@ -180,6 +203,7 @@ class StateStore:
         side: str,
         qty: float,
         status: str = "new",
+        atr: float | None = None,
     ) -> None:
         """Save order intent before submission (crash safety)."""
         now = datetime.now(timezone.utc).isoformat()
@@ -187,9 +211,9 @@ class StateStore:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO order_intents 
-                   (client_order_id, symbol, side, qty, status, created_at_utc, updated_at_utc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
-                (client_order_id, symbol, side, qty, status, now, now),
+                   (client_order_id, symbol, side, qty, atr, status, created_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                (client_order_id, symbol, side, qty, atr, status, now, now),
             )
             conn.commit()
 
@@ -217,19 +241,23 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
+                "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
                 (client_order_id,),
             )
             row = cursor.fetchone()
             if row:
+                atr_val = parse_optional_float(row[4])
+                # Convert required numeric fields to float and optional ones
+                # via the shared helper to avoid leaking Decimal/str values.
                 return {
                     "client_order_id": row[0],
                     "symbol": row[1],
                     "side": row[2],
-                    "qty": row[3],
-                    "status": row[4],
-                    "filled_qty": row[5],
-                    "alpaca_order_id": row[6],
+                    "qty": float(row[3]),
+                    "atr": atr_val,
+                    "status": row[5],
+                    "filled_qty": parse_optional_float(row[6]),
+                    "alpaca_order_id": row[7],
                 }
             return None
 
@@ -246,27 +274,30 @@ class StateStore:
             cursor = conn.cursor()
             if status:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents WHERE status = ?",
+                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents WHERE status = ?",
                     (status,),
                 )
             else:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id FROM order_intents"
+                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents"
                 )
 
             rows = cursor.fetchall()
-            return [
-                {
+
+            def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
+                atr_val = parse_optional_float(row[4])
+                return {
                     "client_order_id": row[0],
                     "symbol": row[1],
                     "side": row[2],
-                    "qty": row[3],
-                    "status": row[4],
-                    "filled_qty": row[5],
-                    "alpaca_order_id": row[6],
+                    "qty": float(row[3]),
+                    "atr": atr_val,
+                    "status": row[5],
+                    "filled_qty": parse_optional_float(row[6]),
+                    "alpaca_order_id": row[7],
                 }
-                for row in rows
-            ]
+
+            return [map_row(row) for row in rows]
 
     # Win #3: Daily Limits & Circuit Breaker Persistence
 

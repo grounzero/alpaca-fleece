@@ -14,6 +14,7 @@ from typing import Optional
 
 from src.broker import Broker
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -28,6 +29,7 @@ class PositionData:
     entry_price: float
     entry_time: datetime
     highest_price: float  # For trailing stop calculation
+    atr: float | None = None
     trailing_stop_price: Optional[float] = None
     trailing_stop_activated: bool = False
     pending_exit: bool = False  # Set when exit signal generated, cleared when order fills/rejected
@@ -80,6 +82,7 @@ class PositionTracker:
                     side TEXT NOT NULL,
                     qty NUMERIC(10, 4) NOT NULL,
                     entry_price NUMERIC(10, 4) NOT NULL,
+                    atr NUMERIC(10, 4),
                     entry_time TEXT NOT NULL,
                     highest_price NUMERIC(10, 4) NOT NULL,
                     trailing_stop_price NUMERIC(10, 4),
@@ -98,6 +101,9 @@ class PositionTracker:
                 cursor.execute(
                     "ALTER TABLE position_tracking ADD COLUMN pending_exit INTEGER DEFAULT 0"
                 )
+            # Migration: add atr column if missing
+            if "atr" not in columns:
+                cursor.execute("ALTER TABLE position_tracking ADD COLUMN atr NUMERIC(10, 4)")
 
             conn.commit()
 
@@ -107,6 +113,7 @@ class PositionTracker:
         fill_price: float,
         qty: float = 1.0,
         side: str = "long",
+        atr: float | None = None,
     ) -> PositionData:
         """Start tracking a new position.
 
@@ -127,6 +134,7 @@ class PositionTracker:
             side=side,
             qty=qty,
             entry_price=fill_price,
+            atr=atr,
             entry_time=now,
             highest_price=fill_price,
             trailing_stop_price=None,
@@ -352,15 +360,16 @@ class PositionTracker:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO position_tracking
-                (symbol, side, qty, entry_price, entry_time, highest_price,
+                (symbol, side, qty, entry_price, atr, entry_time, highest_price,
                  trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     position.symbol,
                     position.side,
                     position.qty,
                     position.entry_price,
+                    position.atr,
                     position.entry_time.isoformat(),
                     position.highest_price,
                     position.trailing_stop_price,
@@ -396,7 +405,7 @@ class PositionTracker:
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT symbol, side, qty, entry_price, entry_time, highest_price,
+                SELECT symbol, side, qty, entry_price, atr, entry_time, highest_price,
                        trailing_stop_price, trailing_stop_activated, 
                        COALESCE(pending_exit, 0)
                 FROM position_tracking
@@ -404,16 +413,22 @@ class PositionTracker:
             rows = cursor.fetchall()
 
             for row in rows:
+                # Convert numeric DB values to floats when possible. SQLite
+                # may return NUMERIC columns as str/Decimal depending on insertion.
+                atr_val = parse_optional_float(row[4])
+                trailing_stop_val = parse_optional_float(row[7])
+
                 position = PositionData(
                     symbol=row[0],
                     side=row[1],
-                    qty=row[2],
-                    entry_price=row[3],
-                    entry_time=datetime.fromisoformat(row[4]),
-                    highest_price=row[5],
-                    trailing_stop_price=row[6],
-                    trailing_stop_activated=bool(row[7]),
-                    pending_exit=bool(row[8]),
+                    qty=float(row[2]),
+                    entry_price=float(row[3]),
+                    atr=atr_val,
+                    entry_time=datetime.fromisoformat(row[5]),
+                    highest_price=float(row[6]),
+                    trailing_stop_price=trailing_stop_val,
+                    trailing_stop_activated=bool(row[8]),
+                    pending_exit=bool(row[9]),
                 )
                 self._positions[position.symbol] = position
                 positions.append(position)
