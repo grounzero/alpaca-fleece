@@ -4,8 +4,8 @@ Provides a crash-safe persistence layer for order intents, trades, equity curve,
 and bot state. All financial values use NUMERIC for precision.
 """
 
-import sqlite3
 import logging
+import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional, TypedDict
