@@ -110,9 +110,7 @@ def validate_exit_config(exit_config: dict) -> None:
     try:
         stop_loss = float(exit_config.get("stop_loss_pct", 0.01))
         profit_target = float(exit_config.get("profit_target_pct", 0.02))
-        trailing_activation = float(
-            exit_config.get("trailing_stop_activation_pct", 0.01)
-        )
+        trailing_activation = float(exit_config.get("trailing_stop_activation_pct", 0.01))
         trailing_trail = float(exit_config.get("trailing_stop_trail_pct", 0.005))
     except (TypeError, ValueError) as e:
         raise ConfigError(f"Exit config numeric fields must be numbers: {e}")
