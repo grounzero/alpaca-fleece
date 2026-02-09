@@ -471,8 +471,8 @@ class PositionTracker:
                     entry_time=datetime.fromisoformat(row[5]),
                     extreme_price=float(row[6]),
                     trailing_stop_price=trailing_stop_val,
-                    trailing_stop_activated=bool(row[8]),
-                    pending_exit=bool(row[9]),
+                    trailing_stop_activated=bool(int(row[8] or 0)),
+                    pending_exit=bool(int(row[9] or 0)),
                 )
                 self._positions[position.symbol] = position
                 positions.append(position)
