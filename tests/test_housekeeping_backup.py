@@ -1,12 +1,10 @@
 import gzip
-import os
-
 import logging
+import os
 from logging.handlers import RotatingFileHandler
 
-
-from src.logger import setup_logger
 from src.backup_manager import BackupManager
+from src.logger import setup_logger
 
 
 def test_rotate_logs_moves_files(tmp_path, caplog):

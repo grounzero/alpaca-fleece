@@ -1,6 +1,6 @@
 from datetime import datetime, timezone
 
-from src.position_tracker import PositionTracker, PositionData
+from src.position_tracker import PositionData, PositionTracker
 
 
 class DummyBroker:

@@ -1,5 +1,6 @@
-import pytest
 from datetime import datetime, timezone
+
+import pytest
 
 from src.exit_manager import ExitManager
 from src.position_tracker import PositionData

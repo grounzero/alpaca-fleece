@@ -1,5 +1,6 @@
 """SMA Crossover strategy - Multi-timeframe with regime detection."""
 
+import logging
 from typing import Any, Optional
 
 import numpy as np
@@ -8,7 +9,6 @@ import pandas_ta as ta
 
 from src.event_bus import SignalEvent
 from src.strategy.base import BaseStrategy
-import logging
 
 logger = logging.getLogger(__name__)
 

@@ -1,7 +1,6 @@
 import time
 import urllib.request
 
-
 from src.notifier import AlertNotifier
 
 
