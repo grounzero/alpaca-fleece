@@ -29,6 +29,7 @@ class PositionData:
     entry_price: float
     entry_time: datetime
     highest_price: float  # For trailing stop calculation
+    extreme_price: float  # Side-neutral extreme (highest for long, lowest for short)
     atr: float | None = None
     trailing_stop_price: Optional[float] = None
     trailing_stop_activated: bool = False
@@ -85,6 +86,7 @@ class PositionTracker:
                     atr NUMERIC(10, 4),
                     entry_time TEXT NOT NULL,
                     highest_price NUMERIC(10, 4) NOT NULL,
+                    extreme_price NUMERIC(10,4) NOT NULL,
                     trailing_stop_price NUMERIC(10, 4),
                     trailing_stop_activated INTEGER DEFAULT 0,
                     pending_exit INTEGER DEFAULT 0,
@@ -104,6 +106,16 @@ class PositionTracker:
             # Migration: add atr column if missing
             if "atr" not in columns:
                 cursor.execute("ALTER TABLE position_tracking ADD COLUMN atr NUMERIC(10, 4)")
+
+            # Migration: add extreme_price column if missing and backfill from highest_price
+            if "extreme_price" not in columns:
+                cursor.execute(
+                    "ALTER TABLE position_tracking ADD COLUMN extreme_price NUMERIC(10,4)"
+                )
+                # Copy existing highest_price values into extreme_price for compatibility
+                cursor.execute(
+                    "UPDATE position_tracking SET extreme_price = highest_price WHERE extreme_price IS NULL"
+                )
 
             conn.commit()
 
@@ -137,6 +149,7 @@ class PositionTracker:
             atr=atr,
             entry_time=now,
             highest_price=fill_price,
+            extreme_price=fill_price,
             trailing_stop_price=None,
             trailing_stop_activated=False,
         )
@@ -204,8 +217,9 @@ class PositionTracker:
 
         # Long positions: track highest price and move trailing stop up
         if converted_side == "long":
-            if current_price > position.highest_price:
-                position.highest_price = current_price
+            if current_price > position.extreme_price:
+                position.extreme_price = current_price
+                position.highest_price = position.extreme_price
                 state_changed = True
 
                 # Update trailing stop if activated
@@ -239,8 +253,9 @@ class PositionTracker:
         # Short positions: track lowest price and move trailing stop down (closer to price)
         elif converted_side == "short":
             # For shorts we store the lowest observed price in the same field
-            if current_price < position.highest_price:
-                position.highest_price = current_price
+            if current_price < position.extreme_price:
+                position.extreme_price = current_price
+                position.highest_price = position.extreme_price
                 state_changed = True
 
                 # Update trailing stop if activated: trailing stop moves down (to a lower price)
@@ -416,9 +431,9 @@ class PositionTracker:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO position_tracking
-                (symbol, side, qty, entry_price, atr, entry_time, highest_price,
+                (symbol, side, qty, entry_price, atr, entry_time, highest_price, extreme_price,
                  trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     position.symbol,
@@ -428,6 +443,7 @@ class PositionTracker:
                     position.atr,
                     position.entry_time.isoformat(),
                     position.highest_price,
+                    position.extreme_price,
                     position.trailing_stop_price,
                     1 if position.trailing_stop_activated else 0,
                     1 if position.pending_exit else 0,
@@ -462,8 +478,9 @@ class PositionTracker:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol, side, qty, entry_price, atr, entry_time, highest_price,
-                       trailing_stop_price, trailing_stop_activated, 
-                       COALESCE(pending_exit, 0)
+                           COALESCE(extreme_price, highest_price) AS extreme_price,
+                           trailing_stop_price, trailing_stop_activated,
+                           COALESCE(pending_exit, 0)
                 FROM position_tracking
             """)
             rows = cursor.fetchall()
@@ -481,7 +498,8 @@ class PositionTracker:
                     entry_price=float(row[3]),
                     atr=atr_val,
                     entry_time=datetime.fromisoformat(row[5]),
-                    highest_price=float(row[6]),
+                        highest_price=float(row[6]),
+                        extreme_price=float(row[6]),
                     trailing_stop_price=trailing_stop_val,
                     trailing_stop_activated=bool(row[8]),
                     pending_exit=bool(row[9]),
