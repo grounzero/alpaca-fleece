@@ -1,7 +1,7 @@
 """Position tracker - track open positions with entry prices and trailing stops.
 
 Tracks:
-- entry_price, entry_time, highest_price per symbol
+- entry_price, entry_time, extreme_price per symbol
 - trailing_stop_price, trailing_stop_activated per symbol
 - Syncs with broker positions on startup
 - Persists to SQLite via StateStore
@@ -14,6 +14,7 @@ from typing import Optional
 
 from src.broker import Broker
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +28,8 @@ class PositionData:
     qty: float
     entry_price: float
     entry_time: datetime
-    highest_price: float  # For trailing stop calculation
+    extreme_price: float  # Side-neutral extreme (highest for long, lowest for short)
+    atr: float | None = None
     trailing_stop_price: Optional[float] = None
     trailing_stop_activated: bool = False
     pending_exit: bool = False  # Set when exit signal generated, cleared when order fills/rejected
@@ -72,6 +74,8 @@ class PositionTracker:
         """Create position tracking table if not exists."""
         import sqlite3
 
+        # Create a clean position_tracking table; migrations are intentionally omitted
+        # for this branch — we prefer recreating the DB for a clean start.
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
@@ -80,25 +84,15 @@ class PositionTracker:
                     side TEXT NOT NULL,
                     qty NUMERIC(10, 4) NOT NULL,
                     entry_price NUMERIC(10, 4) NOT NULL,
+                    atr NUMERIC(10, 4),
                     entry_time TEXT NOT NULL,
-                    highest_price NUMERIC(10, 4) NOT NULL,
+                    extreme_price NUMERIC(10,4) NOT NULL,
                     trailing_stop_price NUMERIC(10, 4),
                     trailing_stop_activated INTEGER DEFAULT 0,
                     pending_exit INTEGER DEFAULT 0,
                     updated_at TEXT NOT NULL
                 )
-            """)
-
-            # Migration: Add pending_exit column if it doesn't exist (for older DBs)
-            cursor.execute(
-                "PRAGMA table_info(position_tracking)"
-            )  # Returns list of (cid, name, type, notnull, dflt_value, pk)
-            columns = [col[1] for col in cursor.fetchall()]
-            if "pending_exit" not in columns:
-                cursor.execute(
-                    "ALTER TABLE position_tracking ADD COLUMN pending_exit INTEGER DEFAULT 0"
-                )
-
+                """)
             conn.commit()
 
     def start_tracking(
@@ -107,6 +101,7 @@ class PositionTracker:
         fill_price: float,
         qty: float = 1.0,
         side: str = "long",
+        atr: float | None = None,
     ) -> PositionData:
         """Start tracking a new position.
 
@@ -127,8 +122,9 @@ class PositionTracker:
             side=side,
             qty=qty,
             entry_price=fill_price,
+            atr=atr,
             entry_time=now,
-            highest_price=fill_price,
+            extreme_price=fill_price,
             trailing_stop_price=None,
             trailing_stop_activated=False,
         )
@@ -192,36 +188,85 @@ class PositionTracker:
 
         state_changed = False
 
-        # Update highest price if current is higher
-        if current_price > position.highest_price:
-            position.highest_price = current_price
-            state_changed = True
+        converted_side = (position.side or "").lower()
 
-            # Update trailing stop if activated
-            if self.trailing_stop_enabled and position.trailing_stop_activated:
-                new_trailing_stop = current_price * (1 - self.trailing_stop_trail_pct)
-                # Trailing stop only moves up, never down
-                if (
-                    position.trailing_stop_price is None
-                    or new_trailing_stop > position.trailing_stop_price
-                ):
-                    position.trailing_stop_price = new_trailing_stop
+        # Long positions: track highest price and move trailing stop up
+        if converted_side == "long":
+            if current_price > position.extreme_price:
+                position.extreme_price = current_price
+                state_changed = True
+
+                # Update trailing stop if activated
+                if self.trailing_stop_enabled and position.trailing_stop_activated:
+                    new_trailing_stop = current_price * (1 - self.trailing_stop_trail_pct)
+                    # Trailing stop only moves up, never down
+                    if (
+                        position.trailing_stop_price is None
+                        or new_trailing_stop > position.trailing_stop_price
+                    ):
+                        position.trailing_stop_price = new_trailing_stop
+                        state_changed = True
+                        logger.debug(
+                            f"{symbol} trailing stop raised to ${position.trailing_stop_price:.2f}"
+                        )
+
+            # Check if trailing stop should be activated for long
+            if self.trailing_stop_enabled and not position.trailing_stop_activated:
+                unrealised_pct = (current_price - position.entry_price) / position.entry_price
+                if unrealised_pct >= self.trailing_stop_activation_pct:
+                    position.trailing_stop_activated = True
+                    position.trailing_stop_price = current_price * (
+                        1 - self.trailing_stop_trail_pct
+                    )
                     state_changed = True
-                    logger.debug(
-                        f"{symbol} trailing stop raised to ${position.trailing_stop_price:.2f}"
+                    logger.info(
+                        f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
+                        f"(current ${current_price:.2f}, P&L {unrealised_pct * 100:.1f}%)"
                     )
 
-        # Check if trailing stop should be activated
-        if self.trailing_stop_enabled and not position.trailing_stop_activated:
-            unrealised_pct = (current_price - position.entry_price) / position.entry_price
-            if unrealised_pct >= self.trailing_stop_activation_pct:
-                position.trailing_stop_activated = True
-                position.trailing_stop_price = current_price * (1 - self.trailing_stop_trail_pct)
+        # Short positions: track lowest price and move trailing stop down (closer to price)
+        elif converted_side == "short":
+            # For shorts we store the lowest observed price in the same field
+            if current_price < position.extreme_price:
+                position.extreme_price = current_price
                 state_changed = True
-                logger.info(
-                    f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
-                    f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
-                )
+
+                # Update trailing stop if activated: trailing stop moves down (to a lower price)
+                if self.trailing_stop_enabled and position.trailing_stop_activated:
+                    new_trailing_stop = current_price * (1 + self.trailing_stop_trail_pct)
+                    # For shorts, trailing stop only moves down (numerically smaller)
+                    if (
+                        position.trailing_stop_price is None
+                        or new_trailing_stop < position.trailing_stop_price
+                    ):
+                        position.trailing_stop_price = new_trailing_stop
+                        state_changed = True
+                        logger.debug(
+                            f"{symbol} trailing stop lowered to ${position.trailing_stop_price:.2f}"
+                        )
+
+            # Check if trailing stop should be activated for short
+            if self.trailing_stop_enabled and not position.trailing_stop_activated:
+                # For shorts, profit when price falls below entry
+                unrealised_pct = (position.entry_price - current_price) / position.entry_price
+                if unrealised_pct >= self.trailing_stop_activation_pct:
+                    position.trailing_stop_activated = True
+                    position.trailing_stop_price = current_price * (
+                        1 + self.trailing_stop_trail_pct
+                    )
+                    state_changed = True
+                    logger.info(
+                        f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
+                        f"(current ${current_price:.2f}, P&L {unrealised_pct * 100:.1f}%)"
+                    )
+
+        else:
+            logger.warning(
+                "Unsupported position side '%s' for symbol %s; skipping trailing-stop update",
+                position.side,
+                symbol,
+            )
+            return position
 
         # Only persist if state actually changed
         if state_changed:
@@ -252,8 +297,15 @@ class PositionTracker:
 
         if position.side == "long":
             price_diff = current_price - position.entry_price
-        else:  # short
+        elif position.side == "short":
             price_diff = position.entry_price - current_price
+        else:
+            logger.warning(
+                "Unsupported position side '%s' for P&L calc on symbol %s; returning 0.0",
+                position.side,
+                symbol,
+            )
+            return 0.0, 0.0
 
         pnl_amount = price_diff * position.qty
         pnl_pct = price_diff / position.entry_price
@@ -352,17 +404,18 @@ class PositionTracker:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO position_tracking
-                (symbol, side, qty, entry_price, entry_time, highest_price,
+                (symbol, side, qty, entry_price, atr, entry_time, extreme_price,
                  trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     position.symbol,
                     position.side,
                     position.qty,
                     position.entry_price,
+                    position.atr,
                     position.entry_time.isoformat(),
-                    position.highest_price,
+                    position.extreme_price,
                     position.trailing_stop_price,
                     1 if position.trailing_stop_activated else 0,
                     1 if position.pending_exit else 0,
@@ -396,24 +449,30 @@ class PositionTracker:
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT symbol, side, qty, entry_price, entry_time, highest_price,
-                       trailing_stop_price, trailing_stop_activated, 
+                SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price,
+                       trailing_stop_price, trailing_stop_activated,
                        COALESCE(pending_exit, 0)
                 FROM position_tracking
             """)
             rows = cursor.fetchall()
 
             for row in rows:
+                # Convert numeric DB values to floats when possible. SQLite
+                # may return NUMERIC columns as str/Decimal depending on insertion.
+                atr_val = parse_optional_float(row[4])
+                trailing_stop_val = parse_optional_float(row[7])
+
                 position = PositionData(
                     symbol=row[0],
                     side=row[1],
-                    qty=row[2],
-                    entry_price=row[3],
-                    entry_time=datetime.fromisoformat(row[4]),
-                    highest_price=row[5],
-                    trailing_stop_price=row[6],
-                    trailing_stop_activated=bool(row[7]),
-                    pending_exit=bool(row[8]),
+                    qty=float(row[2]),
+                    entry_price=float(row[3]),
+                    atr=atr_val,
+                    entry_time=datetime.fromisoformat(row[5]),
+                    extreme_price=float(row[6]),
+                    trailing_stop_price=trailing_stop_val,
+                    trailing_stop_activated=bool(int(row[8] or 0)),
+                    pending_exit=bool(int(row[9] or 0)),
                 )
                 self._positions[position.symbol] = position
                 positions.append(position)

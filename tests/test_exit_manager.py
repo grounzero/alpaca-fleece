@@ -386,6 +386,87 @@ class TestCheckSinglePosition:
 
         assert signal is None
 
+
+@pytest.fixture
+def exit_manager_short(tmp_db, mock_broker, event_bus):
+    """Exit manager for a short position."""
+    state_store = StateStore(tmp_db)
+    position_tracker = PositionTracker(
+        broker=mock_broker,
+        state_store=state_store,
+        trailing_stop_enabled=True,
+        trailing_stop_activation_pct=0.01,
+        trailing_stop_trail_pct=0.005,
+    )
+    position_tracker.init_schema()
+
+    # Start tracking a SHORT position
+    position_tracker.start_tracking("TSHORT", 100.0, 10.0, "short")
+
+    data_handler = MagicMock()
+    data_handler.get_snapshot.return_value = {"last_price": 100.0, "bid": 100.0, "ask": 100.1}
+
+    manager = ExitManager(
+        broker=mock_broker,
+        position_tracker=position_tracker,
+        event_bus=event_bus,
+        state_store=state_store,
+        data_handler=data_handler,
+        stop_loss_pct=0.01,  # -1%
+        profit_target_pct=0.02,  # +2%
+        trailing_stop_enabled=True,
+        trailing_stop_activation_pct=0.01,
+        trailing_stop_trail_pct=0.005,
+        check_interval_seconds=30,
+        exit_on_circuit_breaker=True,
+    )
+    return manager
+
+
+class TestTrailingStopShort:
+    """Trailing stop tests for short positions."""
+
+    @pytest.mark.asyncio
+    async def test_trailing_stop_activates_for_short(self, exit_manager_short):
+        """Trailing stop activates when short position reaches profit threshold."""
+        # Price drops to 99 (1% profit) -> should activate trailing stop (below profit target)
+        exit_manager_short.data_handler.get_snapshot.return_value = {
+            "last_price": 99.0,
+            "bid": 99.0,
+            "ask": 99.1,
+        }
+        await exit_manager_short.check_positions()
+
+        position = exit_manager_short.position_tracker.get_position("TSHORT")
+        assert position.trailing_stop_activated is True
+
+    @pytest.mark.asyncio
+    async def test_trailing_stop_triggers_for_short(self, exit_manager_short):
+        """Trailing stop triggers for short when price rises above the stop."""
+        # Activate trailing stop by dropping price to 1% profit (below profit target)
+        exit_manager_short.data_handler.get_snapshot.return_value = {
+            "last_price": 99.0,
+            "bid": 99.0,
+            "ask": 99.1,
+        }
+        await exit_manager_short.check_positions()
+
+        # trailing_stop should be ~98.49 (98 * 1.005)
+        position = exit_manager_short.position_tracker.get_position("TSHORT")
+        assert position.trailing_stop_activated is True
+        ts_price = position.trailing_stop_price
+
+        # Now simulate price rising above trailing stop to trigger exit
+        exit_manager_short.data_handler.get_snapshot.return_value = {
+            "last_price": (ts_price or 99.0) + 0.5,
+            "bid": (ts_price or 99.0) + 0.5,
+            "ask": (ts_price or 99.0) + 0.6,
+        }
+
+        signals = await exit_manager_short.check_positions()
+        assert len(signals) == 1
+        assert signals[0].reason == "trailing_stop"
+
     @pytest.mark.asyncio
     async def test_check_single_position_not_tracked(self, exit_manager):
         """Check single position returns None for untracked symbol."""

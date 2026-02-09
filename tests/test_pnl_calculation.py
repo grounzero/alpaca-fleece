@@ -91,7 +91,7 @@ class TestPnLCalculation:
             qty=10,
             entry_price=0.0,
             entry_time=datetime.now(timezone.utc),
-            highest_price=0.0,
+            extreme_price=0.0,
         )
         position_tracker._positions["AAPL"] = pos
 
@@ -109,7 +109,7 @@ class TestPnLCalculation:
             qty=10,
             entry_price=-100.0,
             entry_time=datetime.now(timezone.utc),
-            highest_price=0.0,
+            extreme_price=0.0,
         )
         position_tracker._positions["AAPL"] = pos
 

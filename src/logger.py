@@ -2,6 +2,7 @@
 
 import json
 import logging
+import re
 import uuid
 from datetime import datetime, timezone
 from logging.handlers import RotatingFileHandler
@@ -26,7 +27,7 @@ def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logg
     for handler in logger.handlers[:]:
         logger.removeHandler(handler)
 
-    # Normalize and validate log level
+    # Validate log level
     log_level = log_level.upper()
     level = getattr(logging, log_level, logging.INFO)
     logger.setLevel(level)
@@ -44,10 +45,30 @@ def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logg
     file_handler.setFormatter(file_formatter)
     logger.addHandler(file_handler)
 
+    # Add redaction filter to remove sensitive values from logs
+    class RedactingFilter(logging.Filter):
+        RE = re.compile(r"(?i)(secret|token|password)([:=])\S+")
+
+        def filter(self, record: logging.LogRecord) -> bool:
+            try:
+                text = record.getMessage()
+            except Exception:
+                text = str(record.msg)
+
+            redacted = self.RE.sub(r"\1\2[REDACTED]", text)
+            # Replace the record message and clear args to avoid reformatting
+            record.msg = redacted
+            record.args = None
+            return True
+
+    redactor = RedactingFilter()
+    file_handler.addFilter(redactor)
+
     # Console handler (human-readable)
     console_handler = logging.StreamHandler()
     console_formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
     console_handler.setFormatter(console_formatter)
+    console_handler.addFilter(redactor)
     logger.addHandler(console_handler)
 
     return logger

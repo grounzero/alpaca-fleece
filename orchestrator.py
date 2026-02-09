@@ -12,6 +12,7 @@ import signal
 import sys
 from typing import Optional
 
+from src import __version__ as version
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
 from src.broker import Broker
@@ -31,6 +32,7 @@ from src.risk_manager import RiskManager
 from src.state_store import StateStore
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
+from src.utils import parse_optional_float
 
 logger = logging.getLogger("alpaca_bot")
 
@@ -90,6 +92,9 @@ class Orchestrator:
         logger.info("=" * 60)
         logger.info("PHASE 1: Infrastructure Initialization")
         logger.info("=" * 60)
+
+        # Log package version on startup
+        logger.info(f"Alpaca Fleece version: {version}")
 
         errors = []
         warnings = []
@@ -156,6 +161,7 @@ class Orchestrator:
 
             result = {
                 "status": "failed" if errors else "ready",
+                "version": version,
                 "account": {
                     "equity": float(account["equity"]),
                     "buying_power": float(account["buying_power"]),
@@ -558,7 +564,7 @@ class Orchestrator:
                         # Handle exit signal from exit manager
                         logger.info(
                             f"Processing exit signal: {event.symbol} {event.reason} "
-                            f"(P&L: {event.pnl_pct*100:.1f}%)"
+                            f"(P&L: {event.pnl_pct * 100:.1f}%)"
                         )
 
                         # Track exit triggered
@@ -631,14 +637,18 @@ class Orchestrator:
 
         if side == "buy":
             # Start tracking position with actual fill price
+            atr_raw = order_intent.get("atr") if order_intent else None
+            atr_value = parse_optional_float(atr_raw)
+
             self.position_tracker.start_tracking(
                 symbol=event.symbol,
                 fill_price=fill_price,
                 qty=event.filled_qty,
                 side="long",
+                atr=atr_value,
             )
             logger.info(
-                f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} " f"qty={event.filled_qty}"
+                f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} qty={event.filled_qty}"
             )
         elif side == "sell":
             # Calculate realized P&L
@@ -729,21 +739,43 @@ class Orchestrator:
             return False
 
         try:
+            # Prefer async notifier methods when running inside the event loop.
             if event_type == "circuit_breaker_tripped":
+                if hasattr(self.notifier, "alert_circuit_breaker_tripped_async"):
+                    return await self.notifier.alert_circuit_breaker_tripped_async(
+                        details["failure_count"]
+                    )
                 return self.notifier.alert_circuit_breaker_tripped(details["failure_count"])
+
             elif event_type == "daily_loss_exceeded":
+                if hasattr(self.notifier, "alert_daily_loss_limit_exceeded_async"):
+                    return await self.notifier.alert_daily_loss_limit_exceeded_async(
+                        details["daily_pnl"],
+                        details["limit"],
+                    )
                 return self.notifier.alert_daily_loss_limit_exceeded(
                     details["daily_pnl"],
                     details["limit"],
                 )
+
             elif event_type == "exit_triggered":
+                if hasattr(self.notifier, "send_alert_async"):
+                    return await self.notifier.send_alert_async(
+                        title=f"Exit: {details['symbol']} ({details['reason']})",
+                        message=f"P&L: {details['pnl_pct'] * 100:.1f}% (${details['pnl_amount']:.2f})",
+                        severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
+                    )
                 return self.notifier.send_alert(
                     title=f"Exit: {details['symbol']} ({details['reason']})",
-                    message=f"P&L: {details['pnl_pct']*100:.1f}% (${details['pnl_amount']:.2f})",
+                    message=f"P&L: {details['pnl_pct'] * 100:.1f}% (${details['pnl_amount']:.2f})",
                     severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
                 )
+
             elif event_type == "kill_switch_activated":
+                if hasattr(self.notifier, "alert_kill_switch_activated_async"):
+                    return await self.notifier.alert_kill_switch_activated_async()
                 return self.notifier.alert_kill_switch_activated()
+
             else:
                 logger.warning(f"Unknown alert event type: {event_type}")
                 return False

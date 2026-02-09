@@ -19,6 +19,9 @@ class AlertNotifier:
         self.alert_channel = alert_channel
         self.alert_target = alert_target
         self.enabled = alert_channel is not None and alert_target is not None
+        # Retry/backoff configuration for transient failures
+        self.retries = 3
+        self.backoff = 1.0
 
     def send_alert(self, title: str, message: str, severity: str = "ERROR") -> bool:
         """Send alert to configured channel (Tier 1).
@@ -36,20 +39,120 @@ class AlertNotifier:
             logger.warning(f"[{severity}] {title}: {message}")
             return False
 
-        try:
-            if self.alert_channel == "whatsapp":
-                return self._send_whatsapp_alert(title, message, severity)
-            elif self.alert_channel == "slack":
-                return self._send_slack_alert(title, message, severity)
-            elif self.alert_channel == "email":
-                return self._send_email_alert(title, message, severity)
-            else:
-                logger.warning(f"Unknown alert channel: {self.alert_channel}")
-                return False
+        # Attempt send with retries/backoff for transient errors. If the
+        # channel-specific method returns False or raises, we will retry up
+        # to `self.retries` attempts, sleeping between attempts.
+        last_exc = None
+        for attempt in range(self.retries):
+            try:
+                if self.alert_channel == "whatsapp":
+                    ok = self._send_whatsapp_alert(title, message, severity)
+                elif self.alert_channel == "slack":
+                    ok = self._send_slack_alert(title, message, severity)
+                elif self.alert_channel == "email":
+                    ok = self._send_email_alert(title, message, severity)
+                else:
+                    logger.warning(f"Unknown alert channel: {self.alert_channel}")
+                    return False
 
-        except Exception as e:
-            logger.error(f"Failed to send alert: {e}")
-            return False
+                if ok:
+                    return True
+                # Treat a False return as a transient failure to retry
+                logger.warning(
+                    "Alert send returned False (attempt %d/%d) for %s",
+                    attempt + 1,
+                    self.retries,
+                    self.alert_channel,
+                )
+
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    "Exception sending alert (attempt %d/%d): %s",
+                    attempt + 1,
+                    self.retries,
+                    e,
+                )
+
+            # Backoff before next attempt unless this was the last attempt
+            if attempt < self.retries - 1:
+                try:
+                    import time
+
+                    delay = self.backoff * (2**attempt)
+                    time.sleep(delay)
+                except Exception:
+                    # Sleep failures shouldn't crash notifier
+                    logger.debug("Sleep interrupted during alert backoff")
+
+        # If we get here, all attempts failed
+        if last_exc:
+            logger.error(f"Failed to send alert after {self.retries} attempts: {last_exc}")
+        else:
+            logger.error(f"Failed to send alert after {self.retries} attempts (no exception)")
+        return False
+
+    async def send_alert_async(self, title: str, message: str, severity: str = "ERROR") -> bool:
+        """Async wrapper for `send_alert` that performs blocking sends in a threadpool and uses non-blocking backoff.
+
+        This preserves the existing synchronous API while providing a non-blocking implementation
+        for callers running in an asyncio event loop.
+        """
+        import asyncio
+
+        loop = asyncio.get_running_loop()
+
+        last_exc = None
+        for attempt in range(self.retries):
+            try:
+                # Run the blocking channel send in a threadpool
+                if self.alert_channel == "whatsapp":
+                    ok = await loop.run_in_executor(
+                        None, self._send_whatsapp_alert, title, message, severity
+                    )
+                elif self.alert_channel == "slack":
+                    ok = await loop.run_in_executor(
+                        None, self._send_slack_alert, title, message, severity
+                    )
+                elif self.alert_channel == "email":
+                    ok = await loop.run_in_executor(
+                        None, self._send_email_alert, title, message, severity
+                    )
+                else:
+                    logger.warning(f"Unknown alert channel: {self.alert_channel}")
+                    return False
+
+                if ok:
+                    return True
+                logger.warning(
+                    "Alert send returned False (attempt %d/%d) for %s",
+                    attempt + 1,
+                    self.retries,
+                    self.alert_channel,
+                )
+
+            except Exception as e:
+                last_exc = e
+                logger.warning(
+                    "Exception sending alert (attempt %d/%d): %s",
+                    attempt + 1,
+                    self.retries,
+                    e,
+                )
+
+            # Non-blocking backoff using asyncio.sleep
+            if attempt < self.retries - 1:
+                try:
+                    delay = self.backoff * (2**attempt)
+                    await asyncio.sleep(delay)
+                except Exception:
+                    logger.debug("Async sleep interrupted during alert backoff")
+
+        if last_exc:
+            logger.error(f"Failed to send alert after {self.retries} attempts: {last_exc}")
+        else:
+            logger.error(f"Failed to send alert after {self.retries} attempts (no exception)")
+        return False
 
     def _send_whatsapp_alert(self, title: str, message: str, severity: str) -> bool:
         """Send alert via WhatsApp (Tier 1).
@@ -173,9 +276,23 @@ class AlertNotifier:
             severity="CRITICAL",
         )
 
+    async def alert_circuit_breaker_tripped_async(self, failure_count: int) -> bool:
+        return await self.send_alert_async(
+            title="⚡ CIRCUIT BREAKER TRIPPED",
+            message=f"Order submission failures: {failure_count}/5. Bot halted.",
+            severity="CRITICAL",
+        )
+
     def alert_daily_loss_limit_exceeded(self, daily_pnl: float, limit: float) -> bool:
         """Alert: Daily loss limit exceeded (Tier 1)."""
         return self.send_alert(
+            title="💰 DAILY LOSS LIMIT EXCEEDED",
+            message=f"Daily P&L: ${daily_pnl:.2f} (limit: ${limit:.2f}). Trading halted.",
+            severity="CRITICAL",
+        )
+
+    async def alert_daily_loss_limit_exceeded_async(self, daily_pnl: float, limit: float) -> bool:
+        return await self.send_alert_async(
             title="💰 DAILY LOSS LIMIT EXCEEDED",
             message=f"Daily P&L: ${daily_pnl:.2f} (limit: ${limit:.2f}). Trading halted.",
             severity="CRITICAL",
@@ -189,9 +306,23 @@ class AlertNotifier:
             severity="WARNING",
         )
 
+    async def alert_position_limit_exceeded_async(self, current: int, limit: int) -> bool:
+        return await self.send_alert_async(
+            title="📍 POSITION LIMIT EXCEEDED",
+            message=f"Concurrent positions: {current}/{limit}. New trades blocked.",
+            severity="WARNING",
+        )
+
     def alert_order_submission_failed(self, symbol: str, error: str) -> bool:
         """Alert: Order submission failed (Tier 1)."""
         return self.send_alert(
+            title="❌ ORDER SUBMISSION FAILED",
+            message=f"Symbol: {symbol}\nError: {error}",
+            severity="ERROR",
+        )
+
+    async def alert_order_submission_failed_async(self, symbol: str, error: str) -> bool:
+        return await self.send_alert_async(
             title="❌ ORDER SUBMISSION FAILED",
             message=f"Symbol: {symbol}\nError: {error}",
             severity="ERROR",

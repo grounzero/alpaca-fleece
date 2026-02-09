@@ -1,6 +1,6 @@
 """Unit tests for `Broker` timeout and related executor behavior."""
 
-import time
+from concurrent.futures import TimeoutError as FutureTimeoutError
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -41,12 +41,15 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            # Simulate a slow response
-            def slow_call():
-                time.sleep(2)
-                return MagicMock()
+            # Simulate timeout by replacing the broker's executor with a fake
+            # executor whose future.result() raises FutureTimeoutError.
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.get_account = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -54,6 +57,9 @@ class TestBrokerTimeout:
                 paper=True,
                 query_timeout=0.1,  # Very short timeout for testing
             )
+
+            # Inject fake executor to force a TimeoutError from future.result()
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="timed out"):
                 broker.get_account()
@@ -64,11 +70,13 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call():
-                time.sleep(2)
-                return []
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.get_all_positions = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -76,6 +84,8 @@ class TestBrokerTimeout:
                 paper=True,
                 query_timeout=0.1,
             )
+
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="timed out"):
                 broker.get_positions()
@@ -86,11 +96,13 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call():
-                time.sleep(2)
-                return []
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.get_orders = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -98,6 +110,8 @@ class TestBrokerTimeout:
                 paper=True,
                 query_timeout=0.1,
             )
+
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="timed out"):
                 broker.get_open_orders()
@@ -108,11 +122,13 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call():
-                time.sleep(2)
-                return MagicMock()
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.get_clock = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -120,6 +136,8 @@ class TestBrokerTimeout:
                 paper=True,
                 query_timeout=0.1,
             )
+
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="timed out"):
                 broker.get_clock()
@@ -130,11 +148,13 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call(*args, **kwargs):
-                time.sleep(2)
-                return MagicMock()
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.submit_order = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -142,6 +162,8 @@ class TestBrokerTimeout:
                 paper=True,
                 submit_timeout=0.1,
             )
+
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="timed out"):
                 broker.submit_order(
@@ -157,11 +179,13 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call(*args, **kwargs):
-                time.sleep(2)
-                return None
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.cancel_order_by_id = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -169,6 +193,8 @@ class TestBrokerTimeout:
                 paper=True,
                 submit_timeout=0.1,
             )
+
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="timed out"):
                 broker.cancel_order("order-123")
@@ -179,11 +205,13 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call():
-                time.sleep(2)
-                return MagicMock()
+            class FakeFutureTimeout:
+                def result(self, timeout=None):
+                    raise FutureTimeoutError()
 
-            mock_client.get_account = slow_call
+            class FakeExecutorTimeout:
+                def submit(self, func):
+                    return FakeFutureTimeout()
 
             broker = Broker(
                 api_key="test_key",
@@ -191,6 +219,8 @@ class TestBrokerTimeout:
                 paper=True,
                 query_timeout=0.1,
             )
+
+            broker._executor = FakeExecutorTimeout()
 
             with pytest.raises(BrokerError, match="get_account"):
                 broker.get_account()
@@ -214,6 +244,20 @@ class TestBrokerTimeout:
                 paper=True,
             )
 
+            # Use a fake executor that executes the callable synchronously
+            class FakeFutureCall:
+                def __init__(self, func):
+                    self._func = func
+
+                def result(self, timeout=None):
+                    return self._func()
+
+            class FakeExecutorCall:
+                def submit(self, func):
+                    return FakeFutureCall(func)
+
+            broker._executor = FakeExecutorCall()
+
             result = broker.get_account()
 
             assert result["equity"] == 10000.00
@@ -225,11 +269,8 @@ class TestBrokerTimeout:
             mock_client = MagicMock()
             MockClient.return_value = mock_client
 
-            def slow_call(*args, **kwargs):
-                time.sleep(0.3)
-                return MagicMock()
-
-            mock_client.submit_order = slow_call
+            # Make submit_order return immediately to exercise submit_timeout path
+            mock_client.submit_order = lambda *a, **k: MagicMock()
 
             # query_timeout is 0.1s, submit_timeout is 0.5s
             # submit should succeed because it uses submit_timeout
