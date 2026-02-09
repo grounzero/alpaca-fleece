@@ -73,10 +73,12 @@ class PositionTracker:
     def init_schema(self) -> None:
         """Create position tracking table if not exists."""
         import sqlite3
-
+        # Create a clean position_tracking table; migrations are intentionally omitted
+        # for this branch — we prefer recreating the DB for a clean start.
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute("""
+            cursor.execute(
+                """
                 CREATE TABLE IF NOT EXISTS position_tracking (
                     symbol TEXT PRIMARY KEY,
                     side TEXT NOT NULL,
@@ -90,66 +92,8 @@ class PositionTracker:
                     pending_exit INTEGER DEFAULT 0,
                     updated_at TEXT NOT NULL
                 )
-            """)
-
-            # Migration: Add pending_exit column if it doesn't exist (for older DBs)
-            cursor.execute(
-                "PRAGMA table_info(position_tracking)"
-            )  # Returns list of (cid, name, type, notnull, dflt_value, pk)
-            columns = [col[1] for col in cursor.fetchall()]
-            if "pending_exit" not in columns:
-                cursor.execute(
-                    "ALTER TABLE position_tracking ADD COLUMN pending_exit INTEGER DEFAULT 0"
-                )
-            # Migration: add atr column if missing
-            if "atr" not in columns:
-                cursor.execute("ALTER TABLE position_tracking ADD COLUMN atr NUMERIC(10, 4)")
-
-            # Migration: remove legacy `highest_price` column if present and ensure `extreme_price` exists
-            if "extreme_price" not in columns and "highest_price" in columns:
-                # Add extreme_price, copy from highest_price, then remove highest_price via table-recreate
-                cursor.execute(
-                    "ALTER TABLE position_tracking ADD COLUMN extreme_price NUMERIC(10,4)"
-                )
-                cursor.execute(
-                    "UPDATE position_tracking SET extreme_price = highest_price WHERE extreme_price IS NULL"
-                )
-                # Recreate table without highest_price to drop the legacy column (SQLite workaround)
-                cursor.execute(
-                    "PRAGMA foreign_keys=off"
-                )
-                cursor.execute(
-                    "BEGIN TRANSACTION"
-                )
-                cursor.execute(
-                    "CREATE TABLE IF NOT EXISTS position_tracking_new (\n"
-                    "symbol TEXT PRIMARY KEY,\n"
-                    "side TEXT NOT NULL,\n"
-                    "qty NUMERIC(10, 4) NOT NULL,\n"
-                    "entry_price NUMERIC(10, 4) NOT NULL,\n"
-                    "atr NUMERIC(10, 4),\n"
-                    "entry_time TEXT NOT NULL,\n"
-                    "extreme_price NUMERIC(10,4) NOT NULL,\n"
-                    "trailing_stop_price NUMERIC(10, 4),\n"
-                    "trailing_stop_activated INTEGER DEFAULT 0,\n"
-                    "pending_exit INTEGER DEFAULT 0,\n"
-                    "updated_at TEXT NOT NULL\n"
-                    ")"
-                )
-                cursor.execute(
-                    "INSERT INTO position_tracking_new (symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, pending_exit, updated_at) "
-                    "SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, COALESCE(pending_exit,0), updated_at FROM position_tracking"
-                )
-                cursor.execute("DROP TABLE position_tracking")
-                cursor.execute("ALTER TABLE position_tracking_new RENAME TO position_tracking")
-                cursor.execute("COMMIT")
-                cursor.execute("PRAGMA foreign_keys=on")
-            elif "extreme_price" not in columns:
-                # If neither column exists, add extreme_price and initialise to 0
-                cursor.execute(
-                    "ALTER TABLE position_tracking ADD COLUMN extreme_price NUMERIC(10,4) DEFAULT 0"
-                )
-
+                """
+            )
             conn.commit()
 
     def start_tracking(
