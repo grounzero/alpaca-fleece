@@ -99,6 +99,9 @@ class StreamPolling:
         self.market_connected = True
         self.trade_connected = True
 
+        # Reset fallback log flag for each new polling session
+        self._fallback_logged = False
+
         # Validate feed subscription on startup (only for SIP)
         await self._validate_feed()
 
@@ -147,7 +150,7 @@ class StreamPolling:
             # Check for subscription-related errors
             if "subscription" in error_message and "permit" in error_message:
                 logger.warning(
-                    "WARNING: SIP feed requires subscription. Falling back to IEX.\n"
+                    "SIP feed requires subscription; falling back to IEX. "
                     "To suppress this warning, set stream_feed: iex in config/trading.yaml"
                 )
                 self._use_fallback = True
@@ -217,8 +220,6 @@ class StreamPolling:
 
             # Get bars from last 5 minutes to ensure fresh data
             # start=None returns stale cached data, so we use explicit time window
-            from datetime import datetime, timedelta, timezone
-
             start_time = datetime.now(timezone.utc) - timedelta(minutes=5)
 
             request = StockBarsRequest(
@@ -249,11 +250,11 @@ class StreamPolling:
             bar_list: List of bar objects from Alpaca API
         """
         if not bar_list:
-            logger.warning(f"No bars returned for {symbol}")
+            logger.debug(f"No bars returned for {symbol}")
             return
 
         latest_bar = bar_list[-1]  # Most recent
-        logger.info(
+        logger.debug(
             f"Processing {symbol}: {len(bar_list)} bars, latest={latest_bar.timestamp}, close=${latest_bar.close}"
         )
 
@@ -264,19 +265,17 @@ class StreamPolling:
             return  # Already processed this bar
 
         # New bar!
-        logger.info(f"New bar for {symbol}: last_ts={last_ts}, new_ts={latest_bar.timestamp}")
+        logger.debug(f"New bar for {symbol}: last_ts={last_ts}, new_ts={latest_bar.timestamp}")
         self._last_bars[symbol] = latest_bar.timestamp
 
         # Invoke handler
         if self.on_bar:
             bar = PollingBar(symbol, latest_bar)
-            logger.info(f"Calling on_bar handler for {symbol}")
+            logger.debug(f"Calling on_bar handler for {symbol}")
             await self.on_bar(bar)
-            logger.info(
-                f"SUCCESS: Processed bar {symbol} @ {latest_bar.timestamp} ${latest_bar.close}"
-            )
+            logger.debug(f"Processed bar {symbol} @ {latest_bar.timestamp} ${latest_bar.close}")
         else:
-            logger.warning(f"No on_bar handler registered for {symbol}")
+            logger.debug(f"No on_bar handler registered for {symbol}")
 
     async def _poll_symbol(self, symbol: str) -> None:
         """Poll for latest bar for a single symbol.

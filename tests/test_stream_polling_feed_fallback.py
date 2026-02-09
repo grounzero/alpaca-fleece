@@ -65,8 +65,8 @@ class TestFeedFallback:
         assert mock_stream_sip._use_fallback is True
 
         # Assert: Warning logged with suppression hint
-        assert "WARNING: SIP feed requires subscription" in caplog.text
-        assert "Falling back to IEX" in caplog.text
+        assert "SIP feed requires subscription" in caplog.text
+        assert "falling back to IEX" in caplog.text
         assert "stream_feed: iex in config/trading.yaml" in caplog.text
 
     @pytest.mark.asyncio
@@ -184,6 +184,8 @@ class TestFeedFallback:
     async def test_start_calls_validate_feed(self, mock_stream_iex):
         """start() method calls _validate_feed."""
         mock_stream_iex._validate_feed = AsyncMock()
+        # Prevent starting the real infinite polling loop during the test
+        mock_stream_iex._poll_loop = AsyncMock()
 
         await mock_stream_iex.start(["AAPL", "MSFT"])
 
