@@ -17,7 +17,7 @@ def test_notifier_send_success_slack(monkeypatch, caplog):
     notifier = AlertNotifier(alert_channel="slack", alert_target="https://hooks.test")
     ok = notifier.send_alert("Test", "message", severity="ERROR")
     assert ok is True
-    assert "Slack alert sent" in caplog.text or ok is True
+    assert "Slack alert sent" in caplog.text
 
 
 def test_notifier_handles_permanent_failure_slack(monkeypatch, caplog):
@@ -30,7 +30,7 @@ def test_notifier_handles_permanent_failure_slack(monkeypatch, caplog):
     notifier = AlertNotifier(alert_channel="slack", alert_target="https://hooks.test")
     ok = notifier.send_alert("Test", "message", severity="ERROR")
     assert ok is False
-    assert "Failed to send Slack alert" in caplog.text or "Failed to send alert" in caplog.text
+    assert ("Failed to send Slack alert" in caplog.text) or ("Failed to send alert" in caplog.text)
 
 
 def test_notifier_retry_on_transient_failure(monkeypatch):

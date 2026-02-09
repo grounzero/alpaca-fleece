@@ -62,7 +62,6 @@ def setup_logger(log_level: str = "INFO", log_dir: str = "logs") -> logging.Logg
             return True
 
     redactor = RedactingFilter()
-    logger.addFilter(redactor)
     file_handler.addFilter(redactor)
 
     # Console handler (human-readable)

@@ -317,27 +317,36 @@ class ExitManager:
                     position.symbol,
                 )
             else:
-                stop_price, target_price = calculate_dynamic_stops(
-                    entry_price=position.entry_price,
-                    atr=atr_value,
-                    atr_multiplier_stop=self.atr_multiplier_stop,
-                    atr_multiplier_target=self.atr_multiplier_target,
-                    side=converted_side,
-                )
-
-                # Basic validation of computed stop/target (ensure finite numbers)
-                if not (
-                    isinstance(stop_price, (int, float)) and isinstance(target_price, (int, float))
-                ) or not (math.isfinite(stop_price) and math.isfinite(target_price)):
-                    logger.debug(
-                        "Computed non-finite stop/target for %s (atr=%s) - skipping ATR logic",
+                try:
+                    stop_price, target_price = calculate_dynamic_stops(
+                        entry_price=position.entry_price,
+                        atr=atr_value,
+                        atr_multiplier_stop=self.atr_multiplier_stop,
+                        atr_multiplier_target=self.atr_multiplier_target,
+                        side=converted_side,
+                    )
+                except ValueError as exc:
+                    logger.warning(
+                        "Invalid ATR configuration for %s (atr=%s, side=%s): %s; skipping ATR-based exits",
                         position.symbol,
                         atr_value,
+                        converted_side,
+                        exc,
                     )
                 else:
-                    # Mark that ATR-based thresholds were computed; if they are
-                    # valid we prefer them over fallback fixed-percentage rules.
-                    atr_computed = True
+                    # Basic validation of computed stop/target (ensure finite numbers)
+                    if not (
+                        isinstance(stop_price, (int, float)) and isinstance(target_price, (int, float))
+                    ) or not (math.isfinite(stop_price) and math.isfinite(target_price)):
+                        logger.debug(
+                            "Computed non-finite stop/target for %s (atr=%s) - skipping ATR logic",
+                            position.symbol,
+                            atr_value,
+                        )
+                    else:
+                        # Mark that ATR-based thresholds were computed; if they are
+                        # valid we prefer them over fallback fixed-percentage rules.
+                        atr_computed = True
                     # Long position ATR-based checks
                     if converted_side == "long":
                         if current_price <= stop_price:
