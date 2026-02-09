@@ -336,7 +336,8 @@ class ExitManager:
                 else:
                     # Basic validation of computed stop/target (ensure finite numbers)
                     if not (
-                        isinstance(stop_price, (int, float)) and isinstance(target_price, (int, float))
+                        isinstance(stop_price, (int, float))
+                        and isinstance(target_price, (int, float))
                     ) or not (math.isfinite(stop_price) and math.isfinite(target_price)):
                         logger.debug(
                             "Computed non-finite stop/target for %s (atr=%s) - skipping ATR logic",
