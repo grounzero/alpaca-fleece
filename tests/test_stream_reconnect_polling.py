@@ -51,8 +51,10 @@ async def test_reconnect_wait_backoff(monkeypatch):
 
     res = await s.reconnect_market_stream(["A"])
 
-    # Backoff branch should have awaited sleep with a positive remaining time
-    assert any(t is None or t >= 0 for t in sleep_calls) or len(sleep_calls) > 0
+    # Backoff branch should have awaited sleep: ensure we slept at least once
+    assert len(sleep_calls) > 0
+    # And at least one recorded delay should be a positive number (a real backoff)
+    assert any(t is not None and t > 0 for t in sleep_calls)
     assert res is False
 
 
