@@ -1,6 +1,6 @@
+import logging
 import time
 import urllib.request
-import logging
 
 from src.notifier import AlertNotifier
 
