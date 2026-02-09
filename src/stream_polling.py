@@ -75,8 +75,6 @@ class StreamPolling:
         self._symbols: list[str] = []
         self._use_fallback: bool = False  # Set to True if SIP feed requires subscription
         self._fallback_logged: bool = False  # Track if we already logged fallback message
-        self._symbols_with_data: set[str] = set()  # Track which symbols have received data
-        self._poll_iterations: int = 0  # Track polling iterations for periodic reporting
 
     def register_handlers(
         self,
@@ -90,24 +88,6 @@ class StreamPolling:
         self.on_order_update = on_order_update
         self.on_market_disconnect = on_market_disconnect
         self.on_trade_disconnect = on_trade_disconnect
-
-    @property
-    def _effective_batch_size(self) -> int:
-        """Return effective batch size based on feed type.
-
-        IEX feed has a bug where batch requests with 3+ symbols only return
-        data for 2 symbols. SIP feed works correctly with larger batches.
-
-        Returns:
-            2 for IEX feed (including SIP fallback to IEX)
-            Configured batch_size for SIP feed
-        """
-        # If using IEX (either directly or as fallback), limit to 2 symbols
-        # to work around the Alpaca API bug
-        if self._use_fallback or self.feed == DataFeed.IEX:
-            return 2
-        # SIP feed supports full batch size
-        return self.batch_size
 
     async def start(self, symbols: list[str]) -> None:
         """Start polling stream.
@@ -125,21 +105,11 @@ class StreamPolling:
         # Validate feed subscription on startup (only for SIP)
         await self._validate_feed()
 
-        effective_batch = self._effective_batch_size
-        num_batches = (len(symbols) + effective_batch - 1) // effective_batch
-
-        if effective_batch != self.batch_size:
-            logger.info(
-                f"Polling stream started for {len(symbols)} symbols "
-                f"in {num_batches} batch(es) of {effective_batch} "
-                f"(configured: {self.batch_size}, reduced for {self.feed.value} feed) "
-                f"(1-min polling)"
-            )
-        else:
-            logger.info(
-                f"Polling stream started for {len(symbols)} symbols "
-                f"in {num_batches} batch(es) of {effective_batch} (1-min polling)"
-            )
+        num_batches = (len(symbols) + self.batch_size - 1) // self.batch_size
+        logger.info(
+            f"Polling stream started for {len(symbols)} symbols "
+            f"in {num_batches} batch(es) of {self.batch_size} (1-min polling)"
+        )
 
         # Start polling task
         self._polling_task = asyncio.create_task(self._poll_loop())
@@ -195,27 +165,12 @@ class StreamPolling:
             iteration = 0
             while True:
                 iteration += 1
-                self._poll_iterations = iteration
                 if iteration % 10 == 0:  # Log every 10 iterations
                     logger.info(f"Polling loop: iteration {iteration}")
                 try:
-                    # Poll symbols in batches (use effective batch size based on feed)
-                    effective_batch = self._effective_batch_size
-                    for batch in batch_iter(self._symbols, effective_batch):
+                    # Poll symbols in batches
+                    for batch in batch_iter(self._symbols, self.batch_size):
                         await self._poll_batch(batch)
-
-                    # Periodic report on symbol coverage (every 5 iterations)
-                    if iteration % 5 == 0 and self._symbols:
-                        missing_symbols = set(self._symbols) - self._symbols_with_data
-                        if missing_symbols:
-                            logger.warning(
-                                f"SYMBOL COVERAGE REPORT: {len(self._symbols_with_data)}/{len(self._symbols)} "
-                                f"symbols have received data. Missing: {sorted(missing_symbols)}"
-                            )
-                        else:
-                            logger.info(
-                                f"SYMBOL COVERAGE REPORT: All {len(self._symbols)} symbols have received data"
-                            )
 
                     # Sleep until next minute boundary
                     await self._sleep_until_next_minute()
@@ -267,8 +222,6 @@ class StreamPolling:
             # start=None returns stale cached data, so we use explicit time window
             start_time = datetime.now(timezone.utc) - timedelta(minutes=5)
 
-            logger.debug(f"Polling batch of {len(symbols)} symbols: {symbols}")
-
             request = StockBarsRequest(
                 symbol_or_symbols=symbols,
                 timeframe=TimeFrame.Minute,
@@ -282,18 +235,6 @@ class StreamPolling:
             # Process each symbol's bars
             # BarSet.data is a dict: {symbol: [bar1, bar2, ...]}
             bars_data = getattr(bars_by_symbol, "data", {})
-
-            # Log which symbols returned data vs which didn't
-            returned_symbols = set(bars_data.keys())
-            requested_symbols = set(symbols)
-            missing_symbols = requested_symbols - returned_symbols
-
-            if missing_symbols:
-                logger.debug(f"No bar data returned for symbols: {sorted(missing_symbols)}")
-            logger.debug(
-                f"Received bar data for {len(returned_symbols)}/{len(symbols)} symbols: {sorted(returned_symbols)}"
-            )
-
             for symbol, bar_list in bars_data.items():
                 await self._process_bar_list(symbol, bar_list)
 
@@ -326,7 +267,6 @@ class StreamPolling:
         # New bar!
         logger.debug(f"New bar for {symbol}: last_ts={last_ts}, new_ts={latest_bar.timestamp}")
         self._last_bars[symbol] = latest_bar.timestamp
-        self._symbols_with_data.add(symbol)  # Track that this symbol has received data
 
         # Invoke handler
         if self.on_bar:
