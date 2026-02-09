@@ -86,15 +86,15 @@ async def test_strategy_bullish_crossover(state_store):
         all_signals.extend(signals)
 
     # Should get multiple signals including at least one BUY
-    assert len(all_signals) >= 2, (
-        f"Expected at least 2 signals, got {len(all_signals)}: {[s.signal_type for s in all_signals]}"
-    )
+    assert (
+        len(all_signals) >= 2
+    ), f"Expected at least 2 signals, got {len(all_signals)}: {[s.signal_type for s in all_signals]}"
 
     # Verify we have BUY signals
     buy_signals = [s for s in all_signals if s.signal_type == "BUY"]
-    assert len(buy_signals) >= 1, (
-        f"Expected at least 1 BUY signal, got {[s.signal_type for s in all_signals]}"
-    )
+    assert (
+        len(buy_signals) >= 1
+    ), f"Expected at least 1 BUY signal, got {[s.signal_type for s in all_signals]}"
 
     # Verify signal properties
     assert buy_signals[0].symbol == "AAPL"
@@ -118,15 +118,15 @@ async def test_strategy_bearish_crossover(state_store):
         all_signals.extend(signals)
 
     # Should get multiple signals including at least one SELL
-    assert len(all_signals) >= 2, (
-        f"Expected at least 2 signals, got {len(all_signals)}: {[s.signal_type for s in all_signals]}"
-    )
+    assert (
+        len(all_signals) >= 2
+    ), f"Expected at least 2 signals, got {len(all_signals)}: {[s.signal_type for s in all_signals]}"
 
     # Verify we have SELL signals
     sell_signals = [s for s in all_signals if s.signal_type == "SELL"]
-    assert len(sell_signals) >= 1, (
-        f"Expected at least 1 SELL signal, got {[s.signal_type for s in all_signals]}"
-    )
+    assert (
+        len(sell_signals) >= 1
+    ), f"Expected at least 1 SELL signal, got {[s.signal_type for s in all_signals]}"
 
     # Verify signal properties
     assert sell_signals[0].symbol == "AAPL"
@@ -176,9 +176,9 @@ async def test_sma_crossover_no_signal_without_crossover(state_store):
     signals = await strategy.on_bar("AAPL", df)
 
     # Flat data should never produce a crossover signal
-    assert len(signals) == 0, (
-        f"Expected no signals for flat data, got {len(signals)}: {[s.signal_type for s in signals]}"
-    )
+    assert (
+        len(signals) == 0
+    ), f"Expected no signals for flat data, got {len(signals)}: {[s.signal_type for s in signals]}"
 
 
 @pytest.mark.asyncio
@@ -205,9 +205,9 @@ async def test_strategy_alternate_signals(state_store):
     assert "SELL" in signal_types, f"Expected SELL signals, got {signal_types}"
 
     # Should have at least 4 signals (2 SELL, 2 BUY from alternating trends)
-    assert len(all_signals) >= 4, (
-        f"Expected at least 4 signals, got {len(all_signals)}: {signal_types}"
-    )
+    assert (
+        len(all_signals) >= 4
+    ), f"Expected at least 4 signals, got {len(all_signals)}: {signal_types}"
 
     # Verify signals alternate for the same SMA period
     # (Strategy prevents duplicates via state tracking)
@@ -215,9 +215,9 @@ async def test_strategy_alternate_signals(state_store):
         if all_signals[i].metadata.get("sma_period") == all_signals[i + 1].metadata.get(
             "sma_period"
         ):
-            assert all_signals[i].signal_type != all_signals[i + 1].signal_type, (
-                f"Same SMA period should not emit consecutive {all_signals[i].signal_type} signals"
-            )
+            assert (
+                all_signals[i].signal_type != all_signals[i + 1].signal_type
+            ), f"Same SMA period should not emit consecutive {all_signals[i].signal_type} signals"
 
 
 @pytest.mark.asyncio
