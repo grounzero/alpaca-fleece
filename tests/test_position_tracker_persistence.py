@@ -25,7 +25,7 @@ def test_load_persisted_positions_normalizes_numeric_types(tmp_path):
     conn = sqlite3.connect(db_file)
     cur = conn.cursor()
     cur.execute(
-        "INSERT OR REPLACE INTO position_tracking (symbol, side, qty, entry_price, atr, entry_time, highest_price, trailing_stop_price, trailing_stop_activated, pending_exit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+        "INSERT OR REPLACE INTO position_tracking (symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, pending_exit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
         (
             "ABC",
             "long",

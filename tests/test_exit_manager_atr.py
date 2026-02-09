@@ -39,7 +39,7 @@ def test_evaluate_exit_rules_atr_long_stop() -> None:
         qty=qty,
         entry_price=entry,
         entry_time=now,
-        highest_price=entry,
+        extreme_price=entry,
         atr=atr,
     )
 
@@ -66,7 +66,7 @@ def test_evaluate_exit_rules_fallback_stop_when_atr_missing() -> None:
         qty=qty,
         entry_price=entry,
         entry_time=now,
-        highest_price=entry,
+        extreme_price=entry,
         atr=None,
     )
 
@@ -94,7 +94,7 @@ def test_evaluate_exit_rules_atr_short_profit_target() -> None:
         qty=qty,
         entry_price=entry,
         entry_time=now,
-        highest_price=entry,
+        extreme_price=entry,
         atr=atr,
     )
 
@@ -127,7 +127,7 @@ def test_evaluate_exit_rules_atr_long_profit_target() -> None:
         qty=qty,
         entry_price=entry,
         entry_time=now,
-        highest_price=entry,
+        extreme_price=entry,
         atr=atr,
     )
 
@@ -155,7 +155,7 @@ def test_evaluate_exit_rules_skip_atr_when_invalid() -> None:
         qty=qty,
         entry_price=entry,
         entry_time=now,
-        highest_price=entry,
+        extreme_price=entry,
         atr=0.0,
     )
 
@@ -182,7 +182,7 @@ def test_trailing_stop_activation_triggers_exit() -> None:
         qty=qty,
         entry_price=entry,
         entry_time=now,
-        highest_price=entry,
+        extreme_price=entry,
         atr=None,
         # Set trailing stop slightly above the percent stop threshold so a
         # price can trigger trailing_stop without also hitting the fixed pct stop.
@@ -220,7 +220,7 @@ def test_atr_nan_and_inf_fallback_to_percent_stop() -> None:
             qty=qty,
             entry_price=entry,
             entry_time=now,
-            highest_price=entry,
+            extreme_price=entry,
             atr=bad_atr,
         )
 

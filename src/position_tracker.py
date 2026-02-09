@@ -1,7 +1,7 @@
 """Position tracker - track open positions with entry prices and trailing stops.
 
 Tracks:
-- entry_price, entry_time, highest_price per symbol
+- entry_price, entry_time, extreme_price per symbol
 - trailing_stop_price, trailing_stop_activated per symbol
 - Syncs with broker positions on startup
 - Persists to SQLite via StateStore
@@ -28,7 +28,6 @@ class PositionData:
     qty: float
     entry_price: float
     entry_time: datetime
-    highest_price: float  # For trailing stop calculation
     extreme_price: float  # Side-neutral extreme (highest for long, lowest for short)
     atr: float | None = None
     trailing_stop_price: Optional[float] = None
@@ -85,7 +84,6 @@ class PositionTracker:
                     entry_price NUMERIC(10, 4) NOT NULL,
                     atr NUMERIC(10, 4),
                     entry_time TEXT NOT NULL,
-                    highest_price NUMERIC(10, 4) NOT NULL,
                     extreme_price NUMERIC(10,4) NOT NULL,
                     trailing_stop_price NUMERIC(10, 4),
                     trailing_stop_activated INTEGER DEFAULT 0,
@@ -107,14 +105,49 @@ class PositionTracker:
             if "atr" not in columns:
                 cursor.execute("ALTER TABLE position_tracking ADD COLUMN atr NUMERIC(10, 4)")
 
-            # Migration: add extreme_price column if missing and backfill from highest_price
-            if "extreme_price" not in columns:
+            # Migration: remove legacy `highest_price` column if present and ensure `extreme_price` exists
+            if "extreme_price" not in columns and "highest_price" in columns:
+                # Add extreme_price, copy from highest_price, then remove highest_price via table-recreate
                 cursor.execute(
                     "ALTER TABLE position_tracking ADD COLUMN extreme_price NUMERIC(10,4)"
                 )
-                # Copy existing highest_price values into extreme_price for compatibility
                 cursor.execute(
                     "UPDATE position_tracking SET extreme_price = highest_price WHERE extreme_price IS NULL"
+                )
+                # Recreate table without highest_price to drop the legacy column (SQLite workaround)
+                cursor.execute(
+                    "PRAGMA foreign_keys=off"
+                )
+                cursor.execute(
+                    "BEGIN TRANSACTION"
+                )
+                cursor.execute(
+                    "CREATE TABLE IF NOT EXISTS position_tracking_new (\n"
+                    "symbol TEXT PRIMARY KEY,\n"
+                    "side TEXT NOT NULL,\n"
+                    "qty NUMERIC(10, 4) NOT NULL,\n"
+                    "entry_price NUMERIC(10, 4) NOT NULL,\n"
+                    "atr NUMERIC(10, 4),\n"
+                    "entry_time TEXT NOT NULL,\n"
+                    "extreme_price NUMERIC(10,4) NOT NULL,\n"
+                    "trailing_stop_price NUMERIC(10, 4),\n"
+                    "trailing_stop_activated INTEGER DEFAULT 0,\n"
+                    "pending_exit INTEGER DEFAULT 0,\n"
+                    "updated_at TEXT NOT NULL\n"
+                    ")"
+                )
+                cursor.execute(
+                    "INSERT INTO position_tracking_new (symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, pending_exit, updated_at) "
+                    "SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, COALESCE(pending_exit,0), updated_at FROM position_tracking"
+                )
+                cursor.execute("DROP TABLE position_tracking")
+                cursor.execute("ALTER TABLE position_tracking_new RENAME TO position_tracking")
+                cursor.execute("COMMIT")
+                cursor.execute("PRAGMA foreign_keys=on")
+            elif "extreme_price" not in columns:
+                # If neither column exists, add extreme_price and initialise to 0
+                cursor.execute(
+                    "ALTER TABLE position_tracking ADD COLUMN extreme_price NUMERIC(10,4) DEFAULT 0"
                 )
 
             conn.commit()
@@ -148,7 +181,6 @@ class PositionTracker:
             entry_price=fill_price,
             atr=atr,
             entry_time=now,
-            highest_price=fill_price,
             extreme_price=fill_price,
             trailing_stop_price=None,
             trailing_stop_activated=False,
@@ -219,7 +251,6 @@ class PositionTracker:
         if converted_side == "long":
             if current_price > position.extreme_price:
                 position.extreme_price = current_price
-                position.highest_price = position.extreme_price
                 state_changed = True
 
                 # Update trailing stop if activated
@@ -255,7 +286,6 @@ class PositionTracker:
             # For shorts we store the lowest observed price in the same field
             if current_price < position.extreme_price:
                 position.extreme_price = current_price
-                position.highest_price = position.extreme_price
                 state_changed = True
 
                 # Update trailing stop if activated: trailing stop moves down (to a lower price)
@@ -431,9 +461,9 @@ class PositionTracker:
             cursor.execute(
                 """
                 INSERT OR REPLACE INTO position_tracking
-                (symbol, side, qty, entry_price, atr, entry_time, highest_price, extreme_price,
+                (symbol, side, qty, entry_price, atr, entry_time, extreme_price,
                  trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
                 (
                     position.symbol,
@@ -442,7 +472,6 @@ class PositionTracker:
                     position.entry_price,
                     position.atr,
                     position.entry_time.isoformat(),
-                    position.highest_price,
                     position.extreme_price,
                     position.trailing_stop_price,
                     1 if position.trailing_stop_activated else 0,
@@ -477,10 +506,9 @@ class PositionTracker:
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT symbol, side, qty, entry_price, atr, entry_time, highest_price,
-                           COALESCE(extreme_price, highest_price) AS extreme_price,
-                           trailing_stop_price, trailing_stop_activated,
-                           COALESCE(pending_exit, 0)
+                SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price,
+                       trailing_stop_price, trailing_stop_activated,
+                       COALESCE(pending_exit, 0)
                 FROM position_tracking
             """)
             rows = cursor.fetchall()
@@ -498,11 +526,10 @@ class PositionTracker:
                     entry_price=float(row[3]),
                     atr=atr_val,
                     entry_time=datetime.fromisoformat(row[5]),
-                        highest_price=float(row[6]),
-                        extreme_price=float(row[6]),
+                    extreme_price=float(row[6]),
                     trailing_stop_price=trailing_stop_val,
-                    trailing_stop_activated=bool(row[8]),
-                    pending_exit=bool(row[9]),
+                    trailing_stop_activated=bool(row[7]),
+                    pending_exit=bool(row[8]),
                 )
                 self._positions[position.symbol] = position
                 positions.append(position)

@@ -37,7 +37,7 @@ class TestPositionTracking:
         assert position.entry_price == 100.0
         assert position.qty == 10.0
         assert position.side == "long"
-        assert position.highest_price == 100.0
+        assert position.extreme_price == 100.0
         assert position.trailing_stop_activated is False
         assert position.trailing_stop_price is None
 
@@ -185,19 +185,19 @@ class TestTrailingStop:
         new_stop_price = position.trailing_stop_price
         assert new_stop_price >= old_stop_price
 
-    def test_highest_price_tracks_max(self, position_tracker):
-        """Highest price tracks maximum seen price."""
+    def test_extreme_price_tracks_max(self, position_tracker):
+        """Extreme price tracks maximum seen price for longs."""
         position_tracker.start_tracking("AAPL", 100.0, 10.0, "long")
 
         position_tracker.update_current_price("AAPL", 102.0)
         position = position_tracker.get_position("AAPL")
-        assert position.highest_price == 102.0
+        assert position.extreme_price == 102.0
 
         # Price drops
         position_tracker.update_current_price("AAPL", 101.0)
         position = position_tracker.get_position("AAPL")
         # Highest price should still be 102.0
-        assert position.highest_price == 102.0
+        assert position.extreme_price == 102.0
 
 
 class TestBrokerSync:
