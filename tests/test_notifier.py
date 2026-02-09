@@ -1,10 +1,12 @@
 import time
 import urllib.request
+import logging
 
 from src.notifier import AlertNotifier
 
 
 def test_notifier_send_success_slack(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
     # Monkeypatch urlopen to succeed
     class DummyResponse:
         pass
@@ -21,6 +23,7 @@ def test_notifier_send_success_slack(monkeypatch, caplog):
 
 
 def test_notifier_handles_permanent_failure_slack(monkeypatch, caplog):
+    caplog.set_level(logging.INFO)
     # Monkeypatch urlopen to always raise
     def fake_urlopen(req, timeout=5):
         raise RuntimeError("permanent failure")
