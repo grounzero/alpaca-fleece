@@ -8,6 +8,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, Optional
 
+from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
@@ -56,7 +57,7 @@ class StreamPolling:
         self.api_key = api_key
         self.secret_key = secret_key
         self.paper = paper
-        self.feed = feed
+        self.feed: DataFeed = DataFeed(feed) if feed else DataFeed.IEX
         self.batch_size = batch_size
 
         # Historical data client for polling
@@ -72,6 +73,8 @@ class StreamPolling:
         self._last_bars: dict[str, datetime] = {}  # Track last known bar timestamp per symbol
         self._polling_task: Optional[asyncio.Task[None]] = None
         self._symbols: list[str] = []
+        self._use_fallback: bool = False  # Set to True if SIP feed requires subscription
+        self._fallback_logged: bool = False  # Track if we already logged fallback message
 
     def register_handlers(
         self,
@@ -96,6 +99,9 @@ class StreamPolling:
         self.market_connected = True
         self.trade_connected = True
 
+        # Validate feed subscription on startup (only for SIP)
+        await self._validate_feed()
+
         num_batches = (len(symbols) + self.batch_size - 1) // self.batch_size
         logger.info(
             f"Polling stream started for {len(symbols)} symbols "
@@ -104,6 +110,50 @@ class StreamPolling:
 
         # Start polling task
         self._polling_task = asyncio.create_task(self._poll_loop())
+
+    async def _validate_feed(self) -> None:
+        """Validate feed subscription on startup.
+
+        For SIP feed: tests with a single AAPL bar request.
+        If SIP fails with subscription error, falls back to IEX.
+        For IEX feed: no validation needed.
+
+        Raises:
+            Exception: If validation fails for non-subscription reasons.
+        """
+        if self.feed == DataFeed.IEX:
+            logger.info("Using IEX feed")
+            self._use_fallback = False
+            return
+
+        # SIP feed - test subscription with a single AAPL bar request
+        test_symbol = "AAPL"
+        start_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+
+        try:
+            request = StockBarsRequest(
+                symbol_or_symbols=test_symbol,
+                timeframe=TimeFrame.Minute,
+                start=start_time,
+                limit=1,
+                feed=self.feed,
+            )
+            self.client.get_stock_bars(request)
+            # Test passed - SIP is available
+            logger.info(f"Using {self.feed.value.upper()} feed")
+            self._use_fallback = False
+        except Exception as e:
+            error_message = str(e).lower()
+            # Check for subscription-related errors
+            if "subscription" in error_message and "permit" in error_message:
+                logger.warning(
+                    "WARNING: SIP feed requires subscription. Falling back to IEX.\n"
+                    "To suppress this warning, set stream_feed: iex in config/trading.yaml"
+                )
+                self._use_fallback = True
+            else:
+                # Non-subscription error - re-raise to not mask real problems
+                raise
 
     async def _poll_loop(self) -> None:
         """Poll for new bars every minute."""
@@ -156,12 +206,27 @@ class StreamPolling:
             symbols: List of symbols to poll in a single batch request
         """
         try:
-            # Get last 2 bars (current + previous) for all symbols in batch
+            # Determine which feed to use
+            if self._use_fallback:
+                active_feed: DataFeed = DataFeed.IEX
+                if not self._fallback_logged:
+                    logger.info("Using IEX fallback feed (SIP unavailable)")
+                    self._fallback_logged = True
+            else:
+                active_feed = self.feed
+
+            # Get bars from last 5 minutes to ensure fresh data
+            # start=None returns stale cached data, so we use explicit time window
+            from datetime import datetime, timedelta, timezone
+
+            start_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+
             request = StockBarsRequest(
                 symbol_or_symbols=symbols,
                 timeframe=TimeFrame.Minute,
-                limit=2,
-                start=None,  # Get latest
+                start=start_time,
+                limit=10,  # Get more bars to ensure we have latest
+                feed=active_feed,
             )
 
             bars_by_symbol = self.client.get_stock_bars(request)
@@ -184,23 +249,34 @@ class StreamPolling:
             bar_list: List of bar objects from Alpaca API
         """
         if not bar_list:
+            logger.warning(f"No bars returned for {symbol}")
             return
 
         latest_bar = bar_list[-1]  # Most recent
+        logger.info(
+            f"Processing {symbol}: {len(bar_list)} bars, latest={latest_bar.timestamp}, close=${latest_bar.close}"
+        )
 
         # Check if this is a new bar (different timestamp)
         last_ts = self._last_bars.get(symbol)
         if last_ts == latest_bar.timestamp:
+            logger.debug(f"Skipping {symbol}: already processed bar at {latest_bar.timestamp}")
             return  # Already processed this bar
 
         # New bar!
+        logger.info(f"New bar for {symbol}: last_ts={last_ts}, new_ts={latest_bar.timestamp}")
         self._last_bars[symbol] = latest_bar.timestamp
 
         # Invoke handler
         if self.on_bar:
             bar = PollingBar(symbol, latest_bar)
+            logger.info(f"Calling on_bar handler for {symbol}")
             await self.on_bar(bar)
-            logger.debug(f"Polled bar: {symbol} @ {latest_bar.timestamp} ${latest_bar.close}")
+            logger.info(
+                f"SUCCESS: Processed bar {symbol} @ {latest_bar.timestamp} ${latest_bar.close}"
+            )
+        else:
+            logger.warning(f"No on_bar handler registered for {symbol}")
 
     async def _poll_symbol(self, symbol: str) -> None:
         """Poll for latest bar for a single symbol.
