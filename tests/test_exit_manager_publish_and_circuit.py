@@ -84,7 +84,7 @@ def test_atr_precedence_skips_fallback():
     tracker = DummyTracker(positions=[pos], pnl_map={"C": (-100.0, -0.9)})
     event_bus = DummyEventBus()
     state_store = DummyStateStore()
-    # Set current price above ATR-based stop so ATR stop not breached and fallback should be skipped
+    # Set current price below ATR-based stop so ATR stop will trigger and fallback should be skipped
     data = DummyDataHandler(price_map={"C": 95.0})
 
     em = make_em(tracker, event_bus, state_store, data)

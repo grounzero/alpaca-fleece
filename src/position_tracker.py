@@ -237,7 +237,7 @@ class PositionTracker:
                     )
 
         # Short positions: track lowest price and move trailing stop down (closer to price)
-        else:
+        elif converted_side == "short":
             # For shorts we store the lowest observed price in the same field
             if current_price < position.highest_price:
                 position.highest_price = current_price
@@ -272,6 +272,14 @@ class PositionTracker:
                         f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
                     )
 
+        else:
+            logger.warning(
+                "Unsupported position side '%s' for symbol %s; skipping trailing-stop update",
+                position.side,
+                symbol,
+            )
+            return position
+
         # Only persist if state actually changed
         if state_changed:
             self._persist_position(position)
@@ -301,8 +309,15 @@ class PositionTracker:
 
         if position.side == "long":
             price_diff = current_price - position.entry_price
-        else:  # short
+        elif position.side == "short":
             price_diff = position.entry_price - current_price
+        else:
+            logger.warning(
+                "Unsupported position side '%s' for P&L calc on symbol %s; returning 0.0",
+                position.side,
+                symbol,
+            )
+            return 0.0, 0.0
 
         pnl_amount = price_diff * position.qty
         pnl_pct = price_diff / position.entry_price

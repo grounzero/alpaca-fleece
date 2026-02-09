@@ -51,9 +51,11 @@ async def test_start_market_stream_subscribes_in_batches(monkeypatch):
 
     monkeypatch.setattr(stream_mod, "StockDataStream", DummyStockDataStream)
 
-    # Speed up test by no-oping asyncio.sleep used in dummy _run_forever
+    # Speed up test by patching asyncio.sleep to still yield control but not delay
+    original_sleep = asyncio.sleep
+
     async def _noop_sleep(*a, **k):
-        return None
+        await original_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
 
@@ -100,9 +102,11 @@ async def test_start_trade_stream_subscribes_and_sets_connected(monkeypatch):
 
     monkeypatch.setattr(stream_mod, "TradingStream", DummyTradingStream)
 
-    # Speed up test by no-oping asyncio.sleep used in dummy _run_forever
+    # Speed up test by patching asyncio.sleep to still yield control but not delay
+    original_sleep = asyncio.sleep
+
     async def _noop_sleep(*a, **k):
-        return None
+        await original_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
 

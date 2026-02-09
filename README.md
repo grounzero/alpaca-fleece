@@ -414,6 +414,16 @@ alpaca-fleece/
 3. Test manually: `python orchestrator.py`
 4. Use `bot.sh` for production deployment
 
+## Tools
+
+For quick signal analysis of orchestrator logs, use the included script:
+
+```bash
+python tools/analyse_signals.py /path/to/orchestrator.log
+```
+
+(Note: the canonical script name uses the British spelling `analyse_signals`.)
+
 ## Safety Features
 
 - **Paper Trading Only**: Locked to Alpaca paper trading (cannot enable live)

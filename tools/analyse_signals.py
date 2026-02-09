@@ -6,7 +6,7 @@ Parses log lines emitted by `SMACrossover` (info lines) with the format:
   signal=BUY symbol=AAPL sma=(20, 50) confidence=0.900 regime=trending strength=0.800 atr=0.123 close=102.00
 
 Usage:
-  python tools/analyze_signals.py /path/to/orchestrator.log
+  python tools/analyse_signals.py /path/to/orchestrator.log
 
 Outputs a summary table with counts and percentages and writes optional CSV.
 """

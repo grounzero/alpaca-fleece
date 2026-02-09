@@ -52,12 +52,15 @@ async def test_event_bus_logs_dropped_events(caplog, monkeypatch):
         # Publish third event - should timeout and be dropped (not critical)
         await bus.publish(event3)  # Won't raise because it's not ExitSignalEvent
 
-        # Speed up test by no-oping asyncio.sleep
+        # Speed up test by patching asyncio.sleep to still yield control but not delay
+        original_sleep = asyncio.sleep
+
         async def _noop_sleep(*a, **k):
-            return None
+            # yield control to the event loop without real delay
+            await original_sleep(0)
 
         monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
-        await asyncio.sleep(0.1)  # Let processing occur
+        await asyncio.sleep(0.1)  # Let processing occur (yields to loop)
         # Verify drop was logged
         assert "timed out" in caplog.text or bus.dropped_count > 0
 
@@ -158,12 +161,14 @@ async def test_non_critical_event_drop_logged_only(caplog, monkeypatch):
     # This should timeout but NOT raise (unless it's ExitSignalEvent)
     await bus.publish(event2)  # Won't raise because it's not critical
 
-    # Speed up test by no-oping asyncio.sleep
+    # Speed up test by patching asyncio.sleep to still yield control but not delay
+    original_sleep = asyncio.sleep
+
     async def _noop_sleep(*a, **k):
-        return None
+        await original_sleep(0)
 
     monkeypatch.setattr(asyncio, "sleep", _noop_sleep)
-    await asyncio.sleep(0.1)  # Brief wait
+    await asyncio.sleep(0.1)  # Brief wait (yields to loop)
     # Verify drop was logged and counter incremented
     assert bus.dropped_count >= 1 or "timed out" in caplog.text
 

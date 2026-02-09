@@ -417,11 +417,17 @@ class ExitManager:
                 converted_side = (position.side or "").lower()
                 # Long positions trigger when price falls to or below trailing stop;
                 # short positions trigger when price rises to or above trailing stop.
-                trigger = (
-                    current_price <= position.trailing_stop_price
-                    if converted_side == "long"
-                    else current_price >= position.trailing_stop_price
-                )
+                trigger = False
+                if converted_side == "long":
+                    trigger = current_price <= position.trailing_stop_price
+                elif converted_side == "short":
+                    trigger = current_price >= position.trailing_stop_price
+                else:
+                    logger.warning(
+                        "Skipping trailing-stop evaluation for position with invalid side '%s' on symbol '%s'",
+                        position.side,
+                        position.symbol,
+                    )
 
                 if trigger:
                     return ExitSignalEvent(
