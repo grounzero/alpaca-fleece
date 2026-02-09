@@ -5,13 +5,15 @@ This module provides the same interface as Stream but uses HTTP polling instead 
 
 import asyncio
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
 from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
+from alpaca.trading.client import TradingClient
 
 from src.utils import batch_iter
 
@@ -63,6 +65,12 @@ class StreamPolling:
         # Historical data client for polling
         self.client = StockHistoricalDataClient(api_key, secret_key)
 
+        # Trading client for order status queries
+        paper_url = "https://paper-api.alpaca.markets" if paper else "https://api.alpaca.markets"
+        self.trading_client = TradingClient(
+            api_key, secret_key, paper=paper, raw_data=True, url_override=paper_url
+        )
+
         self.market_connected = False
         self.trade_connected = False
         self.on_bar: Optional[Callable[[Any], Any]] = None
@@ -72,11 +80,13 @@ class StreamPolling:
 
         self._last_bars: dict[str, datetime] = {}  # Track last known bar timestamp per symbol
         self._polling_task: Optional[asyncio.Task[None]] = None
+        self._order_polling_task: Optional[asyncio.Task[None]] = None
         self._symbols: list[str] = []
         self._use_fallback: bool = False  # Set to True if SIP feed requires subscription
         self._fallback_logged: bool = False  # Track if we already logged fallback message
         self._symbols_with_data: set[str] = set()  # Track which symbols have received data
         self._poll_iterations: int = 0  # Track polling iterations for periodic reporting
+        self._db_path: str = "data/trades.db"  # Default DB path
 
     def register_handlers(
         self,
@@ -141,8 +151,9 @@ class StreamPolling:
                 f"in {num_batches} batch(es) of {effective_batch} (1-min polling)"
             )
 
-        # Start polling task
+        # Start polling tasks
         self._polling_task = asyncio.create_task(self._poll_loop())
+        self._order_polling_task = asyncio.create_task(self._poll_order_updates())
 
     async def _validate_feed(self) -> None:
         """Validate feed subscription on startup.
@@ -246,6 +257,149 @@ class StreamPolling:
 
         logger.debug(f"Polling: Sleeping {sleep_seconds:.1f}s until next minute")
         await asyncio.sleep(max(1, sleep_seconds))
+
+    async def _poll_order_updates(self) -> None:
+        """Poll for order status changes every 2 seconds.
+
+        Checks all 'submitted' orders in SQLite, queries Alpaca for current status,
+        and triggers on_order_update when status changes to filled.
+        """
+        logger.info("Order update polling started")
+        try:
+            while True:
+                try:
+                    await self._check_order_status()
+                except asyncio.CancelledError:
+                    raise
+                except Exception as e:
+                    logger.error(f"Order polling error: {e}", exc_info=True)
+
+                await asyncio.sleep(2)
+
+        except asyncio.CancelledError:
+            logger.info("Order polling cancelled")
+            raise
+        except Exception as e:
+            logger.critical(f"Order polling crashed: {e}", exc_info=True)
+            raise
+
+    async def _check_order_status(self) -> None:
+        """Check status of submitted orders and trigger updates."""
+        # Get submitted orders from SQLite
+        submitted_orders = self._get_submitted_orders()
+
+        for order in submitted_orders:
+            try:
+                # Query Alpaca for current status
+                alpaca_order = self.trading_client.get_order_by_id(order["alpaca_order_id"])
+
+                if not alpaca_order:
+                    logger.warning(f"Order {order['client_order_id']} not found in Alpaca")
+                    continue
+
+                # Handle both dict and Order object returns
+                if isinstance(alpaca_order, dict):
+                    current_status = alpaca_order.get("status", "unknown")
+                else:
+                    current_status = str(alpaca_order.status) if alpaca_order.status else "unknown"
+
+                # If status changed, trigger update
+                if current_status != order["status"]:
+                    logger.info(
+                        f"Order {order['client_order_id']} status: "
+                        f"{order['status']} -> {current_status}"
+                    )
+
+                    # Create normalized update event
+                    update_event = self._create_order_update_event(alpaca_order)
+
+                    # Call handler if registered
+                    if self.on_order_update:
+                        await self.on_order_update(update_event)
+
+            except Exception as e:
+                logger.error(
+                    f"Failed to check order {order.get('client_order_id', 'unknown')}: {e}"
+                )
+
+    def _get_submitted_orders(self) -> List[Dict[str, Any]]:
+        """Get all submitted orders from SQLite that need status checking."""
+        try:
+            conn = sqlite3.connect(self._db_path)
+            cursor = conn.cursor()
+
+            # Get orders with non-terminal status
+            cursor.execute("""
+                SELECT client_order_id, symbol, side, qty, status,
+                       filled_qty, alpaca_order_id
+                FROM order_intents
+                WHERE status IN ('submitted', 'pending', 'accepted', 'new', 'partially_filled')
+                """)
+
+            rows = cursor.fetchall()
+            conn.close()
+
+            orders = []
+            for row in rows:
+                orders.append(
+                    {
+                        "client_order_id": row[0],
+                        "symbol": row[1],
+                        "side": row[2],
+                        "qty": row[3],
+                        "status": row[4],
+                        "filled_qty": row[5] or 0,
+                        "alpaca_order_id": row[6],
+                    }
+                )
+
+            return orders
+
+        except sqlite3.Error as e:
+            logger.error(f"Database error fetching orders: {e}")
+            return []
+
+    def _create_order_update_event(self, alpaca_order: Any) -> Any:
+        """Create a normalized order update event from Alpaca order data.
+
+        Args:
+            alpaca_order: Order data from Alpaca API (dict or Order object)
+
+        Returns:
+            Normalized order update event matching expected interface
+        """
+
+        # Simple namespace object to match expected interface
+        class OrderUpdateWrapper:
+            def __init__(self, order_data: Any):
+                self.order = OrderWrapper(order_data)
+                self.at = datetime.now(timezone.utc)
+
+        class OrderWrapper:
+            def __init__(self, data: Any):
+                if isinstance(data, dict):
+                    self.id = data.get("id")
+                    self.client_order_id = data.get("client_order_id")
+                    self.symbol = data.get("symbol")
+                    status_val = data.get("status", "unknown")
+                    self.status = StatusWrapper(status_val)
+                    self.filled_qty = data.get("filled_qty")
+                    self.filled_avg_price = data.get("filled_avg_price")
+                else:
+                    # Order object
+                    self.id = getattr(data, "id", None)
+                    self.client_order_id = getattr(data, "client_order_id", None)
+                    self.symbol = getattr(data, "symbol", None)
+                    status_val = getattr(data, "status", None)
+                    self.status = StatusWrapper(str(status_val) if status_val else "unknown")
+                    self.filled_qty = getattr(data, "filled_qty", None)
+                    self.filled_avg_price = getattr(data, "filled_avg_price", None)
+
+        class StatusWrapper:
+            def __init__(self, value: str):
+                self.value = value
+
+        return OrderUpdateWrapper(alpaca_order)
 
     async def _poll_batch(self, symbols: List[str]) -> None:
         """Poll for latest bars for a batch of symbols.
@@ -354,6 +508,13 @@ class StreamPolling:
             self._polling_task.cancel()
             try:
                 await self._polling_task
+            except asyncio.CancelledError:
+                pass
+
+        if self._order_polling_task:
+            self._order_polling_task.cancel()
+            try:
+                await self._order_polling_task
             except asyncio.CancelledError:
                 pass
 
