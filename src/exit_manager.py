@@ -148,16 +148,16 @@ class ExitManager:
 
         logger.info("Starting exit manager...")
         logger.info(
-            f"  Stop loss: -{self.stop_loss_pct*100:.1f}%, "
-            f"Profit target: +{self.profit_target_pct*100:.1f}%"
+            f"  Stop loss: -{self.stop_loss_pct * 100:.1f}%, "
+            f"Profit target: +{self.profit_target_pct * 100:.1f}%"
         )
         logger.info(
             f"  ATR multipliers: stop={self.atr_multiplier_stop}, target={self.atr_multiplier_target}"
         )
         if self.trailing_stop_enabled:
             logger.info(
-                f"  Trailing stop: enabled (activation +{self.trailing_stop_activation_pct*100:.1f}%, "
-                f"trail -{self.trailing_stop_trail_pct*100:.1f}%)"
+                f"  Trailing stop: enabled (activation +{self.trailing_stop_activation_pct * 100:.1f}%, "
+                f"trail -{self.trailing_stop_trail_pct * 100:.1f}%)"
             )
         else:
             logger.info("  Trailing stop: disabled")
@@ -271,7 +271,7 @@ class ExitManager:
                     self.position_tracker._persist_position(position)
                     logger.info(
                         f"Exit signal: {signal.symbol} {signal.reason} "
-                        f"(P&L: {signal.pnl_pct*100:.1f}%)"
+                        f"(P&L: {signal.pnl_pct * 100:.1f}%)"
                     )
 
             except Exception as e:
@@ -506,7 +506,7 @@ class ExitManager:
                 await self.event_bus.publish(signal)
                 logger.info(
                     f"Emergency exit: {signal.symbol} {signal.qty} shares "
-                    f"(P&L: {signal.pnl_pct*100:.1f}%)"
+                    f"(P&L: {signal.pnl_pct * 100:.1f}%)"
                 )
 
             except Exception as e:

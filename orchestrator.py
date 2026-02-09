@@ -12,6 +12,7 @@ import signal
 import sys
 from typing import Optional
 
+from src import __version__ as version
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
 from src.broker import Broker
@@ -29,10 +30,9 @@ from src.position_tracker import PositionTracker
 from src.reconciliation import ReconciliationError, reconcile
 from src.risk_manager import RiskManager
 from src.state_store import StateStore
-from src.utils import parse_optional_float
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
-from src import __version__ as version
+from src.utils import parse_optional_float
 
 logger = logging.getLogger("alpaca_bot")
 
@@ -564,7 +564,7 @@ class Orchestrator:
                         # Handle exit signal from exit manager
                         logger.info(
                             f"Processing exit signal: {event.symbol} {event.reason} "
-                            f"(P&L: {event.pnl_pct*100:.1f}%)"
+                            f"(P&L: {event.pnl_pct * 100:.1f}%)"
                         )
 
                         # Track exit triggered
@@ -648,7 +648,7 @@ class Orchestrator:
                 atr=atr_value,
             )
             logger.info(
-                f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} " f"qty={event.filled_qty}"
+                f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} qty={event.filled_qty}"
             )
         elif side == "sell":
             # Calculate realized P&L
@@ -742,7 +742,9 @@ class Orchestrator:
             # Prefer async notifier methods when running inside the event loop.
             if event_type == "circuit_breaker_tripped":
                 if hasattr(self.notifier, "alert_circuit_breaker_tripped_async"):
-                    return await self.notifier.alert_circuit_breaker_tripped_async(details["failure_count"])
+                    return await self.notifier.alert_circuit_breaker_tripped_async(
+                        details["failure_count"]
+                    )
                 return self.notifier.alert_circuit_breaker_tripped(details["failure_count"])
 
             elif event_type == "daily_loss_exceeded":
@@ -760,12 +762,12 @@ class Orchestrator:
                 if hasattr(self.notifier, "send_alert_async"):
                     return await self.notifier.send_alert_async(
                         title=f"Exit: {details['symbol']} ({details['reason']})",
-                        message=f"P&L: {details['pnl_pct']*100:.1f}% (${details['pnl_amount']:.2f})",
+                        message=f"P&L: {details['pnl_pct'] * 100:.1f}% (${details['pnl_amount']:.2f})",
                         severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
                     )
                 return self.notifier.send_alert(
                     title=f"Exit: {details['symbol']} ({details['reason']})",
-                    message=f"P&L: {details['pnl_pct']*100:.1f}% (${details['pnl_amount']:.2f})",
+                    message=f"P&L: {details['pnl_pct'] * 100:.1f}% (${details['pnl_amount']:.2f})",
                     severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
                 )
 

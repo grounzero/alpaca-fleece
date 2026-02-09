@@ -73,12 +73,12 @@ class PositionTracker:
     def init_schema(self) -> None:
         """Create position tracking table if not exists."""
         import sqlite3
+
         # Create a clean position_tracking table; migrations are intentionally omitted
         # for this branch — we prefer recreating the DB for a clean start.
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                """
+            cursor.execute("""
                 CREATE TABLE IF NOT EXISTS position_tracking (
                     symbol TEXT PRIMARY KEY,
                     side TEXT NOT NULL,
@@ -92,8 +92,7 @@ class PositionTracker:
                     pending_exit INTEGER DEFAULT 0,
                     updated_at TEXT NOT NULL
                 )
-                """
-            )
+                """)
             conn.commit()
 
     def start_tracking(
@@ -222,7 +221,7 @@ class PositionTracker:
                     state_changed = True
                     logger.info(
                         f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
-                        f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
+                        f"(current ${current_price:.2f}, P&L {unrealised_pct * 100:.1f}%)"
                     )
 
         # Short positions: track lowest price and move trailing stop down (closer to price)
@@ -258,7 +257,7 @@ class PositionTracker:
                     state_changed = True
                     logger.info(
                         f"{symbol} trailing stop activated at ${position.trailing_stop_price:.2f} "
-                        f"(current ${current_price:.2f}, P&L {unrealised_pct*100:.1f}%)"
+                        f"(current ${current_price:.2f}, P&L {unrealised_pct * 100:.1f}%)"
                     )
 
         else:
@@ -472,8 +471,8 @@ class PositionTracker:
                     entry_time=datetime.fromisoformat(row[5]),
                     extreme_price=float(row[6]),
                     trailing_stop_price=trailing_stop_val,
-                    trailing_stop_activated=bool(row[7]),
-                    pending_exit=bool(row[8]),
+                    trailing_stop_activated=bool(row[8]),
+                    pending_exit=bool(row[9]),
                 )
                 self._positions[position.symbol] = position
                 positions.append(position)

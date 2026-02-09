@@ -150,7 +150,7 @@ class Stream:
         logger.info(f"Subscribing to {len(symbols)} symbols in batches of {batch_size}")
         num_batches = (len(symbols) + batch_size - 1) // batch_size
         for i, batch in enumerate(batch_iter(symbols, batch_size)):
-            logger.info(f"Subscribing batch {i+1}/{num_batches} size={len(batch)}")
+            logger.info(f"Subscribing batch {i + 1}/{num_batches} size={len(batch)}")
             self.market_data_stream.subscribe_bars(handle_bar, *batch)
 
             # Delay between batches (except after last batch)
@@ -162,7 +162,7 @@ class Stream:
         asyncio.create_task(self.market_data_stream._run_forever())
         self.market_connected = True
         logger.info(
-            f"Market stream connected: {len(symbols)} symbols in {(len(symbols)-1)//batch_size + 1} batches"
+            f"Market stream connected: {len(symbols)} symbols in {(len(symbols) - 1) // batch_size + 1} batches"
         )
 
     async def _start_trade_stream(self) -> None:

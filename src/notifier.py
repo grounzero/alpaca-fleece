@@ -107,11 +107,17 @@ class AlertNotifier:
             try:
                 # Run the blocking channel send in a threadpool
                 if self.alert_channel == "whatsapp":
-                    ok = await loop.run_in_executor(None, self._send_whatsapp_alert, title, message, severity)
+                    ok = await loop.run_in_executor(
+                        None, self._send_whatsapp_alert, title, message, severity
+                    )
                 elif self.alert_channel == "slack":
-                    ok = await loop.run_in_executor(None, self._send_slack_alert, title, message, severity)
+                    ok = await loop.run_in_executor(
+                        None, self._send_slack_alert, title, message, severity
+                    )
                 elif self.alert_channel == "email":
-                    ok = await loop.run_in_executor(None, self._send_email_alert, title, message, severity)
+                    ok = await loop.run_in_executor(
+                        None, self._send_email_alert, title, message, severity
+                    )
                 else:
                     logger.warning(f"Unknown alert channel: {self.alert_channel}")
                     return False
@@ -137,7 +143,7 @@ class AlertNotifier:
             # Non-blocking backoff using asyncio.sleep
             if attempt < self.retries - 1:
                 try:
-                    delay = self.backoff * (2 ** attempt)
+                    delay = self.backoff * (2**attempt)
                     await asyncio.sleep(delay)
                 except Exception:
                     logger.debug("Async sleep interrupted during alert backoff")

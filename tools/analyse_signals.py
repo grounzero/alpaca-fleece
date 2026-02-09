@@ -90,7 +90,7 @@ def summarize(df: pd.DataFrame) -> None:
         print(f"  SMA {sma}: {len(g)} signals")
         rc = g["regime"].value_counts(normalize=True)
         for r, p in rc.items():
-            print(f"    {r}: {p*100:.1f}%")
+            print(f"    {r}: {p * 100:.1f}%")
         print(f"    avg_confidence: {g['confidence'].mean():.3f}")
         print()
 

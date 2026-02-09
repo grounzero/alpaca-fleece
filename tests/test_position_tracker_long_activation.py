@@ -30,7 +30,7 @@ def test_long_trailing_stop_activation():
         qty=1.0,
         entry_price=100.0,
         entry_time=datetime.now(timezone.utc),
-        highest_price=100.0,
+        extreme_price=100.0,
         atr=None,
         trailing_stop_price=None,
         trailing_stop_activated=False,

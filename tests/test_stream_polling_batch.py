@@ -335,6 +335,6 @@ class TestStreamPollingEfficiency:
         for num_symbols, batch_size, expected_batches in test_cases:
             symbols = [f"SYM{i}" for i in range(num_symbols)]
             batches = list(batch_iter(symbols, batch_size))
-            assert (
-                len(batches) == expected_batches
-            ), f"Expected {expected_batches} batches for {num_symbols} symbols, got {len(batches)}"
+            assert len(batches) == expected_batches, (
+                f"Expected {expected_batches} batches for {num_symbols} symbols, got {len(batches)}"
+            )
