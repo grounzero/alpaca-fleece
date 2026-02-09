@@ -739,21 +739,41 @@ class Orchestrator:
             return False
 
         try:
+            # Prefer async notifier methods when running inside the event loop.
             if event_type == "circuit_breaker_tripped":
+                if hasattr(self.notifier, "alert_circuit_breaker_tripped_async"):
+                    return await self.notifier.alert_circuit_breaker_tripped_async(details["failure_count"])
                 return self.notifier.alert_circuit_breaker_tripped(details["failure_count"])
+
             elif event_type == "daily_loss_exceeded":
+                if hasattr(self.notifier, "alert_daily_loss_limit_exceeded_async"):
+                    return await self.notifier.alert_daily_loss_limit_exceeded_async(
+                        details["daily_pnl"],
+                        details["limit"],
+                    )
                 return self.notifier.alert_daily_loss_limit_exceeded(
                     details["daily_pnl"],
                     details["limit"],
                 )
+
             elif event_type == "exit_triggered":
+                if hasattr(self.notifier, "send_alert_async"):
+                    return await self.notifier.send_alert_async(
+                        title=f"Exit: {details['symbol']} ({details['reason']})",
+                        message=f"P&L: {details['pnl_pct']*100:.1f}% (${details['pnl_amount']:.2f})",
+                        severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
+                    )
                 return self.notifier.send_alert(
                     title=f"Exit: {details['symbol']} ({details['reason']})",
                     message=f"P&L: {details['pnl_pct']*100:.1f}% (${details['pnl_amount']:.2f})",
                     severity="WARNING" if details["pnl_amount"] < 0 else "INFO",
                 )
+
             elif event_type == "kill_switch_activated":
+                if hasattr(self.notifier, "alert_kill_switch_activated_async"):
+                    return await self.notifier.alert_kill_switch_activated_async()
                 return self.notifier.alert_kill_switch_activated()
+
             else:
                 logger.warning(f"Unknown alert event type: {event_type}")
                 return False
