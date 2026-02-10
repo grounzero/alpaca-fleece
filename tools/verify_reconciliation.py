@@ -23,7 +23,7 @@ for sym in sorted(alpaca_positions.keys()):
     d = alpaca_positions[sym]
     print(f'  {sym}: qty={d["qty"]}, entry=${d["avg_entry_price"]}')
 
-# Get latest positions_snapshot
+# Get latest positions_snapshot using context manager for proper cleanup
 with sqlite3.connect("data/trades.db") as conn:
     cursor = conn.cursor()
     cursor.execute("""

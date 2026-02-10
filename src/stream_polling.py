@@ -399,7 +399,8 @@ class StreamPolling:
 
                 # Handle both dict and Order object returns
                 if isinstance(alpaca_order, dict):
-                    current_status = alpaca_order.get("status", "unknown")
+                    raw_status = alpaca_order.get("status", "unknown")
+                    current_status = str(raw_status).lower()
                     filled_qty = alpaca_order.get("filled_qty")
                     filled_avg_price = alpaca_order.get("filled_avg_price")
                 else:

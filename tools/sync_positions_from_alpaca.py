@@ -224,7 +224,7 @@ def init_schema(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
-def main():
+def main() -> None:
     """Main entry point."""
     parser = argparse.ArgumentParser(description="Sync position_tracking from Alpaca")
     parser.add_argument(

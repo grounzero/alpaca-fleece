@@ -62,21 +62,40 @@ class OrderUpdatesHandler:
     def _normalise_order_update(self, raw_update: Any) -> OrderUpdateEvent:
         """Normalise raw SDK order update to OrderUpdateEvent."""
         # Safely access side attribute using getattr
-        side_attr = getattr(getattr(raw_update, "order", None), "side", None)
-        side_value = side_attr.value if side_attr else "unknown"
+        order = getattr(raw_update, "order", None)
+        side_attr = getattr(order, "side", None)
+        # Handle both enum (has .value) and string cases, lowercase result
+        if side_attr is None:
+            side_value = "unknown"
+        elif hasattr(side_attr, "value"):
+            side_value = str(getattr(side_attr, "value")).lower()
+        else:
+            side_value = str(side_attr).lower()
+
+        # Safely access status with enum/string handling
+        status_attr = getattr(order, "status", None)
+        if status_attr is None:
+            status_value = "unknown"
+        elif hasattr(status_attr, "value"):
+            status_value = str(getattr(status_attr, "value")).lower()
+        else:
+            status_value = str(status_attr).lower()
+
+        # Safely access other order attributes with defaults
+        order_id = getattr(order, "id", "") or ""
+        client_order_id = getattr(order, "client_order_id", "") or ""
+        symbol = getattr(order, "symbol", "") or ""
+        filled_qty = getattr(order, "filled_qty", None)
+        filled_avg_price = getattr(order, "filled_avg_price", None)
 
         return OrderUpdateEvent(
-            order_id=raw_update.order.id,
-            client_order_id=raw_update.order.client_order_id,
-            symbol=raw_update.order.symbol,
+            order_id=order_id,
+            client_order_id=client_order_id,
+            symbol=symbol,
             side=side_value,
-            status=raw_update.order.status.value if raw_update.order.status else "unknown",
-            filled_qty=float(raw_update.order.filled_qty) if raw_update.order.filled_qty else 0,
-            avg_fill_price=(
-                float(raw_update.order.filled_avg_price)
-                if raw_update.order.filled_avg_price
-                else None
-            ),
+            status=status_value,
+            filled_qty=float(filled_qty) if filled_qty else 0,
+            avg_fill_price=float(filled_avg_price) if filled_avg_price else None,
             timestamp=raw_update.at if raw_update.at else datetime.now(timezone.utc),
         )
 

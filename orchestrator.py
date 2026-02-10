@@ -155,21 +155,41 @@ class Orchestrator:
                 # Run position sync
                 import subprocess
 
-                result = subprocess.run(
-                    [sys.executable, "tools/sync_positions_from_alpaca.py"],
-                    capture_output=True,
-                    text=True,
-                )
+                try:
+                    result = subprocess.run(
+                        [sys.executable, "tools/sync_positions_from_alpaca.py"],
+                        capture_output=True,
+                        text=True,
+                        timeout=60,  # 60 second timeout
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.error("   Position sync timed out after 60 seconds")
+                    errors.append("Position sync timed out")
+                    raise ReconciliationError("Position sync timeout")
+                except Exception as sync_err:
+                    logger.error(f"   Position sync failed to execute: {sync_err}")
+                    errors.append(f"Position sync execution failed: {sync_err}")
+                    raise ReconciliationError(f"Position sync execution failed: {sync_err}")
 
                 if result.returncode == 0:
                     logger.info("   Position sync completed successfully")
 
                     # Also update positions_snapshot for reconciliation
-                    result2 = subprocess.run(
-                        [sys.executable, "tools/update_positions_snapshot.py"],
-                        capture_output=True,
-                        text=True,
-                    )
+                    try:
+                        result2 = subprocess.run(
+                            [sys.executable, "tools/update_positions_snapshot.py"],
+                            capture_output=True,
+                            text=True,
+                            timeout=30,  # 30 second timeout
+                        )
+                    except subprocess.TimeoutExpired:
+                        logger.warning("   Positions snapshot update timed out")
+                        result2 = subprocess.CompletedProcess(
+                            args=[], returncode=1, stderr="Timeout"
+                        )
+                    except Exception as e:
+                        logger.warning(f"   Positions snapshot update failed to execute: {e}")
+                        result2 = subprocess.CompletedProcess(args=[], returncode=1, stderr=str(e))
                     if result2.returncode == 0:
                         logger.info("   Positions snapshot updated successfully")
                     else:
