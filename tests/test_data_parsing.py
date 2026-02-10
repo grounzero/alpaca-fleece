@@ -106,6 +106,7 @@ def test_order_normalisation_missing_fill_price():
             self.id = "oid"
             self.client_order_id = "cid"
             self.symbol = "SYM"
+            self.side = Status("buy")
             self.status = Status("filled")
             self.filled_qty = None
             self.filled_avg_price = None

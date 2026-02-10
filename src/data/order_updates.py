@@ -65,6 +65,7 @@ class OrderUpdatesHandler:
             order_id=raw_update.order.id,
             client_order_id=raw_update.order.client_order_id,
             symbol=raw_update.order.symbol,
+            side=raw_update.order.side.value if raw_update.order.side else "unknown",
             status=raw_update.order.status.value if raw_update.order.status else "unknown",
             filled_qty=float(raw_update.order.filled_qty) if raw_update.order.filled_qty else 0,
             avg_fill_price=(
@@ -93,7 +94,7 @@ class OrderUpdatesHandler:
             (
                 event.timestamp.isoformat(),
                 event.symbol,
-                "buy",  # TODO: extract from event or order details
+                event.side,
                 event.filled_qty,
                 event.avg_fill_price,
                 event.order_id,

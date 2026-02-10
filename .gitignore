@@ -79,6 +79,10 @@ agents/
 data/*.pid
 data/metrics.json
 
+# Backup files
+*.backup
+*.backup.*
+
 docs/
 
 # Scripts directory (local utilities)
