@@ -69,6 +69,7 @@ class StateStore:
                     atr NUMERIC(10, 4),
                     status TEXT NOT NULL,
                     filled_qty NUMERIC(10, 4) DEFAULT 0,
+                    filled_avg_price NUMERIC(10, 4),
                     alpaca_order_id TEXT,
                     created_at_utc TEXT NOT NULL,
                     updated_at_utc TEXT NOT NULL
