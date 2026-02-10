@@ -98,7 +98,8 @@ class StreamPolling:
         self.api_key = api_key
         self.secret_key = secret_key
         self.paper = paper
-        self.feed: DataFeed = DataFeed(feed) if feed else DataFeed.IEX
+        self.feed: str = feed or "iex"  # Keep as string for API compatibility
+        self._data_feed: DataFeed = DataFeed(self.feed)  # Internal enum
         self.batch_size = batch_size
 
         # Historical data client for polling
@@ -153,7 +154,7 @@ class StreamPolling:
         """
         # If using IEX (either directly or as fallback), limit to 2 symbols
         # to work around the Alpaca API bug
-        if self._use_fallback or self.feed == DataFeed.IEX:
+        if self._use_fallback or self._data_feed == DataFeed.IEX:
             return 2
         # SIP feed supports full batch size
         return self.batch_size
@@ -171,6 +172,10 @@ class StreamPolling:
         # Reset fallback log flag for each new polling session
         self._fallback_logged = False
 
+        # Clear session state
+        self._symbols_with_data.clear()
+        self._last_bars.clear()
+
         # Validate feed subscription on startup (only for SIP)
         await self._validate_feed()
 
@@ -178,10 +183,11 @@ class StreamPolling:
         num_batches = (len(symbols) + effective_batch - 1) // effective_batch
 
         if effective_batch != self.batch_size:
+            active_feed = "iex" if self._use_fallback else self.feed
             logger.info(
                 f"Polling stream started for {len(symbols)} symbols "
                 f"in {num_batches} batch(es) of {effective_batch} "
-                f"(configured: {self.batch_size}, reduced for {self.feed.value} feed) "
+                f"(configured: {self.batch_size}, reduced for {active_feed} feed) "
                 f"(1-min polling)"
             )
         else:
@@ -204,7 +210,7 @@ class StreamPolling:
         Raises:
             Exception: If validation fails for non-subscription reasons.
         """
-        if self.feed == DataFeed.IEX:
+        if self._data_feed == DataFeed.IEX:
             logger.info("Using IEX feed")
             self._use_fallback = False
             return
@@ -219,11 +225,11 @@ class StreamPolling:
                 timeframe=TimeFrame.Minute,
                 start=start_time,
                 limit=1,
-                feed=self.feed,
+                feed=self._data_feed,
             )
-            self.client.get_stock_bars(request)
+            await asyncio.to_thread(self.client.get_stock_bars, request)
             # Test passed - SIP is available
-            logger.info(f"Using {self.feed.value.upper()} feed")
+            logger.info(f"Using {self._data_feed.value.upper()} feed")
             self._use_fallback = False
         except Exception as e:
             error_message = str(e).lower()
@@ -256,16 +262,10 @@ class StreamPolling:
 
                     # Periodic report on symbol coverage (every 5 iterations)
                     if iteration % 5 == 0 and self._symbols:
-                        missing_symbols = set(self._symbols) - self._symbols_with_data
-                        if missing_symbols:
-                            logger.warning(
-                                f"SYMBOL COVERAGE REPORT: {len(self._symbols_with_data)}/{len(self._symbols)} "
-                                f"symbols have received data. Missing: {sorted(missing_symbols)}"
-                            )
-                        else:
-                            logger.info(
-                                f"SYMBOL COVERAGE REPORT: All {len(self._symbols)} symbols have received data"
-                            )
+                        missing = len(self._symbols) - len(self._symbols_with_data)
+                        logger.debug(
+                            f"Symbol coverage: {len(self._symbols_with_data)}/{len(self._symbols)} (missing: {missing})"
+                        )
 
                     # Sleep until next minute boundary
                     await self._sleep_until_next_minute()
@@ -475,7 +475,7 @@ class StreamPolling:
                     logger.info("Using IEX fallback feed (SIP unavailable)")
                     self._fallback_logged = True
             else:
-                active_feed = self.feed
+                active_feed = self._data_feed
 
             # Get bars from last 5 minutes to ensure fresh data
             # start=None returns stale cached data, so we use explicit time window
