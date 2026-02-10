@@ -1,0 +1,24 @@
+{
+  "counters": {
+    "signals_generated": 404,
+    "signals_filtered": 392,
+    "signals_filtered_confidence": 0,
+    "signals_filtered_risk": 392,
+    "orders_submitted": 27,
+    "orders_filled": 21,
+    "orders_rejected": 2,
+    "exits_triggered": 17,
+    "events_dropped": 0
+  },
+  "gauges": {
+    "open_positions": 10,
+    "daily_pnl": 0.0,
+    "daily_trade_count": 0
+  },
+  "timestamps": {
+    "last_signal_time": "2026-02-10T16:55:02.698723+00:00",
+    "last_fill_time": "2026-02-10T15:15:56.979509+00:00",
+    "started_at": "2026-02-09T21:01:19.633034+00:00"
+  },
+  "uptime_seconds": 71644
+}

@@ -35,6 +35,7 @@ def mock_stream(tmp_path):
             qty NUMERIC(10, 4) NOT NULL,
             status TEXT NOT NULL,
             filled_qty NUMERIC(10, 4) DEFAULT 0,
+            filled_avg_price NUMERIC(10, 4),
             alpaca_order_id TEXT,
             created_at_utc TEXT NOT NULL,
             updated_at_utc TEXT NOT NULL
@@ -108,10 +109,12 @@ class TestOrderUpdatePolling:
 
         # Should return 2 orders (submitted and partially_filled)
         assert len(orders) == 2
-        assert orders[0]["client_order_id"] == "order-1"
-        assert orders[0]["status"] == "submitted"
-        assert orders[1]["client_order_id"] == "order-2"
-        assert orders[1]["status"] == "partially_filled"
+        # Use dict keyed by client_order_id for order-independent assertion
+        orders_by_id = {o["client_order_id"]: o for o in orders}
+        assert "order-1" in orders_by_id
+        assert orders_by_id["order-1"]["status"] == "submitted"
+        assert "order-2" in orders_by_id
+        assert orders_by_id["order-2"]["status"] == "partially_filled"
 
     @pytest.mark.asyncio
     async def test_check_order_status_emits_update_on_transition(self, mock_stream):
@@ -224,8 +227,7 @@ class TestOrderUpdatePolling:
         assert row[0] == "filled"
         assert row[1] == 100
 
-    @pytest.mark.asyncio
-    async def test_create_order_update_event_normalizes_dict(self):
+    def test_create_order_update_event_normalizes_dict(self):
         """_create_order_update_event should normalize dict response."""
         stream = StreamPolling("test_key", "test_secret")
 
@@ -247,8 +249,7 @@ class TestOrderUpdatePolling:
         assert event.order.filled_qty == "100"
         assert event.order.filled_avg_price == "150.00"
 
-    @pytest.mark.asyncio
-    async def test_create_order_update_event_normalizes_object(self):
+    def test_create_order_update_event_normalizes_object(self):
         """_create_order_update_event should normalize Order object response."""
         stream = StreamPolling("test_key", "test_secret")
 
@@ -266,7 +267,7 @@ class TestOrderUpdatePolling:
         assert event.order.status.value == "filled"
 
     @pytest.mark.asyncio
-    async def test_poll_order_updates_runs_continuously(self, mock_stream):
+    async def test_poll_order_updates_runs_continuously(self, mock_stream, monkeypatch):
         """_poll_order_updates should run continuously and call _check_order_status."""
         stream = mock_stream
 
@@ -281,6 +282,12 @@ class TestOrderUpdatePolling:
                 raise asyncio.CancelledError()
 
         stream._check_order_status = mock_check
+
+        # Patch asyncio.sleep to avoid delays in tests
+        async def mock_sleep(seconds):
+            pass
+
+        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
 
         # Test
         with pytest.raises(asyncio.CancelledError):
