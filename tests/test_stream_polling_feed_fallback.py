@@ -85,7 +85,7 @@ class TestFeedFallback:
 
         # Assert: No warning logged (should have INFO log for SIP feed)
         assert "Using SIP feed" in caplog.text
-        assert "WARNING" not in caplog.text
+        assert not any(record.levelname == "WARNING" for record in caplog.records)
 
     @pytest.mark.asyncio
     async def test_iex_config_no_test(self, mock_stream_iex, caplog):
@@ -215,7 +215,8 @@ class TestFeedFallback:
     @pytest.mark.asyncio
     async def test_iex_config_uppercase(self, mock_stream_iex, caplog):
         """IEX config (uppercase) → no validation call made."""
-        mock_stream_iex.feed = DataFeed.IEX
+        mock_stream_iex.feed = "iex"
+        mock_stream_iex._data_feed = DataFeed.IEX
 
         with caplog.at_level("INFO"):
             await mock_stream_iex._validate_feed()
