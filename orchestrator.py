@@ -149,12 +149,52 @@ class Orchestrator:
                 reconciliation_status = "clean"
                 discrepancies = []
             except ReconciliationError as e:
-                logger.error(f"   Reconciliation failed: {e}")
-                errors.append(f"Reconciliation failed: {e}")
-                reconciliation_status = "discrepancies_found"
-                discrepancies = [
-                    {"issue": str(e), "sqlite_value": "unknown", "alpaca_value": "unknown"}
-                ]
+                logger.warning(f"   Reconciliation failed: {e}")
+                logger.warning("   Auto-syncing positions from Alpaca...")
+
+                # Run position sync
+                import subprocess
+
+                result = subprocess.run(
+                    [".venv/bin/python", "tools/sync_positions_from_alpaca.py"],
+                    capture_output=True,
+                    text=True,
+                )
+
+                if result.returncode == 0:
+                    logger.info("   Position sync completed successfully")
+
+                    # Also update positions_snapshot for reconciliation
+                    result2 = subprocess.run(
+                        [".venv/bin/python", "tools/update_positions_snapshot.py"],
+                        capture_output=True,
+                        text=True,
+                    )
+                    if result2.returncode == 0:
+                        logger.info("   Positions snapshot updated successfully")
+                    else:
+                        logger.warning(f"   Positions snapshot update failed: {result2.stderr}")
+
+                    # Re-check reconciliation
+                    try:
+                        reconcile(self.broker, self.state_store)
+                        logger.info("   Reconciliation passed after auto-sync")
+                        reconciliation_status = "clean"
+                        discrepancies = []
+                    except ReconciliationError as e2:
+                        logger.error(f"   Reconciliation still failing after sync: {e2}")
+                        errors.append(f"Reconciliation failed even after auto-sync: {e2}")
+                        reconciliation_status = "discrepancies_found"
+                        discrepancies = [
+                            {"issue": str(e2), "sqlite_value": "unknown", "alpaca_value": "unknown"}
+                        ]
+                else:
+                    logger.error(f"   Position sync failed: {result.stderr}")
+                    errors.append(f"Reconciliation failed: {e}")
+                    reconciliation_status = "discrepancies_found"
+                    discrepancies = [
+                        {"issue": str(e), "sqlite_value": "unknown", "alpaca_value": "unknown"}
+                    ]
 
             # Get risk config
             risk_config = self.trading_config.get("risk", {})
