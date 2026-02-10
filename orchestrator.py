@@ -156,7 +156,7 @@ class Orchestrator:
                 import subprocess
 
                 result = subprocess.run(
-                    [".venv/bin/python", "tools/sync_positions_from_alpaca.py"],
+                    [sys.executable, "tools/sync_positions_from_alpaca.py"],
                     capture_output=True,
                     text=True,
                 )
@@ -166,7 +166,7 @@ class Orchestrator:
 
                     # Also update positions_snapshot for reconciliation
                     result2 = subprocess.run(
-                        [".venv/bin/python", "tools/update_positions_snapshot.py"],
+                        [sys.executable, "tools/update_positions_snapshot.py"],
                         capture_output=True,
                         text=True,
                     )

@@ -15,6 +15,7 @@ import sqlite3
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
+from typing import Optional
 
 # Add src to path for imports
 sys.path.insert(0, str(Path(__file__).parent.parent / "src"))
@@ -48,7 +49,7 @@ def get_sqlite_positions(conn: sqlite3.Connection) -> dict:
     return positions
 
 
-def backup_position_tracking(conn: sqlite3.Connection) -> str:
+def backup_position_tracking(conn: sqlite3.Connection) -> Optional[str]:
     """Create backup of position_tracking table."""
     timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     backup_table = f"position_tracking_backup_{timestamp}"

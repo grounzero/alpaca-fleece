@@ -61,11 +61,15 @@ class OrderUpdatesHandler:
 
     def _normalise_order_update(self, raw_update: Any) -> OrderUpdateEvent:
         """Normalise raw SDK order update to OrderUpdateEvent."""
+        # Safely access side attribute using getattr
+        side_attr = getattr(getattr(raw_update, "order", None), "side", None)
+        side_value = side_attr.value if side_attr else "unknown"
+
         return OrderUpdateEvent(
             order_id=raw_update.order.id,
             client_order_id=raw_update.order.client_order_id,
             symbol=raw_update.order.symbol,
-            side=raw_update.order.side.value if raw_update.order.side else "unknown",
+            side=side_value,
             status=raw_update.order.status.value if raw_update.order.status else "unknown",
             filled_qty=float(raw_update.order.filled_qty) if raw_update.order.filled_qty else 0,
             avg_fill_price=(

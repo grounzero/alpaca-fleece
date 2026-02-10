@@ -24,15 +24,15 @@ for sym in sorted(alpaca_positions.keys()):
     print(f'  {sym}: qty={d["qty"]}, entry=${d["avg_entry_price"]}')
 
 # Get latest positions_snapshot
-conn = sqlite3.connect("data/trades.db")
-cursor = conn.cursor()
-cursor.execute("""
-    SELECT symbol, qty, avg_entry_price FROM positions_snapshot
-    WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
-""")
-sqlite_positions = {}
-for row in cursor.fetchall():
-    sqlite_positions[row[0]] = {"qty": row[1], "avg_entry_price": row[2]}
+with sqlite3.connect("data/trades.db") as conn:
+    cursor = conn.cursor()
+    cursor.execute("""
+        SELECT symbol, qty, avg_entry_price FROM positions_snapshot
+        WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
+    """)
+    sqlite_positions = {}
+    for row in cursor.fetchall():
+        sqlite_positions[row[0]] = {"qty": row[1], "avg_entry_price": row[2]}
 
 print("\nSQLite positions_snapshot (latest):")
 for sym in sorted(sqlite_positions.keys()):

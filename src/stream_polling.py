@@ -45,6 +45,16 @@ class OrderWrapper:
             self.status = StatusWrapper(status_val)
             self.filled_qty = data.get("filled_qty")
             self.filled_avg_price = data.get("filled_avg_price")
+            # Handle side attribute with enum support
+            side_val = data.get("side")
+            if side_val:
+                if hasattr(side_val, "value"):
+                    side_str = str(getattr(side_val, "value")).lower()
+                else:
+                    side_str = str(side_val).lower()
+            else:
+                side_str = "unknown"
+            self.side = SideWrapper(side_str)
         else:
             # Order object
             self.id = getattr(data, "id", None)
@@ -62,10 +72,27 @@ class OrderWrapper:
             self.status = StatusWrapper(status_str)
             self.filled_qty = getattr(data, "filled_qty", None)
             self.filled_avg_price = getattr(data, "filled_avg_price", None)
+            # Handle side attribute with enum support
+            side_val = getattr(data, "side", None)
+            if side_val:
+                if hasattr(side_val, "value"):
+                    side_str = str(getattr(side_val, "value")).lower()
+                else:
+                    side_str = str(side_val).lower()
+            else:
+                side_str = "unknown"
+            self.side = SideWrapper(side_str)
 
 
 class StatusWrapper:
     """Wrapper for order status."""
+
+    def __init__(self, value: str):
+        self.value = value
+
+
+class SideWrapper:
+    """Wrapper for order side (buy/sell)."""
 
     def __init__(self, value: str):
         self.value = value
