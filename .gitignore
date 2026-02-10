@@ -49,6 +49,7 @@ logs/
 
 # Data
 data/reconciliation_error.json
+data/reconciliation_fix.json
 data/trades.db
 
 # Build
