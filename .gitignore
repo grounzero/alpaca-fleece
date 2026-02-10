@@ -77,6 +77,7 @@ agents/
 
 # Runtime files
 data/*.pid
+data/metrics.json
 
 docs/
 

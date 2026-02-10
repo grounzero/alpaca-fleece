@@ -376,9 +376,23 @@ class StreamPolling:
                     filled_qty = alpaca_order.get("filled_qty")
                     filled_avg_price = alpaca_order.get("filled_avg_price")
                 else:
-                    current_status = str(alpaca_order.status) if alpaca_order.status else "unknown"
+                    # Normalize enum status values properly (use .value when present)
+                    status_val = getattr(alpaca_order, "status", None)
+                    if status_val:
+                        if hasattr(status_val, "value"):
+                            current_status = str(getattr(status_val, "value")).lower()
+                        else:
+                            current_status = str(status_val).lower()
+                    else:
+                        current_status = "unknown"
                     filled_qty = getattr(alpaca_order, "filled_qty", None)
                     filled_avg_price = getattr(alpaca_order, "filled_avg_price", None)
+
+                # Coerce numeric values to float for SQLite compatibility
+                if filled_qty is not None:
+                    filled_qty = float(filled_qty)
+                if filled_avg_price is not None:
+                    filled_avg_price = float(filled_avg_price)
 
                 # If status changed, persist to DB and trigger update
                 if current_status != order["status"]:
@@ -525,7 +539,7 @@ class StreamPolling:
                 feed=active_feed,
             )
 
-            bars_by_symbol = self.client.get_stock_bars(request)
+            bars_by_symbol = await asyncio.to_thread(self.client.get_stock_bars, request)
 
             # Process each symbol's bars
             # BarSet.data is a dict: {symbol: [bar1, bar2, ...]}

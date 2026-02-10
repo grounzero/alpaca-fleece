@@ -154,6 +154,48 @@ class TestOrderUpdatePolling:
         assert update_event.order.status.value == "filled"
 
     @pytest.mark.asyncio
+    async def test_check_order_status_handles_enum_status(self, mock_stream):
+        """_check_order_status should handle enum-like status objects with .value."""
+        stream = mock_stream
+
+        # Insert a submitted order
+        conn = sqlite3.connect(stream._db_path)
+        cursor = conn.cursor()
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            """
+            INSERT INTO order_intents
+            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
+        )
+        conn.commit()
+        conn.close()
+
+        # Mock Alpaca returning enum-like status
+        class OrderStatus:
+            FILLED = "filled"
+
+        mock_status = MagicMock()
+        mock_status.value = OrderStatus.FILLED
+
+        mock_order = MagicMock()
+        mock_order.id = "alpaca-123"
+        mock_order.status = mock_status
+        mock_order.filled_qty = "100"
+        mock_order.filled_avg_price = "150.00"
+        stream.trading_client.get_order_by_id.return_value = mock_order
+
+        # Test
+        await stream._check_order_status()
+
+        # Should emit update with normalized status
+        assert stream.on_order_update.called
+        update_event = stream.on_order_update.call_args[0][0]
+        assert update_event.order.status.value == "filled"
+
+    @pytest.mark.asyncio
     async def test_check_order_status_does_not_emit_duplicate(self, mock_stream):
         """_check_order_status should not emit duplicate updates for same transition."""
         stream = mock_stream
@@ -258,6 +300,30 @@ class TestOrderUpdatePolling:
         mock_order.client_order_id = "test-order"
         mock_order.symbol = "AAPL"
         mock_order.status = "filled"
+        mock_order.filled_qty = 100
+        mock_order.filled_avg_price = 150.00
+
+        event = stream._create_order_update_event(mock_order)
+
+        assert event.order.id == "alpaca-123"
+        assert event.order.status.value == "filled"
+
+    def test_create_order_update_event_normalizes_enum_status(self):
+        """_create_order_update_event should normalize enum status with .value attribute."""
+        stream = StreamPolling("test_key", "test_secret")
+
+        # Create a mock enum-like status object
+        class OrderStatus:
+            FILLED = "filled"
+
+        mock_status = MagicMock()
+        mock_status.value = OrderStatus.FILLED
+
+        mock_order = MagicMock()
+        mock_order.id = "alpaca-123"
+        mock_order.client_order_id = "test-order"
+        mock_order.symbol = "AAPL"
+        mock_order.status = mock_status
         mock_order.filled_qty = 100
         mock_order.filled_avg_price = 150.00
 
