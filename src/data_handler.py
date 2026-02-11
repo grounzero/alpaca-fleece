@@ -1,7 +1,7 @@
 """Data handler - coordination layer over data/* handlers.
 
 Routes raw data from Stream to appropriate data/* handlers.
-Does NOT normalise, persist, or publish (handlers do that).
+Does NOT convert to canonical events, persist, or publish (handlers do that).
 
 Provides query interface:
 - get_dataframe(symbol) → DataFrame

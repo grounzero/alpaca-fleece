@@ -1,9 +1,9 @@
-"""Order update normalisation and persistence.
+"""Order update processing and persistence.
 
-Receives raw order updates from Stream via DataHandler.
-Normalises to OrderUpdateEvent.
-Updates order_intents table.
-If filled: inserts into trades table.
+Receives raw order updates from the stream via the DataHandler.
+Converts them to OrderUpdateEvent objects.
+Updates the order_intents table.
+If filled, inserts a record into the trades table.
 Publishes to EventBus.
 """
 
@@ -37,15 +37,16 @@ class OrderUpdatesHandler:
             raw_update: Raw order update object from SDK
         """
         try:
-            # Normalise to OrderUpdateEvent
-            event = self._normalise_order_update(raw_update)
+            # Convert raw SDK update to a canonical OrderUpdateEvent
+            event = self._to_canonical_order_update(raw_update)
 
-            # Update order_intents table
+            # Update order_intents table (including avg fill price when available)
             self.state_store.update_order_intent(
                 client_order_id=event.client_order_id,
                 status=event.status,
                 filled_qty=event.filled_qty,
                 alpaca_order_id=event.order_id,
+                filled_avg_price=event.avg_fill_price,
             )
 
             # If filled: record in trades table
@@ -59,20 +60,48 @@ class OrderUpdatesHandler:
         except (AttributeError, TypeError, ValueError) as e:
             logger.error(f"Failed to process order update: {e}")
 
-    def _normalise_order_update(self, raw_update: Any) -> OrderUpdateEvent:
-        """Normalise raw SDK order update to OrderUpdateEvent."""
+    def _extract_enum_value(self, attr: Any, default: str = "unknown") -> str:
+        """Convert enum-or-string attributes to a lowercase string with a default.
+
+        Handles attributes that may be:
+        - None
+        - Enum-like objects with a `.value` attribute
+        - Plain strings or other primitives
+        """
+        if attr is None:
+            return default
+
+        # Use `.value` if present (e.g., Enum), otherwise use the attribute itself.
+        value = getattr(attr, "value", attr)
+        return str(value).lower()
+
+    def _to_canonical_order_update(self, raw_update: Any) -> OrderUpdateEvent:
+        """Convert raw SDK order update to a canonical OrderUpdateEvent."""
+        # Safely access side attribute using getattr
+        order = getattr(raw_update, "order", None)
+        side_attr = getattr(order, "side", None)
+        side_value = self._extract_enum_value(side_attr)
+
+        # Safely access status with enum/string handling
+        status_attr = getattr(order, "status", None)
+        status_value = self._extract_enum_value(status_attr)
+
+        # Safely access other order attributes with defaults
+        order_id = getattr(order, "id", "") or ""
+        client_order_id = getattr(order, "client_order_id", "") or ""
+        symbol = getattr(order, "symbol", "") or ""
+        filled_qty = getattr(order, "filled_qty", None)
+        filled_avg_price = getattr(order, "filled_avg_price", None)
+
         return OrderUpdateEvent(
-            order_id=raw_update.order.id,
-            client_order_id=raw_update.order.client_order_id,
-            symbol=raw_update.order.symbol,
-            status=raw_update.order.status.value if raw_update.order.status else "unknown",
-            filled_qty=float(raw_update.order.filled_qty) if raw_update.order.filled_qty else 0,
-            avg_fill_price=(
-                float(raw_update.order.filled_avg_price)
-                if raw_update.order.filled_avg_price
-                else None
-            ),
-            timestamp=raw_update.at if raw_update.at else datetime.now(timezone.utc),
+            order_id=order_id,
+            client_order_id=client_order_id,
+            symbol=symbol,
+            side=side_value,
+            status=status_value,
+            filled_qty=float(filled_qty) if filled_qty else 0,
+            avg_fill_price=float(filled_avg_price) if filled_avg_price else None,
+            timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
         )
 
     def _record_trade(self, event: OrderUpdateEvent) -> None:
@@ -93,7 +122,7 @@ class OrderUpdatesHandler:
             (
                 event.timestamp.isoformat(),
                 event.symbol,
-                "buy",  # TODO: extract from event or order details
+                event.side,
                 event.filled_qty,
                 event.avg_fill_price,
                 event.order_id,
