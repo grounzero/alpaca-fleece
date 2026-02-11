@@ -58,7 +58,9 @@ async def test_preserve_existing_filled_qty_when_missing(tmp_path):
     # Verify DB still has filled_qty=5
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
-        cur.execute("SELECT filled_qty FROM order_intents WHERE client_order_id = ?", ("test-order",))
+        cur.execute(
+            "SELECT filled_qty FROM order_intents WHERE client_order_id = ?", ("test-order",)
+        )
         row = cur.fetchone()
 
     assert row[0] == 5
