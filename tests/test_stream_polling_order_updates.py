@@ -59,47 +59,46 @@ class TestOrderUpdatePolling:
         """_get_submitted_orders should return only non-terminal orders."""
         stream = mock_stream
 
-        # Insert test orders
+        # Insert test orders into DB using a context manager
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(stream._db_path) as conn:
             cursor = conn.cursor()
 
-        # Non-terminal orders (should be returned)
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("order-1", "AAPL", "buy", 100, "submitted", "alpaca-1", now, now),
-        )
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("order-2", "MSFT", "sell", 50, "partially_filled", "alpaca-2", now, now),
-        )
+            # Non-terminal orders (should be returned)
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("order-1", "AAPL", "buy", 100, "submitted", "alpaca-1", now, now),
+            )
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("order-2", "MSFT", "sell", 50, "partially_filled", "alpaca-2", now, now),
+            )
 
-        # Terminal orders (should NOT be returned)
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("order-3", "GOOGL", "buy", 25, "filled", "alpaca-3", now, now),
-        )
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("order-4", "TSLA", "sell", 10, "cancelled", "alpaca-4", now, now),
-        )
-        # context manager commits on success
+            # Terminal orders (should NOT be returned)
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("order-3", "GOOGL", "buy", 25, "filled", "alpaca-3", now, now),
+            )
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("order-4", "TSLA", "sell", 10, "cancelled", "alpaca-4", now, now),
+            )
 
         # Test
         orders = stream._get_submitted_orders()

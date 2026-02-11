@@ -10,10 +10,10 @@ Publishes to EventBus.
 import logging
 from datetime import datetime, timezone
 from typing import Any, Optional
-from src.utils import parse_optional_float
 
 from src.event_bus import EventBus, OrderUpdateEvent
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
