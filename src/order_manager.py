@@ -119,13 +119,17 @@ class OrderManager:
         try:
             # Run blocking I/O in a thread to avoid blocking the asyncio event loop
             positions = await asyncio.to_thread(self.broker.get_positions)
-            pos_qty = 0.0
+            pos_qty: float | None = 0.0
             for p in positions:
                 if p.get("symbol") == symbol:
                     pos_qty = float(p.get("qty", 0) or 0)
                     break
         except Exception:
-            pos_qty = 0.0
+            # Conservative behavior on failure: treat position as unknown
+            # and prefer exiting existing exposure rather than opening the
+            # opposite direction. Log the failure for observability.
+            logger.exception("Failed to fetch positions; treating position as unknown for %s", symbol)
+            pos_qty = None
 
         # Decide action: buy -> ENTER_LONG (typically exposure-increasing)
         # sell -> if currently long, it's an exit; if flat, treat as ENTER_SHORT
@@ -133,7 +137,12 @@ class OrderManager:
             action = "ENTER_LONG"
         else:
             # sell
-            if pos_qty > 0:
+            # If we couldn't determine current position (pos_qty is None),
+            # be conservative and treat sell as an exit rather than opening a
+            # short position.
+            if pos_qty is None:
+                action = "EXIT_LONG"
+            elif pos_qty > 0:
                 action = "EXIT_LONG"
             else:
                 action = "ENTER_SHORT"
@@ -152,7 +161,7 @@ class OrderManager:
         entry_actions = ("ENTER_LONG", "ENTER_SHORT")
         if action in entry_actions:
             # Position-aware block: don't open same-direction exposure if already in position
-            if action == "ENTER_LONG" and pos_qty > 0:
+            if action == "ENTER_LONG" and pos_qty is not None and pos_qty > 0:
                 logger.info(
                     "Blocking entry: already_in_position symbol=%s action=%s pos_qty=%s",
                     symbol,
@@ -160,7 +169,7 @@ class OrderManager:
                     pos_qty,
                 )
                 return False
-            if action == "ENTER_SHORT" and pos_qty < 0:
+            if action == "ENTER_SHORT" and pos_qty is not None and pos_qty < 0:
                 logger.info(
                     "Blocking entry: already_in_position symbol=%s action=%s pos_qty=%s",
                     symbol,
