@@ -109,6 +109,14 @@ class OrderUpdatesHandler:
         parsed_filled_qty: Optional[float] = parse_optional_float(raw_filled_qty)
         parsed_filled_avg_price: Optional[float] = parse_optional_float(raw_filled_avg_price)
 
+        # Note: `parsed_filled_qty` and `parsed_filled_avg_price` may be None.
+        # We intentionally preserve None here (do not coerce filled_qty to 0)
+        # so that the StateStore's SQL `COALESCE(?, filled_qty)` can decide
+        # whether to overwrite the stored value. Downstream consumers that
+        # assume `filled_qty` is numeric must guard against None (for example,
+        # `_record_trade` should skip recording a trade or retrieve the
+        # existing DB quantity when `filled_qty` is None) to avoid inserting
+        # invalid trades or violating DB constraints.
         return OrderUpdateEvent(
             order_id=order_id,
             client_order_id=client_order_id,
