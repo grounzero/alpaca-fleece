@@ -5,6 +5,7 @@ This module provides the same interface as Stream but uses HTTP polling instead 
 
 import asyncio
 import logging
+import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
@@ -19,9 +20,10 @@ from src.utils import batch_iter
 
 logger = logging.getLogger(__name__)
 
-# Module-level constants for Alpaca API URLs
-PAPER_API_URL = "https://paper-api.alpaca.markets"
-LIVE_API_URL = "https://api.alpaca.markets"
+# Module-level Alpaca API URLs. Allow overriding via environment variables so
+# deployments can change endpoints without modifying code.
+PAPER_API_URL = os.getenv("ALPACA_PAPER_API_URL", "https://paper-api.alpaca.markets")
+LIVE_API_URL = os.getenv("ALPACA_LIVE_API_URL", "https://api.alpaca.markets")
 
 
 # Module-level order update wrappers to avoid redefining classes on every poll
@@ -401,8 +403,16 @@ class StreamPolling:
         Returns:
             UUID formatted string
         """
+        # Use the stdlib uuid module for robust parsing/formatting when a
+        # 32-character hex string is provided. Fall back to the original
+        # value on any parsing error to avoid breaking lookups.
         if len(hex_str) == 32:
-            return f"{hex_str[:8]}-{hex_str[8:12]}-{hex_str[12:16]}-{hex_str[16:20]}-{hex_str[20:]}"
+            try:
+                import uuid
+
+                return str(uuid.UUID(hex=hex_str))
+            except Exception:
+                return hex_str
         return hex_str  # Already in UUID format
 
     async def _check_order_status(self) -> None:
