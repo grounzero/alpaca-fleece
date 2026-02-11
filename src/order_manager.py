@@ -9,6 +9,7 @@ Key responsibilities:
 Uses float at module boundaries for API compatibility.
 """
 
+import asyncio
 import hashlib
 import logging
 from datetime import datetime
@@ -109,8 +110,15 @@ class OrderManager:
         # Determine whether this signal is an exposure-increasing entry or an exit
         # Map to actions used by the gating table
         action = None
+        # NOTE: `submit_order` is async. Calling the broker synchronously here
+        # may perform network I/O and block the event loop. If `Broker.get_positions`
+        # is I/O-bound consider one of the following to avoid blocking:
+        # - make `get_positions` an async method and `await` it here,
+        # - call it in a thread with `await asyncio.to_thread(self.broker.get_positions)`,
+        # - or cache recent positions elsewhere (e.g. PositionTracker) and read from cache.
         try:
-            positions = self.broker.get_positions()
+            # Run blocking I/O in a thread to avoid blocking the asyncio event loop
+            positions = await asyncio.to_thread(self.broker.get_positions)
             pos_qty = 0.0
             for p in positions:
                 if p.get("symbol") == symbol:
