@@ -512,8 +512,43 @@ class StreamPolling:
                         filled_avg_price,
                     )
 
-                    # Create update event
-                    update_event = self._create_order_update_event(alpaca_order)
+                    # Create update event, merging DB row fallback values so
+                    # missing Alpaca fields (client_order_id, symbol, side)
+                    # don't produce events with empty identifiers.
+                    fallback = {
+                        "client_order_id": order.get("client_order_id", ""),
+                        "symbol": order.get("symbol", ""),
+                        "side": order.get("side", "unknown"),
+                        "id": order.get("alpaca_order_id", None),
+                        "status": current_status,
+                        "filled_qty": filled_qty,
+                        "filled_avg_price": filled_avg_price,
+                    }
+
+                    if isinstance(alpaca_order, dict):
+                        merged = {**fallback, **alpaca_order}
+                    else:
+                        # Extract common attrs from SDK Order-like object
+                        extracted = {
+                            "id": getattr(alpaca_order, "id", None),
+                            "client_order_id": getattr(alpaca_order, "client_order_id", None),
+                            "symbol": getattr(alpaca_order, "symbol", None),
+                            "status": getattr(alpaca_order, "status", None),
+                            "filled_qty": getattr(alpaca_order, "filled_qty", None),
+                            "filled_avg_price": getattr(alpaca_order, "filled_avg_price", None),
+                            "side": getattr(alpaca_order, "side", None),
+                        }
+                        # Prefer SDK values when present, but coerce status/filled
+                        # fields to the canonical values to avoid
+                        # embedding enum or MagicMock objects into the dict.
+                        merged = {**fallback, **{k: v for k, v in extracted.items() if v is not None}}
+
+                    # Ensure canonical fields overwrite any raw SDK objects
+                    merged["status"] = current_status
+                    merged["filled_qty"] = filled_qty
+                    merged["filled_avg_price"] = filled_avg_price
+
+                    update_event = self._create_order_update_event(merged)
 
                     # Call handler if registered
                     if self.on_order_update:
