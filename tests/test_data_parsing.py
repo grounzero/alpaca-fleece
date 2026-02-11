@@ -95,33 +95,34 @@ def test_get_dataframe_edge_timestamps():
     assert df.loc[t1, "close"] == 2.0
 
 
-def test_order_normalisation_missing_fill_price():
-    # Build minimal raw_update object
+def test_order_normalisation_missing_fill_price_and_side():
+    # Build minimal raw_update object for both 'buy' and 'sell' sides
     class Status:
         def __init__(self, value):
             self.value = value
 
     class RawOrder:
-        def __init__(self):
+        def __init__(self, side_val):
             self.id = "oid"
             self.client_order_id = "cid"
             self.symbol = "SYM"
-            self.side = Status("buy")
+            self.side = Status(side_val)
             self.status = Status("filled")
             self.filled_qty = None
             self.filled_avg_price = None
 
     class RawUpdate:
-        def __init__(self):
-            self.order = RawOrder()
+        def __init__(self, side_val):
+            self.order = RawOrder(side_val)
             self.at = None
 
     ouh = OrderUpdatesHandler(state_store=None, event_bus=None)
-    evt = ouh._to_canonical_order_update(RawUpdate())
-
-    assert isinstance(evt, OrderUpdateEvent)
-    assert evt.avg_fill_price is None
-    assert evt.filled_qty == 0
+    for side in ("buy", "sell"):
+        evt = ouh._to_canonical_order_update(RawUpdate(side))
+        assert isinstance(evt, OrderUpdateEvent)
+        assert evt.avg_fill_price is None
+        assert evt.filled_qty == 0
+        assert evt.side == side
 
 
 def test_snapshots_cache_and_error(monkeypatch):
