@@ -209,11 +209,19 @@ class Orchestrator:
                             {"issue": str(e2), "sqlite_value": "unknown", "alpaca_value": "unknown"}
                         ]
                 else:
-                    logger.error(f"   Position sync failed: {result.stderr}")
-                    errors.append(f"Reconciliation failed: {e}")
+                    logger.error(
+                        f"   Position sync failed (rc={result.returncode}). stdout={result.stdout!r} stderr={result.stderr!r}"
+                    )
+                    errors.append(
+                        f"Position sync failed (rc={result.returncode}): stdout={result.stdout!r}, stderr={result.stderr!r}"
+                    )
                     reconciliation_status = "discrepancies_found"
                     discrepancies = [
-                        {"issue": str(e), "sqlite_value": "unknown", "alpaca_value": "unknown"}
+                        {
+                            "issue": f"Position sync failed (rc={result.returncode})",
+                            "sqlite_value": "unknown",
+                            "alpaca_value": "unknown",
+                        }
                     ]
 
             # Get risk config

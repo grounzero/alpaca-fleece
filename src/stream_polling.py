@@ -140,8 +140,12 @@ class StreamPolling:
         self.api_key = api_key
         self.secret_key = secret_key
         self.paper = paper
-        self.feed: str = feed or "iex"  # Keep as string for API compatibility
-        self._data_feed: DataFeed = DataFeed(self.feed)  # Internal enum
+        # Normalise feed string for common variants (case/whitespace) and validate
+        self.feed: str = (feed or "iex").strip().lower()
+        try:
+            self._data_feed: DataFeed = DataFeed(self.feed)  # Internal enum
+        except Exception as exc:
+            raise ValueError(f"Invalid data feed '{self.feed}'. Expected 'iex' or 'sip'.") from exc
         self.batch_size = batch_size
 
         # Historical data client for polling
@@ -522,7 +526,7 @@ class StreamPolling:
                 cursor.execute(
                     """
                     UPDATE order_intents
-                    SET status = ?, filled_qty = ?, filled_avg_price = ?, updated_at_utc = ?
+                    SET status = ?, filled_qty = COALESCE(?, filled_qty), filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
                     WHERE client_order_id = ?
                     """,
                     (

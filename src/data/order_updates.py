@@ -96,7 +96,7 @@ class OrderUpdatesHandler:
             status=status_value,
             filled_qty=float(filled_qty) if filled_qty else 0,
             avg_fill_price=float(filled_avg_price) if filled_avg_price else None,
-            timestamp=raw_update.at if raw_update.at else datetime.now(timezone.utc),
+            timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
         )
 
     def _record_trade(self, event: OrderUpdateEvent) -> None:
