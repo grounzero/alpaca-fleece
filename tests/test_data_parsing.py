@@ -30,9 +30,9 @@ def test_bar_parsing_with_missing_optional_fields():
     ts = datetime.now(timezone.utc)
     raw = DummyRawBar("TST", ts, 1.0, 2.0, 0.5, 1.5, 100)
 
-    # Use BarsHandler._normalise_bar directly (no DB required)
+    # Use BarsHandler._to_canonical_bar directly (no DB required)
     bh = BarsHandler(state_store=None, event_bus=None, market_data_client=None)
-    evt = bh._normalise_bar(raw)
+    evt = bh._to_canonical_bar(raw)
 
     assert isinstance(evt, BarEvent)
     assert evt.symbol == "TST"
@@ -51,7 +51,7 @@ def test_bar_parsing_missing_required_raises():
 
     bh = BarsHandler(state_store=None, event_bus=None, market_data_client=None)
     with pytest.raises(AttributeError):
-        bh._normalise_bar(BrokenBar())
+        bh._to_canonical_bar(BrokenBar())
 
 
 def test_get_dataframe_edge_timestamps():
@@ -117,7 +117,7 @@ def test_order_normalisation_missing_fill_price():
             self.at = None
 
     ouh = OrderUpdatesHandler(state_store=None, event_bus=None)
-    evt = ouh._normalise_order_update(RawUpdate())
+    evt = ouh._to_canonical_order_update(RawUpdate())
 
     assert isinstance(evt, OrderUpdateEvent)
     assert evt.avg_fill_price is None
