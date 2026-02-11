@@ -641,6 +641,11 @@ class StreamPolling:
             # Only update filled_qty/filled_avg_price if not None; else preserve DB value.
             from src.utils import parse_optional_float
 
+            # Keep `filled_qty` as Optional[float] (None allowed) so that
+            # StateStore can decide whether to overwrite the DB value.
+            # We intentionally do NOT coerce None -> 0.0 here; the SQL
+            # uses `COALESCE(?, filled_qty)` to preserve existing values
+            # when the Alpaca response omits the field.
             qty_float: Optional[float] = parse_optional_float(filled_qty)
             self._get_state_store().update_order_intent(
                 client_order_id=client_order_id,
