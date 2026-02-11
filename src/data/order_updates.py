@@ -1,7 +1,7 @@
-"""Order update normalisation and persistence.
+"""Order update standardization and persistence.
 
 Receives raw order updates from Stream via DataHandler.
-Normalises to OrderUpdateEvent.
+Standardizes to OrderUpdateEvent.
 Updates order_intents table.
 If filled: inserts into trades table.
 Publishes to EventBus.
@@ -37,8 +37,8 @@ class OrderUpdatesHandler:
             raw_update: Raw order update object from SDK
         """
         try:
-            # Normalise to OrderUpdateEvent
-            event = self._normalise_order_update(raw_update)
+            # Convert raw SDK update to a canonical OrderUpdateEvent
+            event = self._to_canonical_order_update(raw_update)
 
             # Update order_intents table
             self.state_store.update_order_intent(
@@ -59,8 +59,8 @@ class OrderUpdatesHandler:
         except (AttributeError, TypeError, ValueError) as e:
             logger.error(f"Failed to process order update: {e}")
 
-    def _normalise_order_update(self, raw_update: Any) -> OrderUpdateEvent:
-        """Normalise raw SDK order update to OrderUpdateEvent."""
+    def _to_canonical_order_update(self, raw_update: Any) -> OrderUpdateEvent:
+        """Convert raw SDK order update to a canonical OrderUpdateEvent."""
         # Safely access side attribute using getattr
         order = getattr(raw_update, "order", None)
         side_attr = getattr(order, "side", None)

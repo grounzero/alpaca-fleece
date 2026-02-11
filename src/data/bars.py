@@ -1,7 +1,7 @@
-"""Bar data normalisation, persistence, caching.
+"""Bar data standardization, persistence, caching.
 
 Receives raw bars from Stream via DataHandler.
-Normalises to BarEvent.
+Standardizes to BarEvent.
 Persists to SQLite.
 Publishes to EventBus.
 Handles backfill on stream reconnect.
@@ -53,11 +53,11 @@ class BarsHandler:
             raw_bar: Raw bar object from SDK
 
         Raises:
-            ValueError: If bar normalization fails
+            ValueError: If bar standardization fails
         """
         try:
-            # Normalise to BarEvent
-            event = self._normalise_bar(raw_bar)
+            # Convert raw SDK bar to canonical BarEvent
+            event = self._to_canonical_bar(raw_bar)
 
             # Persist to SQLite
             self._persist_bar(event)
@@ -73,7 +73,7 @@ class BarsHandler:
 
             logger.debug(f"Bar: {event.symbol} {event.close}")
         except ValueError as e:
-            # Log normalisation errors with context
+            # Log standardization errors with context
             logger.error(
                 f"Failed to normalise bar: {e}",
                 extra={"raw_bar": str(raw_bar)},
@@ -87,8 +87,8 @@ class BarsHandler:
             )
             raise
 
-    def _normalise_bar(self, raw_bar: Any) -> BarEvent:
-        """Normalise raw SDK bar to BarEvent."""
+    def _to_canonical_bar(self, raw_bar: Any) -> BarEvent:
+        """Convert raw SDK bar to a canonical BarEvent."""
         return BarEvent(
             symbol=raw_bar.symbol,
             timestamp=raw_bar.timestamp,

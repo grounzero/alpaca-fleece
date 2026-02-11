@@ -142,7 +142,7 @@ class StreamPolling:
         self.api_key = api_key
         self.secret_key = secret_key
         self.paper = paper
-        # Normalise feed string for common variants (case/whitespace) and validate
+        # Standardize feed string for common variants (case/whitespace) and validate
         self.feed: str = (feed or "iex").strip().lower()
         try:
             self._data_feed: DataFeed = DataFeed(self.feed)  # Internal enum
@@ -547,13 +547,13 @@ class StreamPolling:
             logger.error(f"Database error updating order {client_order_id}: {e}")
 
     def _create_order_update_event(self, alpaca_order: Any) -> Any:
-        """Create a normalized order update event from Alpaca order data.
+        """Create a canonical order update event from Alpaca order data.
 
         Args:
             alpaca_order: Order data from Alpaca API (dict or Order object)
 
         Returns:
-            Normalized order update event matching expected interface
+            Canonical order update event matching expected interface
         """
         # Use module-level wrapper classes (defined once, not per-call)
         return OrderUpdateWrapper(alpaca_order)
