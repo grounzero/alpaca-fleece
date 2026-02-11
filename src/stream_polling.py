@@ -202,7 +202,10 @@ class StreamPolling:
     def _get_state_store(self) -> StateStore:
         """Return a StateStore instance for the current DB path, recreating
         it if `self._db_path` has changed (tests modify `_db_path`)."""
-        if self._state_store is None or getattr(self._state_store, "db_path", None) != self._db_path:
+        if (
+            self._state_store is None
+            or getattr(self._state_store, "db_path", None) != self._db_path
+        ):
             self._state_store = StateStore(self._db_path)
         return self._state_store
 
@@ -451,7 +454,8 @@ class StreamPolling:
                     # Query Alpaca for current status in a worker thread
                     # Ensure we pass a non-None string to the trading client
                     alpaca_order = await asyncio.to_thread(
-                        self.trading_client.get_order_by_id, alpaca_order_id or order["alpaca_order_id"]
+                        self.trading_client.get_order_by_id,
+                        alpaca_order_id or order["alpaca_order_id"],
                     )
 
                 if not alpaca_order:
@@ -541,7 +545,10 @@ class StreamPolling:
                         # Prefer SDK values when present, but coerce status/filled
                         # fields to the canonical values to avoid
                         # embedding enum or MagicMock objects into the dict.
-                        merged = {**fallback, **{k: v for k, v in extracted.items() if v is not None}}
+                        merged = {
+                            **fallback,
+                            **{k: v for k, v in extracted.items() if v is not None},
+                        }
 
                     # Ensure canonical fields overwrite any raw SDK objects
                     merged["status"] = current_status
