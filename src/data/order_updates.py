@@ -137,7 +137,7 @@ class OrderUpdatesHandler:
 
         # Require an avg fill price to record trades
         if event.avg_fill_price is None:
-            logger.warning(f"Filled order {event.client_order_id} has no fill price")
+            logger.warning("Filled order %s has no fill price", event.client_order_id)
             return
 
         # If filled_qty is None, attempt to retrieve the last known value from
