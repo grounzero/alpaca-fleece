@@ -163,12 +163,17 @@ class StateStore:
                     cursor.execute("DROP TABLE IF EXISTS trades")
                     cursor.execute("ALTER TABLE trades_new RENAME TO trades")
                     conn.commit()
-            except sqlite3.Error:
-                # If migration fails, log and continue — developer may need
-                # to reset DB manually in dev environments.
+            except sqlite3.Error as e:
+                # If migration fails, log and raise so the app doesn't run
+                # with an incompatible schema. Developer may need to reset
+                # the DB manually in dev environments.
                 logger.exception(
                     "Failed to migrate trades table for uniqueness; existing DB may need manual reset."
                 )
+                raise StateStoreError(
+                    "Database schema migration for trades table failed; "
+                    "application cannot safely continue."
+                ) from e
 
             # Equity curve table
             cursor.execute("""
