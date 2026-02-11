@@ -27,24 +27,22 @@ def mock_stream(tmp_path):
     stream.on_order_update = AsyncMock()
 
     # Create table immediately
-    conn = sqlite3.connect(stream._db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        CREATE TABLE IF NOT EXISTS order_intents (
-            client_order_id TEXT PRIMARY KEY,
-            symbol TEXT NOT NULL,
-            side TEXT NOT NULL,
-            qty NUMERIC(10, 4) NOT NULL,
-            status TEXT NOT NULL,
-            filled_qty NUMERIC(10, 4) DEFAULT 0,
-            filled_avg_price NUMERIC(10, 4),
-            alpaca_order_id TEXT,
-            created_at_utc TEXT NOT NULL,
-            updated_at_utc TEXT NOT NULL
-        )
-        """)
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(stream._db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS order_intents (
+                client_order_id TEXT PRIMARY KEY,
+                symbol TEXT NOT NULL,
+                side TEXT NOT NULL,
+                qty NUMERIC(10, 4) NOT NULL,
+                status TEXT NOT NULL,
+                filled_qty NUMERIC(10, 4) DEFAULT 0,
+                filled_avg_price NUMERIC(10, 4),
+                alpaca_order_id TEXT,
+                created_at_utc TEXT NOT NULL,
+                updated_at_utc TEXT NOT NULL
+            )
+            """)
 
     yield stream
 
@@ -62,9 +60,9 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert test orders
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
 
         # Non-terminal orders (should be returned)
         cursor.execute(
@@ -101,8 +99,7 @@ class TestOrderUpdatePolling:
             """,
             ("order-4", "TSLA", "sell", 10, "cancelled", "alpaca-4", now, now),
         )
-        conn.commit()
-        conn.close()
+        # context manager commits on success
 
         # Test
         orders = stream._get_submitted_orders()
@@ -122,19 +119,17 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert a submitted order
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
+            )
 
         # Mock Alpaca returning filled status
         mock_order = {
@@ -160,19 +155,17 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert a submitted order
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
+            )
 
         # Mock Alpaca returning enum-like status
         class OrderStatus:
@@ -203,19 +196,17 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert a submitted order
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
+            )
 
         # Create a stdlib Enum for status
         class OrderStatus(Enum):
@@ -243,19 +234,17 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert a filled order (already filled in DB)
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("test-order", "AAPL", "buy", 100, "filled", 100, "alpaca-123", now, now),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("test-order", "AAPL", "buy", 100, "filled", 100, "alpaca-123", now, now),
+            )
 
         # Mock Alpaca also returning filled status (same as DB)
         mock_order = {
@@ -281,32 +270,29 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert a submitted order
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
+            )
 
         # Update status
         stream._update_order_status("test-order", "filled", 100, 150.00)
 
         # Verify in DB
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT status, filled_qty FROM order_intents WHERE client_order_id = ?",
-            ("test-order",),
-        )
-        row = cursor.fetchone()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT status, filled_qty FROM order_intents WHERE client_order_id = ?",
+                ("test-order",),
+            )
+            row = cursor.fetchone()
 
         assert row[0] == "filled"
         assert row[1] == 100
@@ -317,19 +303,17 @@ class TestOrderUpdatePolling:
         stream = mock_stream
 
         # Insert a submitted order with existing filled_qty=5
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
         now = datetime.now(timezone.utc).isoformat()
-        cursor.execute(
-            """
-            INSERT INTO order_intents
-            (client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id, created_at_utc, updated_at_utc)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            ("test-order", "AAPL", "buy", 100, "submitted", 5, "alpaca-123", now, now),
-        )
-        conn.commit()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """
+                INSERT INTO order_intents
+                (client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id, created_at_utc, updated_at_utc)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                """,
+                ("test-order", "AAPL", "buy", 100, "submitted", 5, "alpaca-123", now, now),
+            )
 
         # Mock Alpaca returning a status transition but missing filled_qty
         mock_order = {
@@ -344,14 +328,13 @@ class TestOrderUpdatePolling:
         await stream._check_order_status()
 
         # Verify DB still has previous filled_qty (5)
-        conn = sqlite3.connect(stream._db_path)
-        cursor = conn.cursor()
-        cursor.execute(
-            "SELECT filled_qty FROM order_intents WHERE client_order_id = ?",
-            ("test-order",),
-        )
-        row = cursor.fetchone()
-        conn.close()
+        with sqlite3.connect(stream._db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT filled_qty FROM order_intents WHERE client_order_id = ?",
+                ("test-order",),
+            )
+            row = cursor.fetchone()
 
         assert row[0] == 5
 

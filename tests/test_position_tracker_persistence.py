@@ -22,26 +22,24 @@ def test_load_persisted_positions_converts_numeric_types(tmp_path):
     now = datetime.now(timezone.utc).isoformat()
 
     # Insert a row with mixed numeric types (strings and Decimal)
-    conn = sqlite3.connect(db_file)
-    cur = conn.cursor()
-    cur.execute(
-        "INSERT OR REPLACE INTO position_tracking (symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, pending_exit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (
-            "ABC",
-            "long",
-            "2.0000",  # qty as string
-            str(Decimal("123.45")),  # entry_price as string to emulate Decimal storage
-            "1.2500",  # atr as string
-            now,
-            str(Decimal("125.00")),
-            None,
-            0,
-            0,
-            now,
-        ),
-    )
-    conn.commit()
-    conn.close()
+    with sqlite3.connect(db_file) as conn:
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT OR REPLACE INTO position_tracking (symbol, side, qty, entry_price, atr, entry_time, extreme_price, trailing_stop_price, trailing_stop_activated, pending_exit, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+            (
+                "ABC",
+                "long",
+                "2.0000",  # qty as string
+                str(Decimal("123.45")),  # entry_price as string to emulate Decimal storage
+                "1.2500",  # atr as string
+                now,
+                str(Decimal("125.00")),
+                None,
+                0,
+                0,
+                now,
+            ),
+        )
 
     loaded = pt.load_persisted_positions()
 
