@@ -175,4 +175,3 @@ class OrderUpdatesHandler:
                     event.client_order_id,
                 ),
             )
-            conn.commit()
