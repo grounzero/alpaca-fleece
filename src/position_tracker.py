@@ -234,6 +234,7 @@ class PositionTracker:
             "new_positions": new_positions,
             "removed_positions": removed_positions,
             "mismatches": mismatches,
+            "total_tracked": len(self._positions),
         }
 
     def _persist_position(self, position: PositionData) -> None:
