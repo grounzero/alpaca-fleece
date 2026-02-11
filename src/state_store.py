@@ -138,8 +138,12 @@ class StateStore:
 
                 if need_migration:
                     # Create a new table with the desired schema and unique constraints
+                    # Ensure any leftover `trades_new` from a prior partial
+                    # migration is removed so the migration is deterministic.
+                    cursor.execute("DROP TABLE IF EXISTS trades_new")
+
                     cursor.execute("""
-                        CREATE TABLE IF NOT EXISTS trades_new (
+                        CREATE TABLE trades_new (
                             id INTEGER PRIMARY KEY AUTOINCREMENT,
                             timestamp_utc TEXT NOT NULL,
                             symbol TEXT NOT NULL,
