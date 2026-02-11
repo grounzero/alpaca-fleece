@@ -226,7 +226,9 @@ class OrderManager:
 
             # Pending-order-aware block
             entry_side = "buy" if action == "ENTER_LONG" else "sell"
-            if self.state_store.has_open_exposure_increasing_order(symbol, entry_side):
+            if self.state_store.has_open_exposure_increasing_order(
+                symbol, entry_side, strategy=self.strategy_name
+            ):
                 logger.info(
                     "Blocking entry: open_order symbol=%s action=%s side=%s",
                     symbol,
