@@ -138,10 +138,8 @@ async def test_preserve_existing_filled_qty_when_attribute_absent(tmp_path):
         )
 
     # Build a raw update where the `order` object does NOT have `filled_qty`
-    class NoFilledQty(SimpleNamespace):
-        __slots__ = ()
-
-    order_obj = NoFilledQty(
+    # A plain SimpleNamespace without the attribute exercises the absent case.
+    order_obj = SimpleNamespace(
         id="alpaca-3",
         client_order_id="test-order-3",
         symbol="AAPL",
