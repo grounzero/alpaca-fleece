@@ -88,7 +88,7 @@ class StatusWrapper:
     """Wrapper for order status."""
 
     def __init__(self, value: str):
-        # Normalize status to a lowercase string so all event sources
+        # Set status to a lowercase string so all event sources
         # (SDK events, polling, etc.) present consistent status values.
         self.value = str(value).lower()
 
@@ -426,7 +426,7 @@ class StreamPolling:
                     filled_qty = alpaca_order.get("filled_qty")
                     filled_avg_price = alpaca_order.get("filled_avg_price")
                 else:
-                    # Normalize enum status values properly (use .value when present)
+                    # Ensure enum status values are in canonical form (use .value when present)
                     status_val = getattr(alpaca_order, "status", None)
                     if status_val:
                         if hasattr(status_val, "value"):
@@ -457,7 +457,7 @@ class StreamPolling:
                         filled_avg_price,
                     )
 
-                    # Create normalized update event
+                    # Create update event
                     update_event = self._create_order_update_event(alpaca_order)
 
                     # Call handler if registered

@@ -10,7 +10,7 @@ class DummyBroker:
     pass
 
 
-def test_load_persisted_positions_normalizes_numeric_types(tmp_path):
+def test_load_persisted_positions_converts_numeric_types(tmp_path):
     db_file = tmp_path / "positions.db"
 
     ss = StateStore(db_path=str(db_file))

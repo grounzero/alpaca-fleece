@@ -73,9 +73,9 @@ class BarsHandler:
 
             logger.debug(f"Bar: {event.symbol} {event.close}")
         except ValueError as e:
-            # Log standardization errors with context
+            # Log canonical conversion errors with context
             logger.error(
-                f"Failed to normalise bar: {e}",
+                f"Failed to convert bar to canonical form: {e}",
                 extra={"raw_bar": str(raw_bar)},
             )
             raise

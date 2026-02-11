@@ -190,7 +190,7 @@ class TestOrderUpdatePolling:
         # Test
         await stream._check_order_status()
 
-        # Should emit update with normalized status
+        # Should emit update with status
         assert stream.on_order_update.called
         update_event = stream.on_order_update.call_args[0][0]
         assert update_event.order.status.value == "filled"
