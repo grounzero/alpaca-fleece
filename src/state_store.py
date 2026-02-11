@@ -301,6 +301,12 @@ class StateStore:
                         "ALTER TABLE order_intents ADD COLUMN filled_avg_price NUMERIC(10, 4)"
                     )
                     conn.commit()
+                # Migration: ensure `strategy` column exists on order_intents
+                if "strategy" not in oi_columns:
+                    cursor.execute(
+                        "ALTER TABLE order_intents ADD COLUMN strategy TEXT DEFAULT ''"
+                    )
+                    conn.commit()
             except sqlite3.Error as e:
                 logger.warning(
                     "Could not migrate order_intents to add atr and filled_avg_price columns: %s",
@@ -315,18 +321,27 @@ class StateStore:
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def has_open_exposure_increasing_order(self, symbol: str, side: str) -> bool:
-        """Return True if an exposure-increasing order intent exists for (symbol, side).
+    def has_open_exposure_increasing_order(self, symbol: str, side: str, strategy: Optional[str] = None) -> bool:
+        """Return True if an exposure-increasing order intent exists.
 
-        Considers intents with statuses that indicate an order is in-flight or being processed.
+        If `strategy` is provided, scope the query to that strategy. Otherwise
+        behaves like the previous global check.
         """
         statuses = ("new", "accepted", "pending_new", "submitted", "partially_filled")
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            cursor.execute(
-                "SELECT 1 FROM order_intents WHERE symbol = ? AND side = ? AND status IN (?,?,?,?,?) LIMIT 1",
-                (symbol, side, *statuses),
-            )
+            # If a strategy is provided, scope the query to that strategy to avoid
+            # cross-strategy blocking when multiple strategies share the same account.
+            if strategy:
+                cursor.execute(
+                    "SELECT 1 FROM order_intents WHERE strategy = ? AND symbol = ? AND side = ? AND status IN (?,?,?,?,?) LIMIT 1",
+                    (strategy, symbol, side, *statuses),
+                )
+            else:
+                cursor.execute(
+                    "SELECT 1 FROM order_intents WHERE symbol = ? AND side = ? AND status IN (?,?,?,?,?) LIMIT 1",
+                    (symbol, side, *statuses),
+                )
             return cursor.fetchone() is not None
 
     def gate_try_accept(
@@ -426,7 +441,10 @@ class StateStore:
             if not row2:
                 return False
 
-            return row2[0] == last_accepted_iso
+            # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
+            stored_val: str = str(row2[0])
+            accepted: bool = stored_val == last_accepted_iso
+            return accepted
         except _sqlite.Error as e:
             try:
                 conn.rollback()
@@ -490,6 +508,7 @@ class StateStore:
         qty: float,
         status: str = "new",
         atr: float | None = None,
+        strategy: str = "",
     ) -> None:
         """Save order intent before submission (crash safety)."""
         now = datetime.now(timezone.utc).isoformat()
@@ -497,9 +516,9 @@ class StateStore:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO order_intents 
-                   (client_order_id, symbol, side, qty, atr, status, created_at_utc, updated_at_utc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (client_order_id, symbol, side, qty, atr, status, now, now),
+                   (client_order_id, strategy, symbol, side, qty, atr, status, created_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (client_order_id, strategy, symbol, side, qty, atr, status, now, now),
             )
             conn.commit()
 
@@ -534,24 +553,25 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
+                "SELECT client_order_id, strategy, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
                 (client_order_id,),
             )
             row = cursor.fetchone()
             if row:
-                atr_val = parse_optional_float(row[4])
+                atr_val = parse_optional_float(row[5])
                 # Convert required numeric fields to float and optional ones
                 # via the shared helper to avoid leaking Decimal/str values.
                 return {
                     "client_order_id": row[0],
-                    "symbol": row[1],
-                    "side": row[2],
-                    "qty": float(row[3]),
+                    "strategy": row[1],
+                    "symbol": row[2],
+                    "side": row[3],
+                    "qty": float(row[4]),
                     "atr": atr_val,
-                    "status": row[5],
-                    "filled_qty": parse_optional_float(row[6]),
-                    "filled_avg_price": parse_optional_float(row[7]),
-                    "alpaca_order_id": row[8],
+                    "status": row[6],
+                    "filled_qty": parse_optional_float(row[7]),
+                    "filled_avg_price": parse_optional_float(row[8]),
+                    "alpaca_order_id": row[9],
                 }
             return None
 
@@ -568,28 +588,29 @@ class StateStore:
             cursor = conn.cursor()
             if status:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE status = ?",
+                    "SELECT client_order_id, strategy, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE status = ?",
                     (status,),
                 )
             else:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents"
+                    "SELECT client_order_id, strategy, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents"
                 )
 
             rows = cursor.fetchall()
 
             def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
-                atr_val = parse_optional_float(row[4])
+                atr_val = parse_optional_float(row[5])
                 return {
                     "client_order_id": row[0],
-                    "symbol": row[1],
-                    "side": row[2],
-                    "qty": float(row[3]),
+                    "strategy": row[1],
+                    "symbol": row[2],
+                    "side": row[3],
+                    "qty": float(row[4]),
                     "atr": atr_val,
-                    "status": row[5],
-                    "filled_qty": parse_optional_float(row[6]),
-                    "filled_avg_price": parse_optional_float(row[7]),
-                    "alpaca_order_id": row[8],
+                    "status": row[6],
+                    "filled_qty": parse_optional_float(row[7]),
+                    "filled_avg_price": parse_optional_float(row[8]),
+                    "alpaca_order_id": row[9],
                 }
 
             return [map_row(row) for row in rows]

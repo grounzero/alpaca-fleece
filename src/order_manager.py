@@ -235,6 +235,7 @@ class OrderManager:
         atr_value: float | None = parse_optional_float(atr_raw)
         self.state_store.save_order_intent(
             client_order_id=client_order_id,
+            strategy=self.strategy_name,
             symbol=symbol,
             side=side,
             qty=float(qty),  # Convert Decimal to float for storage
