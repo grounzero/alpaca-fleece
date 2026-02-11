@@ -24,9 +24,9 @@ def test_record_trade_idempotent(tmp_path):
         timestamp=datetime.now(timezone.utc),
     )
 
-    # Record twice (simulate duplicate delivery)
-    handler._record_trade(event)
-    handler._record_trade(event)
+    # Record twice (simulate duplicate delivery) via the public API
+    handler.record_filled_trade(event)
+    handler.record_filled_trade(event)
 
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()

@@ -199,3 +199,12 @@ class OrderUpdatesHandler:
                     getattr(event, "fill_id", None),
                 ),
             )
+
+    def record_filled_trade(self, event: OrderUpdateEvent) -> None:
+        """Public wrapper to record a filled trade.
+
+        This small wrapper exists so callers (and tests) can exercise the
+        trade-recording logic without reaching into a private method or
+        invoking the async `on_order_update` entrypoint.
+        """
+        self._record_trade(event)
