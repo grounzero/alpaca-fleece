@@ -19,10 +19,22 @@ from typing import Optional
 
 from alpaca.trading.client import TradingClient
 
+
+def _get_bool_env(name: str, default: bool) -> bool:
+    """Parse a boolean environment variable.
+
+    Accepts 1/true/yes/y/on (case-insensitive) as truthy values.
+    """
+    value = os.environ.get(name)
+    if value is None:
+        return default
+    return value.strip().lower() in {"1", "true", "yes", "y", "on"}
+
+
 # Load credentials from environment
 API_KEY = os.environ.get("ALPACA_API_KEY")
 SECRET_KEY = os.environ.get("ALPACA_SECRET_KEY")
-PAPER = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+PAPER = _get_bool_env("ALPACA_PAPER", True)
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "data/trades.db")
 
 
