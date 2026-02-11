@@ -269,8 +269,8 @@ class TestOrderUpdatePolling:
         assert row[0] == "filled"
         assert row[1] == 100
 
-    def test_create_order_update_event_normalizes_dict(self):
-        """_create_order_update_event should normalize dict response."""
+    def test_create_order_update_event_converts_dict_to_canonical(self):
+        """_create_order_update_event should convert dict response to canonical form."""
         stream = StreamPolling("test_key", "test_secret")
 
         mock_order = {
@@ -291,8 +291,8 @@ class TestOrderUpdatePolling:
         assert event.order.filled_qty == "100"
         assert event.order.filled_avg_price == "150.00"
 
-    def test_create_order_update_event_normalizes_object(self):
-        """_create_order_update_event should normalize Order object response."""
+    def test_create_order_update_event_converts_object_to_canonical(self):
+        """_create_order_update_event should convert Order object response to canonical form."""
         stream = StreamPolling("test_key", "test_secret")
 
         mock_order = MagicMock()
@@ -308,8 +308,8 @@ class TestOrderUpdatePolling:
         assert event.order.id == "alpaca-123"
         assert event.order.status.value == "filled"
 
-    def test_create_order_update_event_normalizes_enum_status(self):
-        """_create_order_update_event should normalize enum status with .value attribute."""
+    def test_create_order_update_event_converts_enum_status_to_canonical(self):
+        """_create_order_update_event should convert enum status (with .value) to canonical form."""
         stream = StreamPolling("test_key", "test_secret")
 
         # Create a mock enum-like status object

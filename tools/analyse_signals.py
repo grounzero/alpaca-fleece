@@ -88,9 +88,7 @@ def summarize(df: pd.DataFrame) -> None:
     groups = df.groupby("sma")
     for sma, g in groups:
         print(f"  SMA {sma}: {len(g)} signals")
-        counts = g["regime"].value_counts()
-        total_counts = counts.sum() if counts.sum() else 1
-        rc = counts / total_counts
+        rc = g["regime"].value_counts(normalize=True)
         for r, p in rc.items():
             print(f"    {r}: {p * 100:.1f}%")
         print(f"    avg_confidence: {g['confidence'].mean():.3f}")
