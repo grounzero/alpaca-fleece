@@ -32,25 +32,24 @@ positions = client.get_all_positions()
 print(f"  Found {len(positions)} positions")
 
 # Connect to database
-conn = sqlite3.connect(DATABASE_PATH)
-cursor = conn.cursor()
+with sqlite3.connect(DATABASE_PATH) as conn:
+    cursor = conn.cursor()
 
-# Insert new snapshot
-now_utc = datetime.now(timezone.utc).isoformat()
-print(f"\n→ Inserting new snapshot at {now_utc}...")
+    # Insert new snapshot
+    now_utc = datetime.now(timezone.utc).isoformat()
+    print(f"\n→ Inserting new snapshot at {now_utc}...")
 
-for pos in positions:
-    qty = float(pos.qty)
-    entry = float(pos.avg_entry_price) if pos.avg_entry_price else 0.0
-    cursor.execute(
-        """INSERT INTO positions_snapshot (timestamp_utc, symbol, qty, avg_entry_price)
-           VALUES (?, ?, ?, ?)""",
-        (now_utc, pos.symbol, qty, entry),
-    )
-    print(f"  {pos.symbol}: qty={qty}, entry=${entry:.2f}")
+    for pos in positions:
+        qty = float(pos.qty)
+        entry = float(pos.avg_entry_price) if pos.avg_entry_price else 0.0
+        cursor.execute(
+            """INSERT INTO positions_snapshot (timestamp_utc, symbol, qty, avg_entry_price)
+               VALUES (?, ?, ?, ?)""",
+            (now_utc, pos.symbol, qty, entry),
+        )
+        print(f"  {pos.symbol}: qty={qty}, entry=${entry:.2f}")
 
-conn.commit()
-conn.close()
+    conn.commit()
 
 print("\n" + "=" * 60)
 print(f"✓ Inserted {len(positions)} positions into positions_snapshot")
