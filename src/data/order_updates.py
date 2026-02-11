@@ -131,27 +131,42 @@ class OrderUpdatesHandler:
     def _record_trade(self, event: OrderUpdateEvent) -> None:
         """Record filled order in trades table."""
         import sqlite3
-
+        # Require an avg fill price to record trades
         if event.avg_fill_price is None:
             logger.warning(f"Filled order {event.client_order_id} has no fill price")
             return
 
-        conn = sqlite3.connect(self.state_store.db_path)
-        cursor = conn.cursor()
+        # If filled_qty is None, attempt to retrieve the last known value from
+        # the StateStore (order_intents). If still missing, skip recording to
+        # avoid inserting NULL/invalid quantities into the trades table.
+        qty_to_record = event.filled_qty
+        if qty_to_record is None:
+            oi = self.state_store.get_order_intent(event.client_order_id)
+            if oi:
+                qty_to_record = oi.get("filled_qty")
 
-        cursor.execute(
-            """INSERT INTO trades 
-               (timestamp_utc, symbol, side, qty, price, order_id, client_order_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (
-                event.timestamp.isoformat(),
-                event.symbol,
-                event.side,
-                event.filled_qty,
-                event.avg_fill_price,
-                event.order_id,
+        if qty_to_record is None:
+            logger.warning(
+                "Skipping trade record for %s: filled_qty is missing",
                 event.client_order_id,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            )
+            return
+
+        # Insert trade using a context manager for the DB connection
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO trades 
+                   (timestamp_utc, symbol, side, qty, price, order_id, client_order_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event.timestamp.isoformat(),
+                    event.symbol,
+                    event.side,
+                    float(qty_to_record),
+                    float(event.avg_fill_price),
+                    event.order_id,
+                    event.client_order_id,
+                ),
+            )
+            conn.commit()
