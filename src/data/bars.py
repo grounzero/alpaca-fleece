@@ -1,10 +1,10 @@
-"""Bar data standardization, persistence, caching.
+"""Bar data processing, storage, and caching.
 
 Receives raw bars from Stream via DataHandler.
-Standardizes to BarEvent.
-Persists to SQLite.
+Converts them into BarEvent format.
+Saves to SQLite.
 Publishes to EventBus.
-Handles backfill on stream reconnect.
+Manages historical data loading on stream reconnection.
 """
 
 import logging
