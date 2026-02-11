@@ -85,17 +85,13 @@ async def test_gate_blocks_within_cooldown_and_allows_after(
     assert res_blocked is False
 
     # Now prime as if accepted 90 minutes ago -> should allow
-    # Simulate cooldown expiry by removing the persisted gate row so a new
+    # Simulate cooldown expiry by releasing the persisted gate row so a new
     # acceptance can occur deterministically.
-    import sqlite3
-
-    with sqlite3.connect(state_store.db_path) as conn:
-        cur = conn.cursor()
-        cur.execute(
-            "DELETE FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
-            ("sma_crossover", "AAPL", "ENTER_LONG"),
-        )
-        conn.commit()
+    # Verify gate exists first, then release it via the public helper.
+    gate = state_store.get_gate("sma_crossover", "AAPL", "ENTER_LONG")
+    assert gate is not None
+    state_store.release_gate("sma_crossover", "AAPL", "ENTER_LONG")
+    assert state_store.get_gate("sma_crossover", "AAPL", "ENTER_LONG") is None
 
     res_allowed = await order_mgr.submit_order(sig, qty=1.0)
     # With DRY_RUN enabled the order manager should accept and return True

@@ -337,27 +337,42 @@ class StateStore:
         now_utc: datetime,
         bar_ts_utc: Optional[datetime],
         cooldown: timedelta,
+        force: bool = False,
     ) -> bool:
         """Atomically try to accept an entry signal for (strategy, symbol, action).
 
-        Returns True if accepted and the gate row was created/updated within the same
-        BEGIN IMMEDIATE transaction. Returns False if blocked by cooldown or same-bar.
+        Non-force behavior: perform a monotonic upsert so older timestamps cannot
+        overwrite newer ones. Returns True only when the stored row contains the
+        new `now_utc` value after the operation.
+
+        If `force=True` the row is replaced unconditionally (useful for tests/admin).
         """
         import sqlite3 as _sqlite
         from datetime import timezone
 
-        # Use an explicit immediate transaction to avoid races between concurrent workers.
         conn = _sqlite.connect(self.db_path, timeout=5.0)
         try:
             conn.isolation_level = None
             cur = conn.cursor()
-            # Ensure WAL + busy timeout on this connection
             try:
                 cur.execute("PRAGMA journal_mode=WAL")
                 cur.execute("PRAGMA busy_timeout=5000")
             except Exception:
                 pass
 
+            # Normalize timestamps to UTC ISO
+            last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
+            last_bar_iso = bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
+
+            if force:
+                cur.execute(
+                    "INSERT OR REPLACE INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc) VALUES (?, ?, ?, ?, ?)",
+                    (strategy, symbol, action, last_accepted_iso, last_bar_iso),
+                )
+                conn.commit()
+                return True
+
+            # Use an explicit immediate transaction to avoid races between concurrent workers.
             cur.execute("BEGIN IMMEDIATE")
             cur.execute(
                 "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
@@ -365,7 +380,6 @@ class StateStore:
             )
             row = cur.fetchone()
 
-            # Helper to parse ISO timestamps; treat None as missing
             def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
                 if not ts:
                     return None
@@ -374,49 +388,45 @@ class StateStore:
                 except Exception:
                     return None
 
-            if row:
-                last_accepted = _parse_iso(row[0])
-                last_bar = _parse_iso(row[1])
-            else:
-                last_accepted = None
-                last_bar = None
+            stored_last_accepted = _parse_iso(row[0]) if row else None
+            stored_last_bar = _parse_iso(row[1]) if row else None
 
-            # Check same-bar dedupe
-            if bar_ts_utc is not None and last_bar is not None:
-                # Compare exact equality of UTC timestamps
-                if bar_ts_utc.astimezone(timezone.utc) == last_bar:
+            # Same-bar dedupe
+            if bar_ts_utc is not None and stored_last_bar is not None:
+                if bar_ts_utc.astimezone(timezone.utc) == stored_last_bar:
                     conn.rollback()
                     return False
 
-            # Check cooldown
-            if last_accepted is not None:
-                elapsed = now_utc.astimezone(timezone.utc) - last_accepted
-                if elapsed < cooldown:
+            # Cooldown check
+            if stored_last_accepted is not None:
+                if now_utc.astimezone(timezone.utc) - stored_last_accepted < cooldown:
                     conn.rollback()
                     return False
 
-            # Accept: upsert the row with new timestamps
-            last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
-            last_bar_iso = bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
-
-            # Use INSERT ... ON CONFLICT to atomically create or update the PK row in place
-            cur.execute(
-                """
-                INSERT INTO signal_gates (
-                    strategy,
-                    symbol,
-                    action,
-                    last_accepted_ts_utc,
-                    last_bar_ts_utc
-                ) VALUES (?, ?, ?, ?, ?)
+            # Monotonic upsert: only update if incoming timestamp is newer or row missing.
+            upsert_sql = """
+                INSERT INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc)
+                VALUES (?, ?, ?, ?, ?)
                 ON CONFLICT(strategy, symbol, action) DO UPDATE SET
                     last_accepted_ts_utc = excluded.last_accepted_ts_utc,
                     last_bar_ts_utc = excluded.last_bar_ts_utc
-                """,
-                (strategy, symbol, action, last_accepted_iso, last_bar_iso),
+                WHERE COALESCE(signal_gates.last_accepted_ts_utc, '') <= excluded.last_accepted_ts_utc
+            """
+
+            cur.execute(upsert_sql, (strategy, symbol, action, last_accepted_iso, last_bar_iso))
+
+            # Re-read to verify we own the stored timestamp
+            cur.execute(
+                "SELECT last_accepted_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
             )
+            row2 = cur.fetchone()
             conn.commit()
-            return True
+
+            if not row2:
+                return False
+
+            return row2[0] == last_accepted_iso
         except _sqlite.Error as e:
             try:
                 conn.rollback()
@@ -426,6 +436,40 @@ class StateStore:
             return False
         finally:
             conn.close()
+
+    def get_gate(
+        self, strategy: str, symbol: str, action: str
+    ) -> Optional[dict[str, Optional[datetime]]]:
+        """Return gate row parsed as datetimes or None if missing."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            def _parse(ts: Optional[str]) -> Optional[datetime]:
+                if not ts:
+                    return None
+                try:
+                    return datetime.fromisoformat(ts).astimezone(timezone.utc)
+                except Exception:
+                    return None
+
+            return {"last_accepted": _parse(row[0]), "last_bar": _parse(row[1])}
+
+    def release_gate(self, strategy: str, symbol: str, action: str) -> None:
+        """Delete the persisted gate row (useful for tests/admin)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            conn.commit()
 
     def set_state(self, key: str, value: str) -> None:
         """Set state value."""
@@ -471,6 +515,10 @@ class StateStore:
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            # Coerce alpaca_order_id to a DB-friendly scalar (tests may pass MagicMock)
+            if alpaca_order_id is not None and not isinstance(alpaca_order_id, (str, bytes, int, float)):
+                alpaca_order_id = str(alpaca_order_id)
+
             cursor.execute(
                 """UPDATE order_intents 
                    SET status = ?, filled_qty = COALESCE(?, filled_qty), alpaca_order_id = COALESCE(?, alpaca_order_id), filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
