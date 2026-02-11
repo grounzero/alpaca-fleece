@@ -394,7 +394,7 @@ class StreamPolling:
             logger.critical(f"Order polling crashed: {e}", exc_info=True)
             raise
 
-    def _hex_to_uuid(self, hex_str: str) -> str:
+    def _hex_to_uuid(self, hex_str: Optional[str]) -> Optional[str]:
         """Convert hex string to UUID format.
 
         Alpaca API expects UUID format (51057fad-52fa-6ca2-...)
@@ -404,7 +404,7 @@ class StreamPolling:
             hex_str: The order ID string, either hex or UUID format
 
         Returns:
-            UUID formatted string
+            UUID formatted string or None if input is None
         """
         # Use the stdlib uuid module for parsing/formatting. Accept both
         # hyphenated UUIDs and 32-char hex strings. On parse errors, fall

@@ -11,6 +11,7 @@ import logging
 import signal
 import sys
 import subprocess
+from pathlib import Path
 from typing import Optional
 
 from src import __version__ as version
@@ -118,7 +119,7 @@ class Orchestrator:
             dict: Infrastructure status matching infrastructure-worker.md output schema
         """
         logger.info("=" * 60)
-        logger.info("PHASE 1: Infrastructure Initialization")
+        logger.info("PHASE 1: Infrastructure Startup")
         logger.info("=" * 60)
 
         # Log package version on startup
@@ -182,8 +183,10 @@ class Orchestrator:
 
                 # Run position sync
                 try:
+                    repo_dir = Path(__file__).resolve().parent
+                    sync_script = repo_dir / "tools" / "sync_positions_from_alpaca.py"
                     result = self._run_subprocess(
-                        [sys.executable, "tools/sync_positions_from_alpaca.py"],
+                        [sys.executable, str(sync_script)],
                         timeout=60,
                         name="Position sync",
                         raise_on_timeout=True,
@@ -201,8 +204,9 @@ class Orchestrator:
                     logger.info("   Position sync completed successfully")
 
                     # Also update positions_snapshot for reconciliation
+                    snapshot_script = repo_dir / "tools" / "update_positions_snapshot.py"
                     result2 = self._run_subprocess(
-                        [sys.executable, "tools/update_positions_snapshot.py"],
+                        [sys.executable, str(snapshot_script)],
                         timeout=30,
                         name="Positions snapshot update",
                         raise_on_timeout=False,

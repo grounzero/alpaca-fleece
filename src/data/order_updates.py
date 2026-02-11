@@ -60,7 +60,7 @@ class OrderUpdatesHandler:
             logger.error(f"Failed to process order update: {e}")
 
     def _extract_enum_value(self, attr: Any, default: str = "unknown") -> str:
-        """Normalize enum-or-string attributes to a lowercase string with a default.
+        """Convert enum-or-string attributes to a lowercase string with a default.
 
         Handles attributes that may be:
         - None

@@ -152,6 +152,7 @@ class TestOrderUpdatePolling:
         assert stream.on_order_update.called
         update_event = stream.on_order_update.call_args[0][0]
         assert update_event.order.status.value == "filled"
+        stream.on_order_update.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_check_order_status_handles_enum_status(self, mock_stream):
@@ -194,6 +195,7 @@ class TestOrderUpdatePolling:
         assert stream.on_order_update.called
         update_event = stream.on_order_update.call_args[0][0]
         assert update_event.order.status.value == "filled"
+        stream.on_order_update.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_check_order_status_handles_stdlib_enum_status(self, mock_stream):
@@ -233,6 +235,7 @@ class TestOrderUpdatePolling:
         assert stream.on_order_update.called
         update_event = stream.on_order_update.call_args[0][0]
         assert update_event.order.status.value == "filled"
+        stream.on_order_update.assert_awaited()
 
     @pytest.mark.asyncio
     async def test_check_order_status_does_not_emit_duplicate(self, mock_stream):
