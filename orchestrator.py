@@ -98,8 +98,9 @@ class Orchestrator:
             CompletedProcess on success or simulated CompletedProcess on handled errors
         """
         try:
-            # Merge self.env (if present) with os.environ for subprocess
-            env = {**os.environ, **(self.env or {})}
+            # Merge self.env (if present) with os.environ for subprocess, coercing all values to str
+            env_override = {k: str(v) for k, v in (self.env or {}).items()}
+            env = {**os.environ, **env_override}
             # Optionally set cwd to repo root for consistency
             repo_root = str(Path(__file__).resolve().parent)
             return subprocess.run(

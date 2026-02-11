@@ -500,20 +500,21 @@ class StreamPolling:
                     except Exception:
                         return None
 
-                filled_qty = _to_float_safe(filled_qty)
-                filled_avg_price = _to_float_safe(filled_avg_price)
+                parsed_filled_qty = _to_float_safe(filled_qty)
+                parsed_filled_avg_price = _to_float_safe(filled_avg_price)
 
                 # If status changed, persist to DB and trigger update
+
                 if current_status != order["status"]:
                     logger.info(f"Order {client_id} status: {order['status']} -> {current_status}")
 
-                    # Persist status change to SQLite to prevent duplicate updates
+                    # Only persist filled_qty/filled_avg_price if parsed, else preserve DB value
                     await asyncio.to_thread(
                         self._update_order_status,
                         client_id,
                         current_status,
-                        filled_qty,
-                        filled_avg_price,
+                        parsed_filled_qty if parsed_filled_qty is not None else None,
+                        parsed_filled_avg_price if parsed_filled_avg_price is not None else None,
                     )
 
                     # Create update event, merging DB row fallback values so
@@ -619,19 +620,19 @@ class StreamPolling:
         Args:
             client_order_id: The client order ID
             status: New status from Alpaca
-            filled_qty: Filled quantity (optional)
-            filled_avg_price: Filled average price (optional)
+            filled_qty: Filled quantity (optional, None to preserve DB value)
+            filled_avg_price: Filled average price (optional, None to preserve DB value)
         """
         try:
             # Route persistence through the centralized StateStore so both
             # SDK-driven and polling-driven updates follow the same codepath.
-            # Convert numeric-ish values safely; StateStore will coerce them.
+            # Only update filled_qty/filled_avg_price if not None; else preserve DB value.
             self._get_state_store().update_order_intent(
                 client_order_id=client_order_id,
                 status=status,
-                filled_qty=float(filled_qty) if filled_qty is not None else 0,
+                filled_qty=filled_qty,
                 alpaca_order_id=None,
-                filled_avg_price=float(filled_avg_price) if filled_avg_price is not None else None,
+                filled_avg_price=filled_avg_price,
             )
         except Exception as e:
             logger.error(f"Failed to persist order {client_order_id} via StateStore: {e}")
