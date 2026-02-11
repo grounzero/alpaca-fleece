@@ -433,6 +433,7 @@ class Orchestrator:
                 event_bus=self.event_bus,
                 config=self.trading_config,
                 strategy_name=strategy_name,
+                position_tracker=self.position_tracker,
             )
             logger.info("   Order manager ready")
 

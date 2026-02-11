@@ -60,6 +60,7 @@ class PositionTracker:
 
         # In-memory position tracking: symbol -> PositionData
         self._positions: Dict[str, PositionData] = {}
+        self._last_update: Optional[datetime] = None
 
     def init_schema(self) -> None:
         with sqlite3.connect(self.state_store.db_path) as conn:
@@ -101,6 +102,8 @@ class PositionTracker:
         )
         self._positions[symbol] = position
         self._persist_position(position)
+        # mark last update time when we modify snapshot
+        self._last_update = datetime.now(timezone.utc)
         return position
 
     def stop_tracking(self, symbol: str) -> None:
@@ -242,6 +245,8 @@ class PositionTracker:
                 INSERT OR REPLACE INTO position_tracking
                 (symbol, side, qty, entry_price, atr, entry_time, extreme_price,
                  trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
+                # mark last update timestamp
+                self._last_update = datetime.now(timezone.utc)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -260,16 +265,30 @@ class PositionTracker:
             )
             conn.commit()
 
+    # Public persistence API
+    def persist_position(self, position: PositionData) -> None:
+        """Persist a position (public wrapper)."""
+        return self._persist_position(position)
+
     def _remove_position(self, symbol: str) -> None:
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM position_tracking WHERE symbol = ?", (symbol,))
             conn.commit()
 
+    def remove_position(self, symbol: str) -> None:
+        """Remove persisted position (public wrapper)."""
+        return self._remove_position(symbol)
+
     def load_persisted_positions(self) -> List[PositionData]:
         self.init_schema()
         positions: List[PositionData] = []
         with sqlite3.connect(self.state_store.db_path) as conn:
+
+            def last_updated(self) -> Optional[datetime]:
+                """Return timestamp when snapshot was last updated (or None)."""
+                return self._last_update
+
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price,

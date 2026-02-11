@@ -120,38 +120,62 @@ class OrderManager:
         # - call it in a thread with `await asyncio.to_thread(self.broker.get_positions)`,
         # - or cache recent positions elsewhere (e.g. PositionTracker) and read from cache.
         pos_qty: float | None = 0.0
-        # Prefer a PositionTracker snapshot if available to avoid hitting the
-        # broker on every signal. Fall back to polling the broker in a
-        # thread if no tracker is provided.
+        # Position determination strategy:
+        # 1. Prefer a fast snapshot from PositionTracker when available.
+        # 2. If the snapshot is missing the symbol or is stale (TTL), consult
+        #    the broker as the authoritative source via a thread call.
+        # 3. If no tracker is present, call the broker directly.
+        ttl_seconds = int(self.config.get("position_tracker_ttl_seconds", 5))
+        now_ts = datetime.now(timezone.utc)
+
+        async def _fetch_positions_from_broker() -> float | None:
+            try:
+                positions = await asyncio.to_thread(self.broker.get_positions)
+                for p in positions:
+                    if p.get("symbol") == symbol:
+                        return float(p.get("qty", 0) or 0)
+                return 0.0
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Failed to fetch positions from broker; treating position as unknown for %s",
+                    symbol,
+                )
+                return None
+
         if self.position_tracker is not None:
             try:
-                # PositionTracker returns PositionData or None; extract qty
-                pos = self.position_tracker.get_position(symbol)
-                pos_qty = float(pos.qty) if pos is not None else None
+                # PositionTracker.get_position is synchronous and returns PositionData or None
+                pos_obj = self.position_tracker.get_position(symbol)
+                if pos_obj is None:
+                    # Unknown to tracker — consult broker (authoritative)
+                    pos_qty = await _fetch_positions_from_broker()
+                else:
+                    # Use tracker value but check freshness
+                    pos_qty = float(pos_obj.qty)
+                    try:
+                        last = self.position_tracker.last_updated()
+                        if last is None or (now_ts - last).total_seconds() > ttl_seconds:
+                            # Stale snapshot — reconcile with broker
+                            broker_qty = await _fetch_positions_from_broker()
+                            # If broker query succeeded, prefer authoritative value
+                            if broker_qty is not None:
+                                pos_qty = broker_qty
+                    except Exception:
+                        logger.exception(
+                            "Failed to check PositionTracker freshness; using tracker value for %s",
+                            symbol,
+                        )
             except Exception:
                 logger.exception(
                     "PositionTracker lookup failed; treating position as unknown for %s",
                     symbol,
                 )
-                pos_qty = None
+                pos_qty = await _fetch_positions_from_broker()
         else:
-            try:
-                # Run blocking I/O in a thread to avoid blocking the asyncio event loop
-                positions = await asyncio.to_thread(self.broker.get_positions)
-                pos_qty = 0.0
-                for p in positions:
-                    if p.get("symbol") == symbol:
-                        pos_qty = float(p.get("qty", 0) or 0)
-                        break
-            except Exception:
-                # Conservative behavior on failure: treat position as unknown
-                # and prefer exiting existing exposure rather than opening the
-                # opposite direction. Log the failure for observability.
-                logger.exception(
-                    "Failed to fetch positions; treating position as unknown for %s",
-                    symbol,
-                )
-                pos_qty = None
+            # No tracker available — authoritative broker call
+            pos_qty = await _fetch_positions_from_broker()
 
         # Decide action: buy -> ENTER_LONG (typically exposure-increasing)
         # sell -> if currently long, it's an exit; if flat, treat as ENTER_SHORT
