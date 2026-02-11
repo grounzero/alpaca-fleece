@@ -1,8 +1,11 @@
 #!/usr/bin/env python3
-"""Verify reconciliation passes.
+"""Verify that Alpaca positions match the latest positions_snapshot in SQLite.  
 
-This script resolves the `src` directory relative to the script location
-and honors the `ALPACA_PAPER` environment variable to select paper/live mode.
+This script:  
+- Honors the `ALPACA_PAPER` environment variable to select paper/live mode.  
+- Fetches current positions from Alpaca.  
+- Loads the most recent snapshot from the `positions_snapshot` table.  
+- Compares quantities per symbol and exits with a non-zero status on mismatch.
 """
 
 import os

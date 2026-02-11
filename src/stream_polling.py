@@ -17,6 +17,7 @@ from alpaca.data.requests import StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 
+from src.state_store import StateStore
 from src.utils import batch_iter
 
 logger = logging.getLogger(__name__)
@@ -194,6 +195,16 @@ class StreamPolling:
         self._db_path: str = db_path or default_db
         # Maximum concurrent Alpaca order requests during polling
         self._order_polling_concurrency: int = order_polling_concurrency
+        # State store for persistence (used by polling path).
+        # Initialize lazily so tests can override `self._db_path`.
+        self._state_store: Optional[StateStore] = None
+
+    def _get_state_store(self) -> StateStore:
+        """Return a StateStore instance for the current DB path, recreating
+        it if `self._db_path` has changed (tests modify `_db_path`)."""
+        if self._state_store is None or getattr(self._state_store, "db_path", None) != self._db_path:
+            self._state_store = StateStore(self._db_path)
+        return self._state_store
 
     def register_handlers(
         self,
@@ -570,28 +581,18 @@ class StreamPolling:
             filled_avg_price: Filled average price (optional)
         """
         try:
-            with sqlite3.connect(self._db_path) as conn:
-                cursor = conn.cursor()
-                cursor.execute(
-                    """
-                    UPDATE order_intents
-                    SET status = ?,
-                        filled_qty = COALESCE(?, filled_qty),
-                        filled_avg_price = COALESCE(?, filled_avg_price),
-                        updated_at_utc = ?
-                    WHERE client_order_id = ?
-                    """,
-                    (
-                        status,
-                        filled_qty,
-                        filled_avg_price,
-                        datetime.now(timezone.utc).isoformat(),
-                        client_order_id,
-                    ),
-                )
-                conn.commit()
-        except sqlite3.Error as e:
-            logger.error(f"Database error updating order {client_order_id}: {e}")
+            # Route persistence through the centralized StateStore so both
+            # SDK-driven and polling-driven updates follow the same codepath.
+            # Convert numeric-ish values safely; StateStore will coerce them.
+            self._get_state_store().update_order_intent(
+                client_order_id=client_order_id,
+                status=status,
+                filled_qty=float(filled_qty) if filled_qty is not None else 0,
+                alpaca_order_id=None,
+                filled_avg_price=float(filled_avg_price) if filled_avg_price is not None else None,
+            )
+        except Exception as e:
+            logger.error(f"Failed to persist order {client_order_id} via StateStore: {e}")
 
     def _create_order_update_event(self, alpaca_order: Any) -> Any:
         """Create a canonical order update event from Alpaca order data.
