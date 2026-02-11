@@ -160,7 +160,9 @@ class StateStore:
             except sqlite3.Error:
                 # If migration fails, log and continue — developer may need
                 # to reset DB manually in dev environments.
-                logger.exception("Failed to migrate trades table for uniqueness; existing DB may need manual reset.")
+                logger.exception(
+                    "Failed to migrate trades table for uniqueness; existing DB may need manual reset."
+                )
 
             # Equity curve table
             cursor.execute("""

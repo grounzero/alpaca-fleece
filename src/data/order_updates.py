@@ -124,7 +124,9 @@ class OrderUpdatesHandler:
                     raw_fill_id = first_fill.get("id") or first_fill.get("fill_id")
                 else:
                     # object-like fill
-                    raw_fill_id = getattr(first_fill, "id", None) or getattr(first_fill, "fill_id", None)
+                    raw_fill_id = getattr(first_fill, "id", None) or getattr(
+                        first_fill, "fill_id", None
+                    )
 
         fill_id_value: Optional[str] = None
         if raw_fill_id is not None:

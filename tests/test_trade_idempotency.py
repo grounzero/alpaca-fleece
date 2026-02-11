@@ -1,9 +1,9 @@
 import sqlite3
 from datetime import datetime, timezone
 
-from src.state_store import StateStore
-from src.event_bus import OrderUpdateEvent, EventBus
 from src.data.order_updates import OrderUpdatesHandler
+from src.event_bus import EventBus, OrderUpdateEvent
+from src.state_store import StateStore
 
 
 def test_record_trade_idempotent(tmp_path):
@@ -30,7 +30,10 @@ def test_record_trade_idempotent(tmp_path):
 
     conn = sqlite3.connect(db_path)
     cur = conn.cursor()
-    cur.execute("SELECT COUNT(*) FROM trades WHERE order_id = ? AND client_order_id = ?", ("order-1", "client-1"))
+    cur.execute(
+        "SELECT COUNT(*) FROM trades WHERE order_id = ? AND client_order_id = ?",
+        ("order-1", "client-1"),
+    )
     count = cur.fetchone()[0]
     conn.close()
 
