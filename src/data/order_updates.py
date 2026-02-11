@@ -78,21 +78,9 @@ class OrderUpdatesHandler:
 
     def _to_canonical_order_update(self, raw_update: Any) -> OrderUpdateEvent:
         """Convert raw SDK order update to a canonical OrderUpdateEvent."""
-        # Safely access side attribute using getattr
-        order = getattr(raw_update, "order", None)
-        side_attr = getattr(order, "side", None)
-        side_value = self._extract_enum_value(side_attr)
-
-        # Safely access status with enum/string handling
-        status_attr = getattr(order, "status", None)
-        status_value = self._extract_enum_value(status_attr)
-
-        # Safely access other order attributes with defaults
-        order_id = getattr(order, "id", "") or ""
-        client_order_id = getattr(order, "client_order_id", "") or ""
-        symbol = getattr(order, "symbol", "") or ""
-
         # Support both object-like and dict-like order representations.
+        order = getattr(raw_update, "order", None)
+
         def _get_raw(name: str) -> Any:
             if order is None:
                 return None
@@ -102,6 +90,21 @@ class OrderUpdatesHandler:
             if val is None and isinstance(order, dict):
                 val = order.get(name)
             return val
+
+        # Safely access side and status using the unified helper so dict-shaped
+        # orders are handled the same as SDK objects and don't silently drop
+        # critical fields.
+        side_attr = _get_raw("side")
+        side_value = self._extract_enum_value(side_attr)
+
+        status_attr = _get_raw("status")
+        status_value = self._extract_enum_value(status_attr)
+
+        # Use the same helper for identifiers/metadata so dict inputs don't
+        # become blank strings.
+        order_id = _get_raw("id") or ""
+        client_order_id = _get_raw("client_order_id") or ""
+        symbol = _get_raw("symbol") or ""
 
         raw_filled_qty = _get_raw("filled_qty")
         raw_filled_avg_price = _get_raw("filled_avg_price")
@@ -140,11 +143,13 @@ class OrderUpdatesHandler:
         # If filled_qty is None, attempt to retrieve the last known value from
         # the StateStore (order_intents). If still missing, skip recording to
         # avoid inserting NULL/invalid quantities into the trades table.
-        qty_to_record = event.filled_qty
+        qty_to_record: Optional[float] = event.filled_qty
         if qty_to_record is None:
             oi = self.state_store.get_order_intent(event.client_order_id)
             if oi:
-                qty_to_record = oi.get("filled_qty")
+                # `oi` is a mapping of `str`->`object`; coerce using the
+                # shared helper to a float or None.
+                qty_to_record = parse_optional_float(oi.get("filled_qty"))
 
         if qty_to_record is None:
             logger.warning(
