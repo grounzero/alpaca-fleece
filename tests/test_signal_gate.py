@@ -39,7 +39,9 @@ async def test_gate_blocks_when_already_long(state_store, event_bus, mock_broker
 @pytest.mark.asyncio
 async def test_gate_blocks_when_open_order_exists(state_store, event_bus, mock_broker, config):
     # Insert an open order intent for BUY (scoped to this strategy)
-    state_store.save_order_intent("cid-open", "AAPL", "buy", 1.0, status="submitted", strategy="sma_crossover")
+    state_store.save_order_intent(
+        "cid-open", "AAPL", "buy", 1.0, status="submitted", strategy="sma_crossover"
+    )
 
     order_mgr = OrderManager(
         broker=mock_broker,

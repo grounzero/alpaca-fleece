@@ -303,9 +303,7 @@ class StateStore:
                     conn.commit()
                 # Migration: ensure `strategy` column exists on order_intents
                 if "strategy" not in oi_columns:
-                    cursor.execute(
-                        "ALTER TABLE order_intents ADD COLUMN strategy TEXT DEFAULT ''"
-                    )
+                    cursor.execute("ALTER TABLE order_intents ADD COLUMN strategy TEXT DEFAULT ''")
                     conn.commit()
             except sqlite3.Error as e:
                 logger.warning(
@@ -321,7 +319,9 @@ class StateStore:
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def has_open_exposure_increasing_order(self, symbol: str, side: str, strategy: Optional[str] = None) -> bool:
+    def has_open_exposure_increasing_order(
+        self, symbol: str, side: str, strategy: Optional[str] = None
+    ) -> bool:
         """Return True if an exposure-increasing order intent exists.
 
         If `strategy` is provided, scope the query to that strategy. Otherwise

@@ -128,7 +128,9 @@ class OrderManager:
             # Conservative behavior on failure: treat position as unknown
             # and prefer exiting existing exposure rather than opening the
             # opposite direction. Log the failure for observability.
-            logger.exception("Failed to fetch positions; treating position as unknown for %s", symbol)
+            logger.exception(
+                "Failed to fetch positions; treating position as unknown for %s", symbol
+            )
             pos_qty = None
 
         # Decide action: buy -> ENTER_LONG (typically exposure-increasing)

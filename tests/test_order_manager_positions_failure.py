@@ -36,7 +36,9 @@ async def test_sell_with_positions_fetch_failure_does_not_invoke_gate(
         strategy_name="sma_crossover",
     )
 
-    sig = SignalEvent(symbol="FOO", signal_type="SELL", timestamp=datetime.now(timezone.utc), metadata={})
+    sig = SignalEvent(
+        symbol="FOO", signal_type="SELL", timestamp=datetime.now(timezone.utc), metadata={}
+    )
     res = await order_mgr.submit_order(sig, qty=1.0)
 
     # In DRY_RUN the method returns True for successful submission paths.
