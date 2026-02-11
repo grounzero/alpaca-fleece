@@ -636,14 +636,15 @@ class StreamPolling:
         except Exception as e:
             logger.error(f"Failed to persist order {client_order_id} via StateStore: {e}")
 
-    def _create_order_update_event(self, alpaca_order: Any) -> Any:
-        """Create a canonical order update event from Alpaca order data.
+    def _create_order_update_event(self, alpaca_order: Any) -> OrderUpdateWrapper:
+        """Wrap Alpaca order data in an OrderUpdateWrapper compatible with raw update handlers.
 
         Args:
             alpaca_order: Order data from Alpaca API (dict or Order object)
 
         Returns:
-            Canonical order update event matching expected interface
+            OrderUpdateWrapper: A raw-update-compatible wrapper that mimics the Alpaca SDK
+                order update interface expected by downstream handlers.
         """
         # Use module-level wrapper classes (defined once, not per-call)
         return OrderUpdateWrapper(alpaca_order)
