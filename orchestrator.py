@@ -12,6 +12,7 @@ import signal
 import subprocess
 import sys
 from pathlib import Path
+import os
 from typing import Optional
 
 from src import __version__ as version
@@ -97,7 +98,18 @@ class Orchestrator:
             CompletedProcess on success or simulated CompletedProcess on handled errors
         """
         try:
-            return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+            # Merge self.env (if present) with os.environ for subprocess
+            env = {**os.environ, **(self.env or {})}
+            # Optionally set cwd to repo root for consistency
+            repo_root = str(Path(__file__).resolve().parent)
+            return subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+                cwd=repo_root,
+            )
         except subprocess.TimeoutExpired as te:
             logger.warning(f"   {name} timed out after {timeout} seconds")
             if raise_on_timeout:

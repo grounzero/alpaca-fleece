@@ -51,7 +51,7 @@ async def test_phase1_autosync_success(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "reconcile", reconcile_stub)
 
     # Patch subprocess.run to simulate successful sync and snapshot update
-    def fake_run(args, capture_output, text, timeout):
+    def fake_run(args, capture_output, text, timeout, **kwargs):
         return subprocess.CompletedProcess(args=args, returncode=0, stdout="", stderr="")
 
     monkeypatch.setattr("subprocess.run", fake_run)
@@ -104,7 +104,7 @@ async def test_phase1_autosync_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "reconcile", reconcile_always_fail)
 
     # subprocess.run returns non-zero to simulate sync failure
-    def fake_run_fail(args, capture_output, text, timeout):
+    def fake_run_fail(args, capture_output, text, timeout, **kwargs):
         return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr="failed")
 
     monkeypatch.setattr("subprocess.run", fake_run_fail)
