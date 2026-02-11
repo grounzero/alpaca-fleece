@@ -68,7 +68,6 @@ class OrderUpdateEvent:
     filled_qty: Optional[float]
     avg_fill_price: Optional[float]
     timestamp: datetime
-    fill_id: Optional[str] = None
 
 
 @dataclass(frozen=True)

@@ -112,24 +112,6 @@ class OrderUpdatesHandler:
         parsed_filled_qty: Optional[float] = parse_optional_float(raw_filled_qty)
         parsed_filled_avg_price: Optional[float] = parse_optional_float(raw_filled_avg_price)
 
-        # Attempt to extract a fill id if provided by the broker payload.
-        # Some brokers include a `fill_id` or a `fills` list with ids.
-        raw_fill_id = _get_raw("fill_id")
-        if raw_fill_id is None:
-            # Try `fills` list fallback
-            raw_fills = _get_raw("fills")
-            if isinstance(raw_fills, (list, tuple)) and len(raw_fills) > 0:
-                first_fill = raw_fills[0]
-                if isinstance(first_fill, dict):
-                    raw_fill_id = first_fill.get("id") or first_fill.get("fill_id")
-                else:
-                    # object-like fill
-                    raw_fill_id = getattr(first_fill, "id", None) or getattr(first_fill, "fill_id", None)
-
-        fill_id_value: Optional[str] = None
-        if raw_fill_id is not None:
-            fill_id_value = str(raw_fill_id)
-
         # Note: `parsed_filled_qty` and `parsed_filled_avg_price` may be None.
         # We intentionally preserve None here (do not coerce filled_qty to 0)
         # so that the StateStore's SQL `COALESCE(?, filled_qty)` can decide
@@ -146,7 +128,6 @@ class OrderUpdatesHandler:
             status=status_value,
             filled_qty=parsed_filled_qty,
             avg_fill_price=parsed_filled_avg_price,
-            fill_id=fill_id_value,
             timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
         )
 
@@ -180,12 +161,10 @@ class OrderUpdatesHandler:
         # Insert trade using a context manager for the DB connection
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
-            # Use INSERT OR IGNORE to enforce idempotency using the
-            # unique constraint(s) defined on the `trades` table.
             cursor.execute(
-                """INSERT OR IGNORE INTO trades 
-                   (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                """INSERT INTO trades 
+                   (timestamp_utc, symbol, side, qty, price, order_id, client_order_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
                 (
                     event.timestamp.isoformat(),
                     event.symbol,
@@ -194,6 +173,5 @@ class OrderUpdatesHandler:
                     float(event.avg_fill_price),
                     event.order_id,
                     event.client_order_id,
-                    getattr(event, "fill_id", None),
                 ),
             )
