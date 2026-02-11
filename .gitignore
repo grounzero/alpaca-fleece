@@ -49,6 +49,7 @@ logs/
 
 # Data
 data/reconciliation_error.json
+data/reconciliation_fix.json
 data/trades.db
 
 # Build
@@ -77,6 +78,11 @@ agents/
 
 # Runtime files
 data/*.pid
+data/metrics.json
+
+# Backup files
+*.backup
+*.backup.*
 
 docs/
 

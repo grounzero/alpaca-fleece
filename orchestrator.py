@@ -9,7 +9,10 @@ import asyncio
 import inspect
 import logging
 import signal
+import subprocess
 import sys
+from pathlib import Path
+import os
 from typing import Optional
 
 from src import __version__ as version
@@ -80,6 +83,45 @@ class Orchestrator:
         self._shutdown_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
 
+    def _run_subprocess(
+        self, args: list[str], timeout: int, name: str, *, raise_on_timeout: bool = False
+    ) -> subprocess.CompletedProcess:
+        """Run a subprocess and handle timeout/exec errors consistently.
+
+        Args:
+            args: Command args list
+            timeout: Timeout in seconds
+            name: Human-readable name for logging
+            raise_on_timeout: If True, re-raise subprocess.TimeoutExpired to caller
+
+        Returns:
+            CompletedProcess on success or simulated CompletedProcess on handled errors
+        """
+        try:
+            # Merge self.env (if present) with os.environ for subprocess, coercing all values to str
+            env_override = {k: str(v) for k, v in (self.env or {}).items()}
+            env = {**os.environ, **env_override}
+            # Optionally set cwd to repo root for consistency
+            repo_root = str(Path(__file__).resolve().parent)
+            return subprocess.run(
+                args,
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+                cwd=repo_root,
+            )
+        except subprocess.TimeoutExpired as te:
+            logger.warning(f"   {name} timed out after {timeout} seconds")
+            if raise_on_timeout:
+                raise
+            return subprocess.CompletedProcess(
+                args=args, returncode=1, stdout=getattr(te, "output", ""), stderr=str(te)
+            )
+        except Exception as e:
+            logger.error(f"   {name} failed to execute: {e}")
+            return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr=str(e))
+
     async def phase1_infrastructure(self) -> dict:
         """Phase 1: Infrastructure Agent - Load config, init broker, reconcile.
 
@@ -90,7 +132,7 @@ class Orchestrator:
             dict: Infrastructure status matching infrastructure-worker.md output schema
         """
         logger.info("=" * 60)
-        logger.info("PHASE 1: Infrastructure Initialization")
+        logger.info("PHASE 1: Infrastructure Startup")
         logger.info("=" * 60)
 
         # Log package version on startup
@@ -149,12 +191,77 @@ class Orchestrator:
                 reconciliation_status = "clean"
                 discrepancies = []
             except ReconciliationError as e:
-                logger.error(f"   Reconciliation failed: {e}")
-                errors.append(f"Reconciliation failed: {e}")
-                reconciliation_status = "discrepancies_found"
-                discrepancies = [
-                    {"issue": str(e), "sqlite_value": "unknown", "alpaca_value": "unknown"}
-                ]
+                logger.warning(f"   Reconciliation failed: {e}")
+                logger.warning("   Auto-syncing positions from Alpaca...")
+
+                # Run position sync
+                try:
+                    repo_dir = Path(__file__).resolve().parent
+                    sync_script = repo_dir / "tools" / "sync_positions_from_alpaca.py"
+                    result = self._run_subprocess(
+                        [sys.executable, str(sync_script)],
+                        timeout=60,
+                        name="Position sync",
+                        raise_on_timeout=True,
+                    )
+                except subprocess.TimeoutExpired:
+                    logger.error("   Position sync timed out after 60 seconds")
+                    errors.append("Position sync timed out")
+                    raise ReconciliationError("Position sync timeout")
+                except Exception as sync_err:
+                    logger.error(f"   Position sync failed to execute: {sync_err}")
+                    errors.append(f"Position sync execution failed: {sync_err}")
+                    raise ReconciliationError(f"Position sync execution failed: {sync_err}")
+
+                if result.returncode == 0:
+                    logger.info("   Position sync completed successfully")
+
+                    # Also update positions_snapshot for reconciliation
+                    snapshot_script = repo_dir / "tools" / "update_positions_snapshot.py"
+                    result2 = self._run_subprocess(
+                        [sys.executable, str(snapshot_script)],
+                        timeout=30,
+                        name="Positions snapshot update",
+                        raise_on_timeout=False,
+                    )
+                    if result2.returncode == 0:
+                        logger.info("   Positions snapshot updated successfully")
+                    else:
+                        logger.warning(
+                            f"   Positions snapshot update failed: {getattr(result2, 'stderr', '')}"
+                        )
+                        errors.append(
+                            f"Positions snapshot update failed (rc={getattr(result2, 'returncode', 'unknown')}): stdout={getattr(result2, 'stdout', '')!r}, stderr={getattr(result2, 'stderr', '')!r}"
+                        )
+
+                    # Re-check reconciliation
+                    try:
+                        reconcile(self.broker, self.state_store)
+                        logger.info("   Reconciliation passed after auto-sync")
+                        reconciliation_status = "clean"
+                        discrepancies = []
+                    except ReconciliationError as e2:
+                        logger.error(f"   Reconciliation still failing after sync: {e2}")
+                        errors.append(f"Reconciliation failed even after auto-sync: {e2}")
+                        reconciliation_status = "discrepancies_found"
+                        discrepancies = [
+                            {"issue": str(e2), "sqlite_value": "unknown", "alpaca_value": "unknown"}
+                        ]
+                else:
+                    logger.error(
+                        f"   Position sync failed (rc={result.returncode}). stdout={result.stdout!r} stderr={result.stderr!r}"
+                    )
+                    errors.append(
+                        f"Position sync failed (rc={result.returncode}): stdout={result.stdout!r}, stderr={result.stderr!r}"
+                    )
+                    reconciliation_status = "discrepancies_found"
+                    discrepancies = [
+                        {
+                            "issue": f"Position sync failed (rc={result.returncode})",
+                            "sqlite_value": "unknown",
+                            "alpaca_value": "unknown",
+                        }
+                    ]
 
             # Get risk config
             risk_config = self.trading_config.get("risk", {})
@@ -220,11 +327,13 @@ class Orchestrator:
 
             # Start stream manager (using polling for consistency)
             logger.info("Preparing stream (polling mode)...")
+            stream_cfg = self.trading_config.get("trading", {})
             self.stream = StreamPolling(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
                 paper=self.env["ALPACA_PAPER"],
-                feed=self.trading_config.get("trading", {}).get("stream_feed", "iex"),
+                feed=stream_cfg.get("stream_feed", "iex"),
+                order_polling_concurrency=stream_cfg.get("order_polling_concurrency", 10),
             )
             logger.info("   Stream ready (HTTP polling)")
 

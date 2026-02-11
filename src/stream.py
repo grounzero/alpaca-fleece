@@ -7,10 +7,10 @@ This module owns:
 - Rate limit protection (HTTP 429 handling)
 - Batched subscription (prevent rate limits)
 
-MUST NOT:
-- Normalise data into internal events
-- Write to SQLite
-- Publish to EventBus
+    MUST NOT:
+    - Convert raw SDK objects to canonical internal events (handlers do this)
+    - Write to SQLite
+    - Publish to EventBus
 """
 
 import asyncio
