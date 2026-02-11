@@ -159,7 +159,7 @@ class StreamPolling:
         self.api_key = api_key
         self.secret_key = secret_key
         self.paper = paper
-        # Standardize feed string for common variants (case/whitespace) and validate
+        # Format feed string for common variants (case/whitespace) and validate
         self.feed: str = (feed or "iex").strip().lower()
         try:
             self._data_feed: DataFeed = DataFeed(self.feed)  # Internal enum

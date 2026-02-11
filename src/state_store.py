@@ -87,9 +87,106 @@ class StateStore:
                     qty NUMERIC(10, 4) NOT NULL,
                     price NUMERIC(10, 4) NOT NULL,
                     order_id TEXT NOT NULL,
-                    client_order_id TEXT NOT NULL
+                    client_order_id TEXT NOT NULL,
+                    fill_id TEXT,
+                    UNIQUE (order_id, fill_id),
+                    UNIQUE (order_id, client_order_id)
                 )
             """)
+
+            # Ensure uniqueness to avoid duplicate insertions coming from
+            # streaming + polling or reconnection replays. We add two unique
+            # constraints so that either a (order_id, fill_id) pair (when
+            # fills provide an id) or (order_id, client_order_id) act as a
+            # dedupe key. SQLite can't alter table constraints easily, so
+            # perform a safe migration if the existing table lacks these
+            # constraints/columns.
+            try:
+                cursor.execute("PRAGMA table_info(trades)")
+                trades_columns = [col[1] for col in cursor.fetchall()]
+                need_migration = False
+                # If fill_id missing or unique indexes not present, migrate
+                if "fill_id" not in trades_columns:
+                    need_migration = True
+                else:
+                    # Check for unique indexes on desired columns
+                    cursor.execute("PRAGMA index_list(trades)")
+                    indexes = cursor.fetchall()
+                    # Look for indexes that are unique and cover (order_id,fill_id)
+                    has_unique_order_fill = False
+                    has_unique_order_client = False
+                    for idx in indexes:
+                        # idx: (seq, name, unique, origin, partial)
+                        idx_name = idx[1]
+                        is_unique = idx[2]
+                        if not is_unique:
+                            continue
+
+                        # Safely quote the index name as an identifier for the PRAGMA call
+                        def _quote_identifier(name: str) -> str:
+                            return '"' + name.replace('"', '""') + '"'
+
+                        quoted_idx_name = _quote_identifier(idx_name)
+                        cursor.execute(f"PRAGMA index_info({quoted_idx_name})")
+                        idx_cols = [c[2] for c in cursor.fetchall()]
+                        if idx_cols == ["order_id", "fill_id"]:
+                            has_unique_order_fill = True
+                        if idx_cols == ["order_id", "client_order_id"]:
+                            has_unique_order_client = True
+                    if not (has_unique_order_fill and has_unique_order_client):
+                        need_migration = True
+
+                if need_migration:
+                    # Create a new table with the desired schema and unique constraints
+                    # Ensure any leftover `trades_new` from a prior partial
+                    # migration is removed so the migration is deterministic.
+                    cursor.execute("DROP TABLE IF EXISTS trades_new")
+
+                    cursor.execute("""
+                        CREATE TABLE trades_new (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            timestamp_utc TEXT NOT NULL,
+                            symbol TEXT NOT NULL,
+                            side TEXT NOT NULL,
+                            qty NUMERIC(10, 4) NOT NULL,
+                            price NUMERIC(10, 4) NOT NULL,
+                            order_id TEXT NOT NULL,
+                            client_order_id TEXT NOT NULL,
+                            fill_id TEXT,
+                            UNIQUE(order_id, fill_id),
+                            UNIQUE(order_id, client_order_id)
+                        )
+                    """)
+
+                    # Copy existing rows into new table keeping first-seen row
+                    # for any duplicate dedupe key. Use INSERT OR IGNORE to let
+                    # the UNIQUE constraints drop duplicates during copy.
+                    # If the existing `trades` table already has a `fill_id`
+                    # column, preserve its values; otherwise insert NULL.
+                    if "fill_id" in trades_columns:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO trades_new (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id) SELECT timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id FROM trades ORDER BY id ASC"
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO trades_new (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id) SELECT timestamp_utc, symbol, side, qty, price, order_id, client_order_id, NULL FROM trades ORDER BY id ASC"
+                        )
+
+                    # Swap tables atomically within transaction
+                    cursor.execute("DROP TABLE IF EXISTS trades")
+                    cursor.execute("ALTER TABLE trades_new RENAME TO trades")
+                    conn.commit()
+            except sqlite3.Error as e:
+                # If migration fails, log and raise so the app doesn't run
+                # with an incompatible schema. Developer may need to reset
+                # the DB manually in dev environments.
+                logger.exception(
+                    "Failed to migrate trades table for uniqueness; existing DB may need manual reset."
+                )
+                raise StateStoreError(
+                    "Database schema migration for trades table failed; "
+                    "application cannot safely continue."
+                ) from e
 
             # Equity curve table
             cursor.execute("""
