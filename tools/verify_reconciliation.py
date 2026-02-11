@@ -12,6 +12,7 @@ import sys
 # Import Alpaca SDK normally (do not mutate sys.path)
 from alpaca.trading.client import TradingClient
 
+
 def main() -> int:
     # Determine paper/live mode from env; default to paper=True if unset for safety
     paper_env = os.getenv("ALPACA_PAPER")

@@ -6,7 +6,6 @@ These tests monkeypatch `orchestrator` internals to simulate:
 - initial `reconcile` failure with sync timing out
 """
 
-import asyncio
 import subprocess
 from unittest.mock import MagicMock
 
@@ -84,7 +83,9 @@ async def test_phase1_auto_sync_sync_fails(monkeypatch):
     """When reconcile fails and sync process returns non-zero, reconciliation is reported as discrepancies."""
     _setup_basic_monkeypatch(monkeypatch)
 
-    monkeypatch.setattr(orch, "reconcile", lambda b, s: (_ for _ in ()).throw(ReconciliationError("mismatch")))
+    monkeypatch.setattr(
+        orch, "reconcile", lambda b, s: (_ for _ in ()).throw(ReconciliationError("mismatch"))
+    )
 
     def fake_run_fail(args, **kwargs):
         return subprocess.CompletedProcess(args=args, returncode=2, stdout="", stderr="failed")
@@ -95,7 +96,10 @@ async def test_phase1_auto_sync_sync_fails(monkeypatch):
     result = await orch_instance.phase1_infrastructure()
 
     assert result["reconciliation"]["status"] == "discrepancies_found"
-    assert any("Position sync failed" in e or "Position sync failed" in str(e) for e in result.get("errors", []))
+    assert any(
+        "Position sync failed" in e or "Position sync failed" in str(e)
+        for e in result.get("errors", [])
+    )
 
 
 @pytest.mark.asyncio
@@ -103,7 +107,9 @@ async def test_phase1_auto_sync_sync_timeout_raises(monkeypatch):
     """When the sync subprocess times out, phase1 should raise ReconciliationError."""
     _setup_basic_monkeypatch(monkeypatch)
 
-    monkeypatch.setattr(orch, "reconcile", lambda b, s: (_ for _ in ()).throw(ReconciliationError("mismatch")))
+    monkeypatch.setattr(
+        orch, "reconcile", lambda b, s: (_ for _ in ()).throw(ReconciliationError("mismatch"))
+    )
 
     def fake_run_timeout(args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args, timeout=60)

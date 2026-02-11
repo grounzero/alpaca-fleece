@@ -10,6 +10,7 @@ import inspect
 import logging
 import signal
 import sys
+import subprocess
 from typing import Optional
 
 from src import __version__ as version
@@ -79,6 +80,33 @@ class Orchestrator:
         self.symbols: list[str] = []
         self._shutdown_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
+
+    def _run_subprocess(
+        self, args: list[str], timeout: int, name: str, *, raise_on_timeout: bool = False
+    ) -> subprocess.CompletedProcess:
+        """Run a subprocess and handle timeout/exec errors consistently.
+
+        Args:
+            args: Command args list
+            timeout: Timeout in seconds
+            name: Human-readable name for logging
+            raise_on_timeout: If True, re-raise subprocess.TimeoutExpired to caller
+
+        Returns:
+            CompletedProcess on success or simulated CompletedProcess on handled errors
+        """
+        try:
+            return subprocess.run(args, capture_output=True, text=True, timeout=timeout)
+        except subprocess.TimeoutExpired as te:
+            logger.warning(f"   {name} timed out after {timeout} seconds")
+            if raise_on_timeout:
+                raise
+            return subprocess.CompletedProcess(
+                args=args, returncode=1, stdout=getattr(te, "output", ""), stderr=str(te)
+            )
+        except Exception as e:
+            logger.error(f"   {name} failed to execute: {e}")
+            return subprocess.CompletedProcess(args=args, returncode=1, stdout="", stderr=str(e))
 
     async def phase1_infrastructure(self) -> dict:
         """Phase 1: Infrastructure Agent - Load config, init broker, reconcile.
@@ -156,11 +184,11 @@ class Orchestrator:
                 import subprocess
 
                 try:
-                    result = subprocess.run(
+                    result = self._run_subprocess(
                         [sys.executable, "tools/sync_positions_from_alpaca.py"],
-                        capture_output=True,
-                        text=True,
-                        timeout=60,  # 60 second timeout
+                        timeout=60,
+                        name="Position sync",
+                        raise_on_timeout=True,
                     )
                 except subprocess.TimeoutExpired:
                     logger.error("   Position sync timed out after 60 seconds")
@@ -175,25 +203,18 @@ class Orchestrator:
                     logger.info("   Position sync completed successfully")
 
                     # Also update positions_snapshot for reconciliation
-                    try:
-                        result2 = subprocess.run(
-                            [sys.executable, "tools/update_positions_snapshot.py"],
-                            capture_output=True,
-                            text=True,
-                            timeout=30,  # 30 second timeout
-                        )
-                    except subprocess.TimeoutExpired:
-                        logger.warning("   Positions snapshot update timed out")
-                        result2 = subprocess.CompletedProcess(
-                            args=[], returncode=1, stderr="Timeout"
-                        )
-                    except Exception as e:
-                        logger.warning(f"   Positions snapshot update failed to execute: {e}")
-                        result2 = subprocess.CompletedProcess(args=[], returncode=1, stderr=str(e))
+                    result2 = self._run_subprocess(
+                        [sys.executable, "tools/update_positions_snapshot.py"],
+                        timeout=30,
+                        name="Positions snapshot update",
+                        raise_on_timeout=False,
+                    )
                     if result2.returncode == 0:
                         logger.info("   Positions snapshot updated successfully")
                     else:
-                        logger.warning(f"   Positions snapshot update failed: {getattr(result2, 'stderr', '')}")
+                        logger.warning(
+                            f"   Positions snapshot update failed: {getattr(result2, 'stderr', '')}"
+                        )
                         errors.append(
                             f"Positions snapshot update failed (rc={getattr(result2, 'returncode', 'unknown')}): stdout={getattr(result2, 'stdout', '')!r}, stderr={getattr(result2, 'stderr', '')!r}"
                         )

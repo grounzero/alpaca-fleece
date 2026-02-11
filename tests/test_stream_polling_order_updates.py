@@ -372,6 +372,24 @@ class TestOrderUpdatePolling:
         assert event.order.id == "alpaca-123"
         assert event.order.status.value == "filled"
 
+
+def test_hex_to_uuid_conversion():
+    """_hex_to_uuid should format 32-char hex strings into UUIDs and leave others unchanged."""
+    stream = StreamPolling("test_key", "test_secret")
+
+    # 32-char hex -> UUID format
+    hex_id = "51057fad52fa6ca251057fad52fa6ca2"
+    expected_uuid = f"{hex_id[:8]}-{hex_id[8:12]}-{hex_id[12:16]}-{hex_id[16:20]}-{hex_id[20:]}"
+    assert stream._hex_to_uuid(hex_id) == expected_uuid
+
+    # Already uuid -> unchanged
+    uuid_id = expected_uuid
+    assert stream._hex_to_uuid(uuid_id) == uuid_id
+
+    # Short string -> unchanged
+    short = "abc123"
+    assert stream._hex_to_uuid(short) == short
+
     @pytest.mark.asyncio
     async def test_poll_order_updates_runs_continuously(self, mock_stream, monkeypatch):
         """_poll_order_updates should run continuously and call _check_order_status."""
