@@ -7,10 +7,8 @@ to allow reconciliation to pass on next bot startup.
 
 import os
 import sqlite3
-import sys
 from datetime import datetime, timezone
 
-sys.path.insert(0, "src")
 from alpaca.trading.client import TradingClient
 
 API_KEY = os.environ["ALPACA_API_KEY"]

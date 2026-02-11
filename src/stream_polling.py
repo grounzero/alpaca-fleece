@@ -88,7 +88,9 @@ class StatusWrapper:
     """Wrapper for order status."""
 
     def __init__(self, value: str):
-        self.value = value
+        # Normalize status to a lowercase string so all event sources
+        # (SDK events, polling, etc.) present consistent status values.
+        self.value = str(value).lower()
 
 
 class SideWrapper:
@@ -572,9 +574,13 @@ class StreamPolling:
             else:
                 active_feed = self._data_feed
 
-            # Get bars from last 5 minutes to ensure fresh data
-            # start=None returns stale cached data, so we use explicit time window
+            # Get bars from last 5 minutes to ensure fresh data.
+            # start=None can return stale cached data, so we use an explicit
+            # time window. Request a small window ending at 'now' and request
+            # a few bars, then select the newest by timestamp to be robust
+            # against ordering/sort semantics of different data backends.
             start_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+            end_time = datetime.now(timezone.utc)
 
             logger.debug(f"Polling batch of {len(symbols)} symbols: {symbols}")
 
@@ -582,7 +588,8 @@ class StreamPolling:
                 symbol_or_symbols=symbols,
                 timeframe=TimeFrame.Minute,
                 start=start_time,
-                limit=1,  # Only need latest bar; explicit start avoids stale cache
+                end=end_time,
+                limit=5,  # Request a few bars and pick the newest explicitly
                 feed=active_feed,
             )
 
@@ -621,7 +628,12 @@ class StreamPolling:
             logger.debug(f"No bars returned for {symbol}")
             return
 
-        latest_bar = bar_list[-1]  # Most recent
+        # Bars may be returned in either ascending or descending order depending
+        # on the data backend and request parameters. Choose the bar with the
+        # maximum timestamp to ensure we always process the newest bar.
+        # Use epoch as a safe fallback so the key always returns a datetime
+        epoch = datetime.fromtimestamp(0, timezone.utc)
+        latest_bar = max(bar_list, key=lambda b: getattr(b, "timestamp", epoch))
         logger.debug(
             f"Processing {symbol}: {len(bar_list)} bars, latest={latest_bar.timestamp}, close=${latest_bar.close}"
         )
