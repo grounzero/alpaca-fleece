@@ -388,7 +388,6 @@ def test_hex_to_uuid_conversion():
     # Short string -> unchanged
     short = "abc123"
     assert stream._hex_to_uuid(short) == short
-    assert stream._hex_to_uuid(short) == short
 
 
 @pytest.mark.asyncio
