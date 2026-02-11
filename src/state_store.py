@@ -157,9 +157,16 @@ class StateStore:
                     # Copy existing rows into new table keeping first-seen row
                     # for any duplicate dedupe key. Use INSERT OR IGNORE to let
                     # the UNIQUE constraints drop duplicates during copy.
-                    cursor.execute(
-                        "INSERT OR IGNORE INTO trades_new (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id) SELECT timestamp_utc, symbol, side, qty, price, order_id, client_order_id, NULL FROM trades ORDER BY id ASC"
-                    )
+                    # If the existing `trades` table already has a `fill_id`
+                    # column, preserve its values; otherwise insert NULL.
+                    if "fill_id" in trades_columns:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO trades_new (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id) SELECT timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id FROM trades ORDER BY id ASC"
+                        )
+                    else:
+                        cursor.execute(
+                            "INSERT OR IGNORE INTO trades_new (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id) SELECT timestamp_utc, symbol, side, qty, price, order_id, client_order_id, NULL FROM trades ORDER BY id ASC"
+                        )
 
                     # Swap tables atomically within transaction
                     cursor.execute("DROP TABLE IF EXISTS trades")
