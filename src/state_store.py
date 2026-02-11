@@ -88,7 +88,9 @@ class StateStore:
                     price NUMERIC(10, 4) NOT NULL,
                     order_id TEXT NOT NULL,
                     client_order_id TEXT NOT NULL,
-                    fill_id TEXT
+                    fill_id TEXT,
+                    UNIQUE (order_id, fill_id),
+                    UNIQUE (order_id, client_order_id)
                 )
             """)
 
