@@ -59,27 +59,31 @@ class OrderUpdatesHandler:
         except (AttributeError, TypeError, ValueError) as e:
             logger.error(f"Failed to process order update: {e}")
 
+    def _extract_enum_value(self, attr: Any, default: str = "unknown") -> str:
+        """Normalize enum-or-string attributes to a lowercase string with a default.
+
+        Handles attributes that may be:
+        - None
+        - Enum-like objects with a `.value` attribute
+        - Plain strings or other primitives
+        """
+        if attr is None:
+            return default
+
+        # Use `.value` if present (e.g., Enum), otherwise use the attribute itself.
+        value = getattr(attr, "value", attr)
+        return str(value).lower()
+
     def _to_canonical_order_update(self, raw_update: Any) -> OrderUpdateEvent:
         """Convert raw SDK order update to a canonical OrderUpdateEvent."""
         # Safely access side attribute using getattr
         order = getattr(raw_update, "order", None)
         side_attr = getattr(order, "side", None)
-        # Handle both enum (has .value) and string cases, lowercase result
-        if side_attr is None:
-            side_value = "unknown"
-        elif hasattr(side_attr, "value"):
-            side_value = str(getattr(side_attr, "value")).lower()
-        else:
-            side_value = str(side_attr).lower()
+        side_value = self._extract_enum_value(side_attr)
 
         # Safely access status with enum/string handling
         status_attr = getattr(order, "status", None)
-        if status_attr is None:
-            status_value = "unknown"
-        elif hasattr(status_attr, "value"):
-            status_value = str(getattr(status_attr, "value")).lower()
-        else:
-            status_value = str(status_attr).lower()
+        status_value = self._extract_enum_value(status_attr)
 
         # Safely access other order attributes with defaults
         order_id = getattr(order, "id", "") or ""
