@@ -182,23 +182,47 @@ class OrderUpdatesHandler:
         # Insert trade using a context manager for the DB connection
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
-            # Use INSERT OR IGNORE to enforce idempotency using the
-            # unique constraint(s) defined on the `trades` table.
-            cursor.execute(
-                """INSERT OR IGNORE INTO trades 
-                   (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (
-                    event.timestamp.isoformat(),
-                    event.symbol,
-                    event.side,
-                    float(qty_to_record),
-                    float(event.avg_fill_price),
-                    event.order_id,
-                    event.client_order_id,
-                    getattr(event, "fill_id", None),
-                ),
+
+            # Prefer an explicit ON CONFLICT target to avoid suppressing
+            # unrelated integrity errors. If a `fill_id` is present we use
+            # the (order_id, fill_id) unique key, otherwise fall back to
+            # (order_id, client_order_id) which is the baseline dedupe.
+            fill_id_val = getattr(event, "fill_id", None)
+            params = (
+                event.timestamp.isoformat(),
+                event.symbol,
+                event.side,
+                float(qty_to_record),
+                float(event.avg_fill_price),
+                event.order_id,
+                event.client_order_id,
+                fill_id_val,
             )
+
+            if fill_id_val is not None:
+                sql = """
+                    INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(order_id, fill_id) DO NOTHING
+                    """
+            else:
+                sql = """
+                    INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(order_id, client_order_id) DO NOTHING
+                    """
+
+            try:
+                cursor.execute(sql, params)
+            except sqlite3.IntegrityError:
+                # Any remaining IntegrityError likely indicates a real data
+                # problem (NULLs in NOT NULL columns, type issues etc.) so
+                # log and re-raise instead of silently ignoring.
+                logger.exception(
+                    "Failed to insert trade for %s due to integrity error",
+                    event.client_order_id,
+                )
+                raise
 
     def record_filled_trade(self, event: OrderUpdateEvent) -> None:
         """Public wrapper to record a filled trade.
