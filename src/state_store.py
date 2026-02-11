@@ -179,7 +179,10 @@ class StateStore:
                     )
                     conn.commit()
             except sqlite3.Error as e:
-                logger.warning("Could not migrate order_intents to add atr column: %s", e)
+                logger.warning(
+                    "Could not migrate order_intents to add atr and filled_avg_price columns: %s",
+                    e,
+                )
 
     def get_state(self, key: str) -> Optional[str]:
         """Get state value by key."""
