@@ -26,6 +26,7 @@ class OrderIntentRow(TypedDict, total=False):
     side: str
     qty: float
     atr: Optional[float]
+    strategy: Optional[str]
     status: str
     filled_qty: Optional[float]
     filled_avg_price: Optional[float]
