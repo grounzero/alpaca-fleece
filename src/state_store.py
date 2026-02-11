@@ -281,13 +281,15 @@ class StateStore:
                 ON signal_gates(symbol)
             """)
 
-            # Ensure WAL mode and a sensible busy timeout for concurrent access
+            # Ensure WAL mode and a sensible busy timeout for concurrent access.
+            # Commit any implicit transaction opened by preceding DDL so PRAGMAs take effect.
+            conn.commit()
             try:
                 cursor.execute("PRAGMA journal_mode=WAL")
                 cursor.execute("PRAGMA busy_timeout=5000")
-            except sqlite3.Error:
-                # Non-fatal; continue with default settings
-                pass
+            except sqlite3.Error as e:
+                # Non-fatal; log and continue with default settings
+                logger.warning("Failed to configure SQLite WAL/busy_timeout: %s", e)
 
             # Migration: ensure `atr` column exists on order_intents for older DBs
             try:
