@@ -516,7 +516,9 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             # Coerce alpaca_order_id to a DB-friendly scalar (tests may pass MagicMock)
-            if alpaca_order_id is not None and not isinstance(alpaca_order_id, (str, bytes, int, float)):
+            if alpaca_order_id is not None and not isinstance(
+                alpaca_order_id, (str, bytes, int, float)
+            ):
                 alpaca_order_id = str(alpaca_order_id)
 
             cursor.execute(
