@@ -10,9 +10,7 @@ import sqlite3
 import sys
 from pathlib import Path
 
-# Insert src (project relative) into sys.path so imports work when run from tools/
-project_src = Path(__file__).resolve().parents[1] / "src"
-sys.path.insert(0, str(project_src))
+# Import Alpaca SDK normally (do not mutate sys.path)
 from alpaca.trading.client import TradingClient
 
 # Determine paper/live mode from env; default to paper=True if unset for safety
@@ -40,7 +38,8 @@ for sym in sorted(alpaca_positions.keys()):
     print(f'  {sym}: qty={d["qty"]}, entry=${d["avg_entry_price"]}')
 
 # Get latest positions_snapshot using context manager for proper cleanup
-with sqlite3.connect("data/trades.db") as conn:
+db_path = os.getenv("DATABASE_PATH", "data/trades.db")
+with sqlite3.connect(db_path) as conn:
     cursor = conn.cursor()
     cursor.execute("""
         SELECT symbol, qty, avg_entry_price FROM positions_snapshot

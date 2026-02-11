@@ -172,6 +172,12 @@ class StateStore:
                 if "atr" not in oi_columns:
                     cursor.execute("ALTER TABLE order_intents ADD COLUMN atr NUMERIC(10, 4)")
                     conn.commit()
+                # Migration: ensure `filled_avg_price` column exists on order_intents
+                if "filled_avg_price" not in oi_columns:
+                    cursor.execute(
+                        "ALTER TABLE order_intents ADD COLUMN filled_avg_price NUMERIC(10, 4)"
+                    )
+                    conn.commit()
             except sqlite3.Error as e:
                 logger.warning("Could not migrate order_intents to add atr column: %s", e)
 

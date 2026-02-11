@@ -353,15 +353,20 @@ class StreamPolling:
         """
         logger.info("Order update polling started")
         try:
+            interval = 2.0
             while True:
                 try:
+                    start = datetime.now(timezone.utc)
                     await self._check_order_status()
                 except asyncio.CancelledError:
                     raise
                 except Exception as e:
                     logger.error(f"Order polling error: {e}", exc_info=True)
 
-                await asyncio.sleep(2)
+                # Maintain a roughly-fixed cadence: sleep remaining time of interval
+                elapsed = (datetime.now(timezone.utc) - start).total_seconds()
+                to_sleep = max(0.0, interval - elapsed)
+                await asyncio.sleep(to_sleep)
 
         except asyncio.CancelledError:
             logger.info("Order polling cancelled")
@@ -579,7 +584,7 @@ class StreamPolling:
                 symbol_or_symbols=symbols,
                 timeframe=TimeFrame.Minute,
                 start=start_time,
-                limit=10,  # Get more bars to ensure we have latest
+                limit=1,  # Only need latest bar; explicit start avoids stale cache
                 feed=active_feed,
             )
 
