@@ -181,8 +181,6 @@ class Orchestrator:
                 logger.warning("   Auto-syncing positions from Alpaca...")
 
                 # Run position sync
-                import subprocess
-
                 try:
                     result = self._run_subprocess(
                         [sys.executable, "tools/sync_positions_from_alpaca.py"],
