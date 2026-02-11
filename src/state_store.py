@@ -121,7 +121,11 @@ class StateStore:
                         is_unique = idx[2]
                         if not is_unique:
                             continue
-                        cursor.execute(f"PRAGMA index_info({idx_name})")
+                        # Safely quote the index name as an identifier for the PRAGMA call
+                        def _quote_identifier(name: str) -> str:
+                            return '"' + name.replace('"', '""') + '"'
+                        quoted_idx_name = _quote_identifier(idx_name)
+                        cursor.execute(f"PRAGMA index_info({quoted_idx_name})")
                         idx_cols = [c[2] for c in cursor.fetchall()]
                         if idx_cols == ["order_id", "fill_id"]:
                             has_unique_order_fill = True
