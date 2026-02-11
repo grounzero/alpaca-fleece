@@ -178,16 +178,23 @@ class OrderUpdatesHandler:
                 event.client_order_id,
             )
             return
-
         # Insert trade using a context manager for the DB connection
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
 
-            # Prefer an explicit ON CONFLICT target to avoid suppressing
-            # unrelated integrity errors. If a `fill_id` is present we use
-            # the (order_id, fill_id) unique key, otherwise fall back to
-            # (order_id, client_order_id) which is the baseline dedupe.
-            fill_id_val = getattr(event, "fill_id", None)
+            # Use a single upsert path keyed on (order_id, client_order_id).
+            # This avoids ordering issues where an initial insert without
+            # `fill_id` would later cause a conflicting insert when a
+            # `fill_id` appears. The DO UPDATE will populate `fill_id` if
+            # it's newly provided while keeping the row deduplicated by
+            # the baseline key.
+            sql = """
+                INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(order_id, client_order_id) DO UPDATE SET
+                  fill_id = COALESCE(trades.fill_id, excluded.fill_id)
+                """
+
             params = (
                 event.timestamp.isoformat(),
                 event.symbol,
@@ -196,30 +203,17 @@ class OrderUpdatesHandler:
                 float(event.avg_fill_price),
                 event.order_id,
                 event.client_order_id,
-                fill_id_val,
+                getattr(event, "fill_id", None),
             )
-
-            if fill_id_val is not None:
-                sql = """
-                    INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(order_id, fill_id) DO NOTHING
-                    """
-            else:
-                sql = """
-                    INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    ON CONFLICT(order_id, client_order_id) DO NOTHING
-                    """
 
             try:
                 cursor.execute(sql, params)
             except sqlite3.IntegrityError:
-                # Any remaining IntegrityError likely indicates a real data
-                # problem (NULLs in NOT NULL columns, type issues etc.) so
-                # log and re-raise instead of silently ignoring.
+                # IntegrityError here indicates a genuine DB constraint
+                # violation (NULL in NOT NULL column, etc.) rather than a
+                # duplicate. Log and re-raise so callers / CI can detect it.
                 logger.exception(
-                    "Failed to insert trade for %s due to integrity error",
+                    "Failed to insert/update trade for %s due to integrity error",
                     event.client_order_id,
                 )
                 raise
