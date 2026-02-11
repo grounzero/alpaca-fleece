@@ -399,9 +399,20 @@ class StateStore:
             last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
             last_bar_iso = bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
 
-            # Use INSERT OR REPLACE to atomically create or update the PK row
+            # Use INSERT ... ON CONFLICT to atomically create or update the PK row in place
             cur.execute(
-                "INSERT OR REPLACE INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc) VALUES (?, ?, ?, ?, ?)",
+                """
+                INSERT INTO signal_gates (
+                    strategy,
+                    symbol,
+                    action,
+                    last_accepted_ts_utc,
+                    last_bar_ts_utc
+                ) VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(strategy, symbol, action) DO UPDATE SET
+                    last_accepted_ts_utc = excluded.last_accepted_ts_utc,
+                    last_bar_ts_utc = excluded.last_bar_ts_utc
+                """,
                 (strategy, symbol, action, last_accepted_iso, last_bar_iso),
             )
             conn.commit()
