@@ -589,6 +589,14 @@ class StreamPolling:
                 rows = cursor.fetchall()
 
                 orders = []
+                def _to_optional_float(val: Any) -> Optional[float]:
+                    if val is None:
+                        return None
+                    try:
+                        return float(val)
+                    except Exception:
+                        return None
+
                 for row in rows:
                     orders.append(
                         {
@@ -597,7 +605,7 @@ class StreamPolling:
                             "side": row[2],
                             "qty": row[3],
                             "status": row[4],
-                            "filled_qty": row[5] or 0,
+                            "filled_qty": _to_optional_float(row[5]),
                             "alpaca_order_id": row[6],
                         }
                     )
@@ -627,12 +635,15 @@ class StreamPolling:
             # Route persistence through the centralized StateStore so both
             # SDK-driven and polling-driven updates follow the same codepath.
             # Only update filled_qty/filled_avg_price if not None; else preserve DB value.
+            from src.utils import parse_optional_float
+
+            qty_float: float = parse_optional_float(filled_qty) or 0.0
             self._get_state_store().update_order_intent(
                 client_order_id=client_order_id,
                 status=status,
-                filled_qty=filled_qty,
+                filled_qty=qty_float,
                 alpaca_order_id=None,
-                filled_avg_price=filled_avg_price,
+                filled_avg_price=parse_optional_float(filled_avg_price) if filled_avg_price is not None else None,
             )
         except Exception as e:
             logger.error(f"Failed to persist order {client_order_id} via StateStore: {e}")
