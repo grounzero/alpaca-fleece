@@ -9,9 +9,9 @@ It intentionally keeps persistence methods minimal and synchronous to align
 with the existing `StateStore` SQLite usage.
 """
 
+import asyncio
 import logging
 import sqlite3
-import asyncio
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
