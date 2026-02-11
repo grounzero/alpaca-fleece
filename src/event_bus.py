@@ -65,7 +65,7 @@ class OrderUpdateEvent:
     symbol: str
     side: str  # buy, sell
     status: str  # new, filled, partially_filled, canceled, rejected, expired
-    filled_qty: float
+    filled_qty: Optional[float]
     avg_fill_price: Optional[float]
     timestamp: datetime
 

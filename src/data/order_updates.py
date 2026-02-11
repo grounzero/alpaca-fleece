@@ -9,10 +9,11 @@ Publishes to EventBus.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
 
 from src.event_bus import EventBus, OrderUpdateEvent
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -77,30 +78,56 @@ class OrderUpdatesHandler:
 
     def _to_canonical_order_update(self, raw_update: Any) -> OrderUpdateEvent:
         """Convert raw SDK order update to a canonical OrderUpdateEvent."""
-        # Safely access side attribute using getattr
+        # Support both object-like and dict-like order representations.
         order = getattr(raw_update, "order", None)
-        side_attr = getattr(order, "side", None)
+
+        def _get_raw(name: str) -> Any:
+            if order is None:
+                return None
+            # Prefer getattr for SDK objects
+            val = getattr(order, name, None)
+            # Fallback to dict-like access
+            if val is None and isinstance(order, dict):
+                val = order.get(name)
+            return val
+
+        # Safely access side and status using the unified helper so dict-shaped
+        # orders are handled the same as SDK objects and don't silently drop
+        # critical fields.
+        side_attr = _get_raw("side")
         side_value = self._extract_enum_value(side_attr)
 
-        # Safely access status with enum/string handling
-        status_attr = getattr(order, "status", None)
+        status_attr = _get_raw("status")
         status_value = self._extract_enum_value(status_attr)
 
-        # Safely access other order attributes with defaults
-        order_id = getattr(order, "id", "") or ""
-        client_order_id = getattr(order, "client_order_id", "") or ""
-        symbol = getattr(order, "symbol", "") or ""
-        filled_qty = getattr(order, "filled_qty", None)
-        filled_avg_price = getattr(order, "filled_avg_price", None)
+        # Use the same helper for identifiers/metadata so dict inputs don't
+        # become blank strings.
+        order_id = _get_raw("id") or ""
+        client_order_id = _get_raw("client_order_id") or ""
+        symbol = _get_raw("symbol") or ""
 
+        raw_filled_qty = _get_raw("filled_qty")
+        raw_filled_avg_price = _get_raw("filled_avg_price")
+
+        parsed_filled_qty: Optional[float] = parse_optional_float(raw_filled_qty)
+        parsed_filled_avg_price: Optional[float] = parse_optional_float(raw_filled_avg_price)
+
+        # Note: `parsed_filled_qty` and `parsed_filled_avg_price` may be None.
+        # We intentionally preserve None here (do not coerce filled_qty to 0)
+        # so that the StateStore's SQL `COALESCE(?, filled_qty)` can decide
+        # whether to overwrite the stored value. Downstream consumers that
+        # assume `filled_qty` is numeric must guard against None (for example,
+        # `_record_trade` should skip recording a trade or retrieve the
+        # existing DB quantity when `filled_qty` is None) to avoid inserting
+        # invalid trades or violating DB constraints.
         return OrderUpdateEvent(
             order_id=order_id,
             client_order_id=client_order_id,
             symbol=symbol,
             side=side_value,
             status=status_value,
-            filled_qty=float(filled_qty) if filled_qty else 0,
-            avg_fill_price=float(filled_avg_price) if filled_avg_price else None,
+            filled_qty=parsed_filled_qty,
+            avg_fill_price=parsed_filled_avg_price,
             timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
         )
 
@@ -108,26 +135,43 @@ class OrderUpdatesHandler:
         """Record filled order in trades table."""
         import sqlite3
 
+        # Require an avg fill price to record trades
         if event.avg_fill_price is None:
-            logger.warning(f"Filled order {event.client_order_id} has no fill price")
+            logger.warning("Filled order %s has no fill price", event.client_order_id)
             return
 
-        conn = sqlite3.connect(self.state_store.db_path)
-        cursor = conn.cursor()
+        # If filled_qty is None, attempt to retrieve the last known value from
+        # the StateStore (order_intents). If still missing, skip recording to
+        # avoid inserting NULL/invalid quantities into the trades table.
+        qty_to_record: Optional[float] = event.filled_qty
+        if qty_to_record is None:
+            oi = self.state_store.get_order_intent(event.client_order_id)
+            if oi:
+                # `oi` is a mapping of `str`->`object`; coerce using the
+                # shared helper to a float or None.
+                qty_to_record = parse_optional_float(oi.get("filled_qty"))
 
-        cursor.execute(
-            """INSERT INTO trades 
-               (timestamp_utc, symbol, side, qty, price, order_id, client_order_id)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
-            (
-                event.timestamp.isoformat(),
-                event.symbol,
-                event.side,
-                event.filled_qty,
-                event.avg_fill_price,
-                event.order_id,
+        if qty_to_record is None:
+            logger.warning(
+                "Skipping trade record for %s: filled_qty is missing",
                 event.client_order_id,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            )
+            return
+
+        # Insert trade using a context manager for the DB connection
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO trades 
+                   (timestamp_utc, symbol, side, qty, price, order_id, client_order_id)
+                   VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event.timestamp.isoformat(),
+                    event.symbol,
+                    event.side,
+                    float(qty_to_record),
+                    float(event.avg_fill_price),
+                    event.order_id,
+                    event.client_order_id,
+                ),
+            )
