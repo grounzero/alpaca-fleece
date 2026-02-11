@@ -8,7 +8,6 @@ and honors the `ALPACA_PAPER` environment variable to select paper/live mode.
 import os
 import sqlite3
 import sys
-from pathlib import Path
 
 # Import Alpaca SDK normally (do not mutate sys.path)
 from alpaca.trading.client import TradingClient
@@ -20,9 +19,7 @@ if paper_env is None:
 else:
     paper = paper_env.strip().lower() in ("1", "true", "yes", "y")
 
-client = TradingClient(
-    os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper=paper
-)
+client = TradingClient(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper=paper)
 
 # Get Alpaca positions
 alpaca_positions = {}

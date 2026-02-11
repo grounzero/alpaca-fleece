@@ -444,9 +444,7 @@ class StreamPolling:
 
                 # If status changed, persist to DB and trigger update
                 if current_status != order["status"]:
-                    logger.info(
-                        f"Order {client_id} status: {order['status']} -> {current_status}"
-                    )
+                    logger.info(f"Order {client_id} status: {order['status']} -> {current_status}")
 
                     # Persist status change to SQLite to prevent duplicate updates
                     await asyncio.to_thread(
