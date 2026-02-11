@@ -4,6 +4,7 @@ import asyncio
 import sqlite3
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
+from enum import Enum
 
 import pytest
 
@@ -183,6 +184,45 @@ class TestOrderUpdatePolling:
         mock_order = MagicMock()
         mock_order.id = "alpaca-123"
         mock_order.status = mock_status
+        mock_order.filled_qty = "100"
+        mock_order.filled_avg_price = "150.00"
+        stream.trading_client.get_order_by_id.return_value = mock_order
+
+        # Test
+        await stream._check_order_status()
+
+        # Should emit update with status
+        assert stream.on_order_update.called
+        update_event = stream.on_order_update.call_args[0][0]
+        assert update_event.order.status.value == "filled"
+
+    @pytest.mark.asyncio
+    async def test_check_order_status_handles_stdlib_enum_status(self, mock_stream):
+        """_check_order_status should handle stdlib enum.Enum status values."""
+        stream = mock_stream
+
+        # Insert a submitted order
+        conn = sqlite3.connect(stream._db_path)
+        cursor = conn.cursor()
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            """
+            INSERT INTO order_intents
+            (client_order_id, symbol, side, qty, status, alpaca_order_id, created_at_utc, updated_at_utc)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("test-order", "AAPL", "buy", 100, "submitted", "alpaca-123", now, now),
+        )
+        conn.commit()
+        conn.close()
+
+        # Create a stdlib Enum for status
+        class OrderStatus(Enum):
+            FILLED = "filled"
+
+        mock_order = MagicMock()
+        mock_order.id = "alpaca-123"
+        mock_order.status = OrderStatus.FILLED
         mock_order.filled_qty = "100"
         mock_order.filled_avg_price = "150.00"
         stream.trading_client.get_order_by_id.return_value = mock_order

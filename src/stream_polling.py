@@ -94,10 +94,22 @@ class StatusWrapper:
 
 
 class SideWrapper:
-    """Wrapper for order side (buy/sell)."""
+    """Wrapper for order side (buy/sell).
 
-    def __init__(self, value: str):
-        self.value = value
+    Ensures the `.value` attribute is always a lowercase string. Accepts
+    enum-like objects (with a `.value`) or plain strings.
+    """
+
+    def __init__(self, value: Any):
+        # Prefer .value when present (enum-like), else use the value itself
+        raw = getattr(value, "value", value)
+        if raw is None:
+            self.value = "unknown"
+        else:
+            try:
+                self.value = str(raw).lower()
+            except Exception:
+                self.value = "unknown"
 
 
 class PollingBar:
@@ -438,11 +450,27 @@ class StreamPolling:
                     filled_qty = getattr(alpaca_order, "filled_qty", None)
                     filled_avg_price = getattr(alpaca_order, "filled_avg_price", None)
 
-                # Coerce numeric values to float for SQLite compatibility
-                if filled_qty is not None:
-                    filled_qty = float(filled_qty)
-                if filled_avg_price is not None:
-                    filled_avg_price = float(filled_avg_price)
+                # Coerce numeric values to float for SQLite compatibility.
+                # Alpaca SDK objects typically expose numeric types, but
+                # when using `raw_data=True` or when the client returns
+                # dict/JSON responses the numeric values may be strings.
+                # Safely parse them here and fall back to `None` on parse
+                # errors to avoid accidentally overwriting DB values.
+                def _to_float_safe(val: Any) -> Optional[float]:
+                    if val is None:
+                        return None
+                    if isinstance(val, (int, float)):
+                        return float(val)
+                    try:
+                        s = str(val).strip()
+                        if s == "":
+                            return None
+                        return float(s)
+                    except Exception:
+                        return None
+
+                filled_qty = _to_float_safe(filled_qty)
+                filled_avg_price = _to_float_safe(filled_avg_price)
 
                 # If status changed, persist to DB and trigger update
                 if current_status != order["status"]:

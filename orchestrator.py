@@ -193,7 +193,10 @@ class Orchestrator:
                     if result2.returncode == 0:
                         logger.info("   Positions snapshot updated successfully")
                     else:
-                        logger.warning(f"   Positions snapshot update failed: {result2.stderr}")
+                        logger.warning(f"   Positions snapshot update failed: {getattr(result2, 'stderr', '')}")
+                        errors.append(
+                            f"Positions snapshot update failed (rc={getattr(result2, 'returncode', 'unknown')}): stdout={getattr(result2, 'stdout', '')!r}, stderr={getattr(result2, 'stderr', '')!r}"
+                        )
 
                     # Re-check reconciliation
                     try:
