@@ -7,9 +7,9 @@ import asyncio
 import logging
 import os
 import sqlite3
+import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
-import uuid
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
@@ -438,8 +438,9 @@ class StreamPolling:
                     alpaca_order_id = self._hex_to_uuid(order["alpaca_order_id"])
 
                     # Query Alpaca for current status in a worker thread
+                    # Ensure we pass a non-None string to the trading client
                     alpaca_order = await asyncio.to_thread(
-                        self.trading_client.get_order_by_id, alpaca_order_id
+                        self.trading_client.get_order_by_id, alpaca_order_id or order["alpaca_order_id"]
                     )
 
                 if not alpaca_order:

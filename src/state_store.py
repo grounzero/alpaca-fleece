@@ -28,6 +28,7 @@ class OrderIntentRow(TypedDict, total=False):
     atr: Optional[float]
     status: str
     filled_qty: Optional[float]
+    filled_avg_price: Optional[float]
     alpaca_order_id: Optional[str]
 
 
@@ -230,6 +231,7 @@ class StateStore:
         status: str,
         filled_qty: float,
         alpaca_order_id: Optional[str] = None,
+        filled_avg_price: Optional[float] = None,
     ) -> None:
         """Update order intent after status change."""
         now = datetime.now(timezone.utc).isoformat()
@@ -237,9 +239,9 @@ class StateStore:
             cursor = conn.cursor()
             cursor.execute(
                 """UPDATE order_intents 
-                   SET status = ?, filled_qty = ?, alpaca_order_id = ?, updated_at_utc = ?
+                   SET status = ?, filled_qty = ?, alpaca_order_id = ?, filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
                    WHERE client_order_id = ?""",
-                (status, filled_qty, alpaca_order_id, now, client_order_id),
+                (status, filled_qty, alpaca_order_id, filled_avg_price, now, client_order_id),
             )
             conn.commit()
 
@@ -248,7 +250,7 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
+                "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
                 (client_order_id,),
             )
             row = cursor.fetchone()
@@ -264,7 +266,8 @@ class StateStore:
                     "atr": atr_val,
                     "status": row[5],
                     "filled_qty": parse_optional_float(row[6]),
-                    "alpaca_order_id": row[7],
+                    "filled_avg_price": parse_optional_float(row[7]),
+                    "alpaca_order_id": row[8],
                 }
             return None
 
@@ -281,12 +284,12 @@ class StateStore:
             cursor = conn.cursor()
             if status:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents WHERE status = ?",
+                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE status = ?",
                     (status,),
                 )
             else:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, alpaca_order_id FROM order_intents"
+                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents"
                 )
 
             rows = cursor.fetchall()
@@ -301,7 +304,8 @@ class StateStore:
                     "atr": atr_val,
                     "status": row[5],
                     "filled_qty": parse_optional_float(row[6]),
-                    "alpaca_order_id": row[7],
+                    "filled_avg_price": parse_optional_float(row[7]),
+                    "alpaca_order_id": row[8],
                 }
 
             return [map_row(row) for row in rows]

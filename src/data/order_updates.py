@@ -40,12 +40,13 @@ class OrderUpdatesHandler:
             # Convert raw SDK update to a canonical OrderUpdateEvent
             event = self._to_canonical_order_update(raw_update)
 
-            # Update order_intents table
+            # Update order_intents table (including avg fill price when available)
             self.state_store.update_order_intent(
                 client_order_id=event.client_order_id,
                 status=event.status,
                 filled_qty=event.filled_qty,
                 alpaca_order_id=event.order_id,
+                filled_avg_price=event.avg_fill_price,
             )
 
             # If filled: record in trades table

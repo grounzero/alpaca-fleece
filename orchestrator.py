@@ -9,8 +9,8 @@ import asyncio
 import inspect
 import logging
 import signal
-import sys
 import subprocess
+import sys
 from pathlib import Path
 from typing import Optional
 
