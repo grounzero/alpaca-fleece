@@ -11,7 +11,7 @@ Uses float at module boundaries for API compatibility.
 
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime
 from typing import Any
 
 from src.broker import Broker
@@ -106,6 +106,30 @@ class OrderManager:
         symbol = signal.symbol
         side = "buy" if signal.signal_type == "BUY" else "sell"
 
+        # Determine whether this signal is an exposure-increasing entry or an exit
+        # Map to actions used by the gating table
+        action = None
+        try:
+            positions = self.broker.get_positions()
+            pos_qty = 0.0
+            for p in positions:
+                if p.get("symbol") == symbol:
+                    pos_qty = float(p.get("qty", 0) or 0)
+                    break
+        except Exception:
+            pos_qty = 0.0
+
+        # Decide action: buy -> ENTER_LONG (typically exposure-increasing)
+        # sell -> if currently long, it's an exit; if flat, treat as ENTER_SHORT
+        if side == "buy":
+            action = "ENTER_LONG"
+        else:
+            # sell
+            if pos_qty > 0:
+                action = "EXIT_LONG"
+            else:
+                action = "ENTER_SHORT"
+
         # Log signal metadata (Win #2: multi-timeframe SMA + regime detection)
         sma_period = signal.metadata.get("sma_period", (10, 30))
         confidence = signal.metadata.get("confidence", 0.5)
@@ -115,6 +139,65 @@ class OrderManager:
             f"Trading {symbol}: {side.upper()} "
             f"SMA{sma_period} confidence={confidence:.2f} regime={regime}"
         )
+
+        # If this is an exposure-increasing action, enforce gating and pending checks
+        entry_actions = ("ENTER_LONG", "ENTER_SHORT")
+        if action in entry_actions:
+            # Position-aware block: don't open same-direction exposure if already in position
+            if action == "ENTER_LONG" and pos_qty > 0:
+                logger.info(
+                    "Blocking entry: already_in_position symbol=%s action=%s pos_qty=%s",
+                    symbol,
+                    action,
+                    pos_qty,
+                )
+                return False
+            if action == "ENTER_SHORT" and pos_qty < 0:
+                logger.info(
+                    "Blocking entry: already_in_position symbol=%s action=%s pos_qty=%s",
+                    symbol,
+                    action,
+                    pos_qty,
+                )
+                return False
+
+            # Pending-order-aware block
+            entry_side = "buy" if action == "ENTER_LONG" else "sell"
+            if self.state_store.has_open_exposure_increasing_order(symbol, entry_side):
+                logger.info(
+                    "Blocking entry: open_order symbol=%s action=%s side=%s",
+                    symbol,
+                    action,
+                    entry_side,
+                )
+                return False
+
+            # Cooldown + per-bar dedupe via gate_try_accept
+            cooldown_min = int(self.config.get("entry_cooldown_minutes", 120))
+            from datetime import datetime, timedelta, timezone
+
+            now_utc = datetime.now(timezone.utc)
+            bar_ts = getattr(signal, "timestamp", None)
+            cooldown_td = timedelta(minutes=cooldown_min)
+            accepted = self.state_store.gate_try_accept(
+                strategy=self.strategy_name,
+                symbol=symbol,
+                action=action,
+                now_utc=now_utc,
+                bar_ts_utc=bar_ts,
+                cooldown=cooldown_td,
+            )
+            if not accepted:
+                # Determine reason heuristically by re-checking recent state
+                logger.info(
+                    "Blocking entry: gate_rejected symbol=%s action=%s bar_ts=%s now_ts=%s cooldown_min=%s",
+                    symbol,
+                    action,
+                    str(bar_ts),
+                    now_utc.isoformat(),
+                    cooldown_min,
+                )
+                return False
 
         # Generate deterministic order ID
         client_order_id = self._generate_client_order_id(

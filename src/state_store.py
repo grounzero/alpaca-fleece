@@ -6,7 +6,7 @@ and bot state. All financial values use NUMERIC for precision.
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
@@ -263,6 +263,31 @@ class StateStore:
 
             conn.commit()
 
+            # Signal gates table for persistent entry gating (one-row per strategy/symbol/action)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signal_gates (
+                    strategy TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    last_accepted_ts_utc TEXT NOT NULL,
+                    last_bar_ts_utc TEXT,
+                    PRIMARY KEY (strategy, symbol, action)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_signal_gates_symbol
+                ON signal_gates(symbol)
+            """)
+
+            # Ensure WAL mode and a sensible busy timeout for concurrent access
+            try:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
+            except sqlite3.Error:
+                # Non-fatal; continue with default settings
+                pass
+
             # Migration: ensure `atr` column exists on order_intents for older DBs
             try:
                 cursor.execute("PRAGMA table_info(order_intents)")
@@ -289,6 +314,107 @@ class StateStore:
             cursor.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
             row = cursor.fetchone()
             return row[0] if row else None
+
+    def has_open_exposure_increasing_order(self, symbol: str, side: str) -> bool:
+        """Return True if an exposure-increasing order intent exists for (symbol, side).
+
+        Considers intents with statuses that indicate an order is in-flight or being processed.
+        """
+        statuses = ("new", "accepted", "pending_new", "submitted", "partially_filled")
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT 1 FROM order_intents WHERE symbol = ? AND side = ? AND status IN (?,?,?,?,?) LIMIT 1",
+                (symbol, side, *statuses),
+            )
+            return cursor.fetchone() is not None
+
+    def gate_try_accept(
+        self,
+        strategy: str,
+        symbol: str,
+        action: str,
+        now_utc: datetime,
+        bar_ts_utc: Optional[datetime],
+        cooldown: timedelta,
+    ) -> bool:
+        """Atomically try to accept an entry signal for (strategy, symbol, action).
+
+        Returns True if accepted and the gate row was created/updated within the same
+        BEGIN IMMEDIATE transaction. Returns False if blocked by cooldown or same-bar.
+        """
+        import sqlite3 as _sqlite
+        from datetime import timezone
+
+        # Use an explicit immediate transaction to avoid races between concurrent workers.
+        conn = _sqlite.connect(self.db_path, timeout=5.0)
+        try:
+            conn.isolation_level = None
+            cur = conn.cursor()
+            # Ensure WAL + busy timeout on this connection
+            try:
+                cur.execute("PRAGMA journal_mode=WAL")
+                cur.execute("PRAGMA busy_timeout=5000")
+            except Exception:
+                pass
+
+            cur.execute("BEGIN IMMEDIATE")
+            cur.execute(
+                "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            row = cur.fetchone()
+
+            # Helper to parse ISO timestamps; treat None as missing
+            def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+                if not ts:
+                    return None
+                try:
+                    return datetime.fromisoformat(ts).astimezone(timezone.utc)
+                except Exception:
+                    return None
+
+            if row:
+                last_accepted = _parse_iso(row[0])
+                last_bar = _parse_iso(row[1])
+            else:
+                last_accepted = None
+                last_bar = None
+
+            # Check same-bar dedupe
+            if bar_ts_utc is not None and last_bar is not None:
+                # Compare exact equality of UTC timestamps
+                if bar_ts_utc.astimezone(timezone.utc) == last_bar:
+                    conn.rollback()
+                    return False
+
+            # Check cooldown
+            if last_accepted is not None:
+                elapsed = now_utc.astimezone(timezone.utc) - last_accepted
+                if elapsed < cooldown:
+                    conn.rollback()
+                    return False
+
+            # Accept: upsert the row with new timestamps
+            last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
+            last_bar_iso = bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
+
+            # Use INSERT OR REPLACE to atomically create or update the PK row
+            cur.execute(
+                "INSERT OR REPLACE INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc) VALUES (?, ?, ?, ?, ?)",
+                (strategy, symbol, action, last_accepted_iso, last_bar_iso),
+            )
+            conn.commit()
+            return True
+        except _sqlite.Error as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            logger.exception("signal gate DB error: %s", e)
+            return False
+        finally:
+            conn.close()
 
     def set_state(self, key: str, value: str) -> None:
         """Set state value."""
