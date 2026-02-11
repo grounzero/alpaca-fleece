@@ -13,7 +13,13 @@ from alpaca.trading.client import TradingClient
 
 API_KEY = os.environ["ALPACA_API_KEY"]
 SECRET_KEY = os.environ["ALPACA_SECRET_KEY"]
-PAPER = os.environ.get("ALPACA_PAPER", "true").lower() == "true"
+PAPER = str(os.environ.get("ALPACA_PAPER", "true")).strip().lower() in (
+    "1",
+    "true",
+    "yes",
+    "y",
+    "on",
+)
 DATABASE_PATH = os.environ.get("DATABASE_PATH", "data/trades.db")
 
 print("=" * 60)
