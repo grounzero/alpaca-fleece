@@ -515,6 +515,7 @@ class StreamPolling:
                         current_status,
                         parsed_filled_qty if parsed_filled_qty is not None else None,
                         parsed_filled_avg_price if parsed_filled_avg_price is not None else None,
+                        order.get("alpaca_order_id"),
                     )
 
                     # Create update event, merging DB row fallback values so
@@ -589,6 +590,7 @@ class StreamPolling:
                 rows = cursor.fetchall()
 
                 orders = []
+
                 def _to_optional_float(val: Any) -> Optional[float]:
                     if val is None:
                         return None
@@ -622,6 +624,7 @@ class StreamPolling:
         status: str,
         filled_qty: Optional[Any],
         filled_avg_price: Optional[Any],
+        alpaca_order_id: Optional[str] = None,
     ) -> None:
         """Update order status in SQLite to prevent duplicate updates.
 
@@ -630,6 +633,7 @@ class StreamPolling:
             status: New status from Alpaca
             filled_qty: Filled quantity (optional, None to preserve DB value)
             filled_avg_price: Filled average price (optional, None to preserve DB value)
+            alpaca_order_id: The Alpaca order ID (optional, None to preserve DB value)
         """
         try:
             # Route persistence through the centralized StateStore so both
@@ -642,8 +646,10 @@ class StreamPolling:
                 client_order_id=client_order_id,
                 status=status,
                 filled_qty=qty_float,
-                alpaca_order_id=None,
-                filled_avg_price=parse_optional_float(filled_avg_price) if filled_avg_price is not None else None,
+                alpaca_order_id=alpaca_order_id,
+                filled_avg_price=(
+                    parse_optional_float(filled_avg_price) if filled_avg_price is not None else None
+                ),
             )
         except Exception as e:
             logger.error(f"Failed to persist order {client_order_id} via StateStore: {e}")
