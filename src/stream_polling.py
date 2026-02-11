@@ -641,7 +641,7 @@ class StreamPolling:
             # Only update filled_qty/filled_avg_price if not None; else preserve DB value.
             from src.utils import parse_optional_float
 
-            qty_float: float = parse_optional_float(filled_qty) or 0.0
+            qty_float: Optional[float] = parse_optional_float(filled_qty)
             self._get_state_store().update_order_intent(
                 client_order_id=client_order_id,
                 status=status,

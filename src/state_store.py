@@ -229,7 +229,7 @@ class StateStore:
         self,
         client_order_id: str,
         status: str,
-        filled_qty: float,
+        filled_qty: Optional[float],
         alpaca_order_id: Optional[str] = None,
         filled_avg_price: Optional[float] = None,
     ) -> None:
@@ -239,7 +239,7 @@ class StateStore:
             cursor = conn.cursor()
             cursor.execute(
                 """UPDATE order_intents 
-                   SET status = ?, filled_qty = ?, alpaca_order_id = ?, filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
+                   SET status = ?, filled_qty = COALESCE(?, filled_qty), alpaca_order_id = COALESCE(?, alpaca_order_id), filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
                    WHERE client_order_id = ?""",
                 (status, filled_qty, alpaca_order_id, filled_avg_price, now, client_order_id),
             )

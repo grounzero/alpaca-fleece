@@ -311,6 +311,50 @@ class TestOrderUpdatePolling:
         assert row[0] == "filled"
         assert row[1] == 100
 
+    @pytest.mark.asyncio
+    async def test_check_order_status_preserves_db_filled_qty_when_missing(self, mock_stream):
+        """If Alpaca omits filled_qty, existing DB filled_qty should be preserved."""
+        stream = mock_stream
+
+        # Insert a submitted order with existing filled_qty=5
+        conn = sqlite3.connect(stream._db_path)
+        cursor = conn.cursor()
+        now = datetime.now(timezone.utc).isoformat()
+        cursor.execute(
+            """
+            INSERT INTO order_intents
+            (client_order_id, symbol, side, qty, status, filled_qty, alpaca_order_id, created_at_utc, updated_at_utc)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """,
+            ("test-order", "AAPL", "buy", 100, "submitted", 5, "alpaca-123", now, now),
+        )
+        conn.commit()
+        conn.close()
+
+        # Mock Alpaca returning a status transition but missing filled_qty
+        mock_order = {
+            "id": "alpaca-123",
+            "status": "partially_filled",
+            "filled_qty": None,
+            "filled_avg_price": None,
+        }
+        stream.trading_client.get_order_by_id.return_value = mock_order
+
+        # Run poll check
+        await stream._check_order_status()
+
+        # Verify DB still has previous filled_qty (5)
+        conn = sqlite3.connect(stream._db_path)
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT filled_qty FROM order_intents WHERE client_order_id = ?",
+            ("test-order",),
+        )
+        row = cursor.fetchone()
+        conn.close()
+
+        assert row[0] == 5
+
     def test_create_order_update_event_converts_dict_to_canonical(self):
         """_create_order_update_event should convert dict response to canonical form."""
         stream = StreamPolling("test_key", "test_secret")
