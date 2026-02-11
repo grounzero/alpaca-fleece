@@ -188,8 +188,15 @@ class PositionTracker:
             return 0.0, 0.0
         if position.side == "long":
             price_diff = current_price - position.entry_price
-        else:
+        elif position.side == "short":
             price_diff = position.entry_price - current_price
+        else:
+            logger.warning(
+                "Unsupported position side '%s' for P&L calc on symbol %s; returning 0.0",
+                position.side,
+                symbol,
+            )
+            return 0.0, 0.0
         pnl_amount = price_diff * position.qty
         pnl_pct = price_diff / position.entry_price
         return pnl_amount, pnl_pct
@@ -246,8 +253,6 @@ class PositionTracker:
                 INSERT OR REPLACE INTO position_tracking
                 (symbol, side, qty, entry_price, atr, entry_time, extreme_price,
                  trailing_stop_price, trailing_stop_activated, pending_exit, updated_at)
-                # mark last update timestamp
-                self._last_update = datetime.now(timezone.utc)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
@@ -265,6 +270,8 @@ class PositionTracker:
                 ),
             )
             conn.commit()
+        # mark last update timestamp after successful commit
+        self._last_update = datetime.now(timezone.utc)
 
     # Public persistence API
     def persist_position(self, position: PositionData) -> None:
@@ -285,11 +292,6 @@ class PositionTracker:
         self.init_schema()
         positions: List[PositionData] = []
         with sqlite3.connect(self.state_store.db_path) as conn:
-
-            def last_updated(self) -> Optional[datetime]:
-                """Return timestamp when snapshot was last updated (or None)."""
-                return self._last_update
-
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price,
@@ -316,3 +318,7 @@ class PositionTracker:
                 positions.append(position)
 
         return positions
+
+    def last_updated(self) -> Optional[datetime]:
+        """Return timestamp when snapshot was last updated (or None)."""
+        return self._last_update
