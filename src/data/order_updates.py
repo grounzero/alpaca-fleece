@@ -131,6 +131,7 @@ class OrderUpdatesHandler:
     def _record_trade(self, event: OrderUpdateEvent) -> None:
         """Record filled order in trades table."""
         import sqlite3
+
         # Require an avg fill price to record trades
         if event.avg_fill_price is None:
             logger.warning(f"Filled order {event.client_order_id} has no fill price")
