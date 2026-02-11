@@ -1,14 +1,30 @@
 #!/usr/bin/env python3
-"""Verify reconciliation passes."""
+"""Verify reconciliation passes.
+
+This script resolves the `src` directory relative to the script location
+and honors the `ALPACA_PAPER` environment variable to select paper/live mode.
+"""
 
 import os
 import sqlite3
 import sys
+from pathlib import Path
 
-sys.path.insert(0, "src")
+# Insert src (project relative) into sys.path so imports work when run from tools/
+project_src = Path(__file__).resolve().parents[1] / "src"
+sys.path.insert(0, str(project_src))
 from alpaca.trading.client import TradingClient
 
-client = TradingClient(os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper=True)
+# Determine paper/live mode from env; default to paper=True if unset for safety
+paper_env = os.getenv("ALPACA_PAPER")
+if paper_env is None:
+    paper = True
+else:
+    paper = paper_env.strip().lower() in ("1", "true", "yes", "y")
+
+client = TradingClient(
+    os.environ["ALPACA_API_KEY"], os.environ["ALPACA_SECRET_KEY"], paper=paper
+)
 
 # Get Alpaca positions
 alpaca_positions = {}

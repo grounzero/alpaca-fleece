@@ -124,6 +124,7 @@ class StreamPolling:
         paper: bool = True,
         feed: str = "iex",
         batch_size: int = 25,
+        order_polling_concurrency: int = 10,
     ) -> None:
         """Initialise polling stream.
 
@@ -133,6 +134,8 @@ class StreamPolling:
             paper: True for paper trading
             feed: "iex" (free) or "sip" (paid)
             batch_size: Number of symbols per batch request (default: 25)
+            order_polling_concurrency: Maximum concurrent Alpaca order requests during polling
+                (default: 10)
         """
         self.api_key = api_key
         self.secret_key = secret_key
@@ -166,6 +169,8 @@ class StreamPolling:
         self._symbols_with_data: set[str] = set()  # Track which symbols have received data
         self._poll_iterations: int = 0  # Track polling iterations for periodic reporting
         self._db_path: str = "data/trades.db"  # Default DB path
+        # Maximum concurrent Alpaca order requests during polling
+        self._order_polling_concurrency: int = order_polling_concurrency
 
     def register_handlers(
         self,
@@ -381,21 +386,27 @@ class StreamPolling:
         """Check status of submitted orders and trigger updates."""
         # Get submitted orders from SQLite in a worker thread to avoid blocking
         submitted_orders = await asyncio.to_thread(self._get_submitted_orders)
+        if not submitted_orders:
+            return
 
-        for order in submitted_orders:
+        sem = asyncio.Semaphore(self._order_polling_concurrency)
+
+        async def _process_one(order: dict[str, Any]) -> None:
+            """Fetch Alpaca order and process status for a single order."""
+            client_id = order.get("client_order_id", "unknown")
             try:
-                # Convert hex order ID to UUID format if needed
-                alpaca_order_id = self._hex_to_uuid(order["alpaca_order_id"])
+                async with sem:
+                    # Convert hex order ID to UUID format if needed
+                    alpaca_order_id = self._hex_to_uuid(order["alpaca_order_id"])
 
-                # Query Alpaca for current status in a worker thread
-                alpaca_order = await asyncio.to_thread(
-                    self.trading_client.get_order_by_id,
-                    alpaca_order_id,
-                )
+                    # Query Alpaca for current status in a worker thread
+                    alpaca_order = await asyncio.to_thread(
+                        self.trading_client.get_order_by_id, alpaca_order_id
+                    )
 
                 if not alpaca_order:
-                    logger.warning(f"Order {order['client_order_id']} not found in Alpaca")
-                    continue
+                    logger.warning(f"Order {client_id} not found in Alpaca")
+                    return
 
                 # Handle both dict and Order object returns
                 if isinstance(alpaca_order, dict):
@@ -425,14 +436,13 @@ class StreamPolling:
                 # If status changed, persist to DB and trigger update
                 if current_status != order["status"]:
                     logger.info(
-                        f"Order {order['client_order_id']} status: "
-                        f"{order['status']} -> {current_status}"
+                        f"Order {client_id} status: {order['status']} -> {current_status}"
                     )
 
                     # Persist status change to SQLite to prevent duplicate updates
                     await asyncio.to_thread(
                         self._update_order_status,
-                        order["client_order_id"],
+                        client_id,
                         current_status,
                         filled_qty,
                         filled_avg_price,
@@ -446,9 +456,11 @@ class StreamPolling:
                         await self.on_order_update(update_event)
 
             except Exception as e:
-                logger.error(
-                    f"Failed to check order {order.get('client_order_id', 'unknown')}: {e}"
-                )
+                logger.error(f"Failed to check order {client_id}: {e}", exc_info=True)
+
+        # Run fetches concurrently but bounded by semaphore
+        tasks = [_process_one(o) for o in submitted_orders]
+        await asyncio.gather(*tasks)
 
     def _get_submitted_orders(self) -> List[Dict[str, Any]]:
         """Get all submitted orders from SQLite that need status checking."""

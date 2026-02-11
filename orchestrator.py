@@ -280,11 +280,13 @@ class Orchestrator:
 
             # Start stream manager (using polling for consistency)
             logger.info("Preparing stream (polling mode)...")
+            stream_cfg = self.trading_config.get("trading", {})
             self.stream = StreamPolling(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
                 paper=self.env["ALPACA_PAPER"],
-                feed=self.trading_config.get("trading", {}).get("stream_feed", "iex"),
+                feed=stream_cfg.get("stream_feed", "iex"),
+                order_polling_concurrency=stream_cfg.get("order_polling_concurrency", 10),
             )
             logger.info("   Stream ready (HTTP polling)")
 
