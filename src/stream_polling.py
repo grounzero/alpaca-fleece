@@ -531,7 +531,10 @@ class StreamPolling:
                 cursor.execute(
                     """
                     UPDATE order_intents
-                    SET status = ?, filled_qty = COALESCE(?, filled_qty), filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
+                    SET status = ?,
+                        filled_qty = COALESCE(?, filled_qty),
+                        filled_avg_price = COALESCE(?, filled_avg_price),
+                        updated_at_utc = ?
                     WHERE client_order_id = ?
                     """,
                     (
