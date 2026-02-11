@@ -47,13 +47,13 @@ class BarsHandler:
         self.bars_deque: dict[str, deque[BarEvent]] = {}
 
     async def on_bar(self, raw_bar: Any) -> None:
-        """Process raw bar from stream.
+        """Process a raw bar received from the stream.
 
         Args:
-            raw_bar: Raw bar object from SDK
+            raw_bar: Bar object received from the SDK.
 
         Raises:
-            ValueError: If bar standardization fails
+            ValueError: If conversion to the internal bar format fails.
         """
         try:
             # Convert raw SDK bar to canonical BarEvent

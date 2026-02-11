@@ -1,9 +1,9 @@
-"""Order update standardization and persistence.
+"""Order update processing and persistence.
 
-Receives raw order updates from Stream via DataHandler.
-Standardizes to OrderUpdateEvent.
-Updates order_intents table.
-If filled: inserts into trades table.
+Receives raw order updates from the stream via the DataHandler.
+Converts them to OrderUpdateEvent objects.
+Updates the order_intents table.
+If filled, inserts a record into the trades table.
 Publishes to EventBus.
 """
 
