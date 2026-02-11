@@ -9,6 +9,7 @@ import os
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, Dict, List, Optional
+import uuid
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
@@ -141,6 +142,7 @@ class StreamPolling:
         feed: str = "iex",
         batch_size: int = 25,
         order_polling_concurrency: int = 10,
+        db_path: Optional[str] = None,
     ) -> None:
         """Initialise polling stream.
 
@@ -188,7 +190,8 @@ class StreamPolling:
         self._fallback_logged: bool = False  # Track if we already logged fallback message
         self._symbols_with_data: set[str] = set()  # Track which symbols have received data
         self._poll_iterations: int = 0  # Track polling iterations for periodic reporting
-        self._db_path: str = "data/trades.db"  # Default DB path
+        default_db = os.getenv("DATABASE_PATH", "data/trades.db")
+        self._db_path: str = db_path or default_db
         # Maximum concurrent Alpaca order requests during polling
         self._order_polling_concurrency: int = order_polling_concurrency
 
@@ -403,17 +406,19 @@ class StreamPolling:
         Returns:
             UUID formatted string
         """
-        # Use the stdlib uuid module for robust parsing/formatting when a
-        # 32-character hex string is provided. Fall back to the original
-        # value on any parsing error to avoid breaking lookups.
-        if len(hex_str) == 32:
-            try:
-                import uuid
-
-                return str(uuid.UUID(hex=hex_str))
-            except Exception:
+        # Use the stdlib uuid module for parsing/formatting. Accept both
+        # hyphenated UUIDs and 32-char hex strings. On parse errors, fall
+        # back to returning the original value to avoid breaking lookups.
+        try:
+            if hex_str is None:
                 return hex_str
-        return hex_str  # Already in UUID format
+            # Remove hyphens (if present) and whitespace before parsing
+            cleaned = str(hex_str).replace("-", "").strip()
+            if len(cleaned) != 32:
+                return hex_str
+            return str(uuid.UUID(hex=cleaned))
+        except (ValueError, AttributeError, TypeError):
+            return hex_str
 
     async def _check_order_status(self) -> None:
         """Check status of submitted orders and trigger updates."""

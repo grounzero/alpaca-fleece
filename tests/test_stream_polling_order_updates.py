@@ -1,5 +1,6 @@
 """Tests for order update polling in StreamPolling."""
 
+import asyncio
 import os
 import sqlite3
 from datetime import datetime, timezone
@@ -387,33 +388,35 @@ def test_hex_to_uuid_conversion():
     # Short string -> unchanged
     short = "abc123"
     assert stream._hex_to_uuid(short) == short
+    assert stream._hex_to_uuid(short) == short
 
-    @pytest.mark.asyncio
-    async def test_poll_order_updates_runs_continuously(self, mock_stream, monkeypatch):
-        """_poll_order_updates should run continuously and call _check_order_status."""
-        stream = mock_stream
 
-        # Mock _check_order_status to track calls
-        call_count = 0
+@pytest.mark.asyncio
+async def test_poll_order_updates_runs_continuously(mock_stream, monkeypatch):
+    """_poll_order_updates should run continuously and call _check_order_status."""
+    stream = mock_stream
 
-        async def mock_check():
-            nonlocal call_count
-            call_count += 1
-            if call_count >= 2:
-                # Cancel after 2 calls
-                raise asyncio.CancelledError()
+    # Mock _check_order_status to track calls
+    call_count = 0
 
-        stream._check_order_status = mock_check
+    async def mock_check():
+        nonlocal call_count
+        call_count += 1
+        if call_count >= 2:
+            # Cancel after 2 calls
+            raise asyncio.CancelledError()
 
-        # Patch asyncio.sleep to avoid delays in tests
-        async def mock_sleep(seconds):
-            pass
+    stream._check_order_status = mock_check
 
-        monkeypatch.setattr(asyncio, "sleep", mock_sleep)
+    # Patch asyncio.sleep to avoid delays in tests
+    async def mock_sleep(seconds):
+        pass
 
-        # Test
-        with pytest.raises(asyncio.CancelledError):
-            await stream._poll_order_updates()
+    monkeypatch.setattr(asyncio, "sleep", mock_sleep)
 
-        # Should have been called at least twice
-        assert call_count >= 2
+    # Test
+    with pytest.raises(asyncio.CancelledError):
+        await stream._poll_order_updates()
+
+    # Should have been called at least twice
+    assert call_count >= 2
