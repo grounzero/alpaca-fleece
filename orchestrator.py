@@ -8,11 +8,11 @@ structured phases matching the agent contracts in agents/.
 import asyncio
 import inspect
 import logging
+import os
 import signal
 import subprocess
 import sys
 from pathlib import Path
-import os
 from typing import Optional
 
 from src import __version__ as version
