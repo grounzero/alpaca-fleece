@@ -1,10 +1,10 @@
 """Tests for order update polling in StreamPolling."""
 
-import asyncio
+import os
 import sqlite3
 from datetime import datetime, timezone
-from unittest.mock import AsyncMock, MagicMock
 from enum import Enum
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
@@ -48,8 +48,6 @@ def mock_stream(tmp_path):
     yield stream
 
     # Cleanup
-    import os
-
     if os.path.exists(stream._db_path):
         os.unlink(stream._db_path)
 

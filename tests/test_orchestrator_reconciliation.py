@@ -11,8 +11,8 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from orchestrator import Orchestrator
 import orchestrator as orch
+from orchestrator import Orchestrator
 from src.reconciliation import ReconciliationError
 
 
