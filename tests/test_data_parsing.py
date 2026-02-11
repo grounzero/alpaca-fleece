@@ -121,7 +121,7 @@ def test_order_normalisation_missing_fill_price_and_side():
         evt = ouh._to_canonical_order_update(RawUpdate(side))
         assert isinstance(evt, OrderUpdateEvent)
         assert evt.avg_fill_price is None
-        assert evt.filled_qty == 0
+        assert evt.filled_qty is None
         assert evt.side == side
 
 

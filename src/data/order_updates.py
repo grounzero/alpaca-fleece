@@ -9,7 +9,8 @@ Publishes to EventBus.
 
 import logging
 from datetime import datetime, timezone
-from typing import Any
+from typing import Any, Optional
+from src.utils import parse_optional_float
 
 from src.event_bus import EventBus, OrderUpdateEvent
 from src.state_store import StateStore
@@ -90,8 +91,23 @@ class OrderUpdatesHandler:
         order_id = getattr(order, "id", "") or ""
         client_order_id = getattr(order, "client_order_id", "") or ""
         symbol = getattr(order, "symbol", "") or ""
-        filled_qty = getattr(order, "filled_qty", None)
-        filled_avg_price = getattr(order, "filled_avg_price", None)
+
+        # Support both object-like and dict-like order representations.
+        def _get_raw(name: str) -> Any:
+            if order is None:
+                return None
+            # Prefer getattr for SDK objects
+            val = getattr(order, name, None)
+            # Fallback to dict-like access
+            if val is None and isinstance(order, dict):
+                val = order.get(name)
+            return val
+
+        raw_filled_qty = _get_raw("filled_qty")
+        raw_filled_avg_price = _get_raw("filled_avg_price")
+
+        parsed_filled_qty: Optional[float] = parse_optional_float(raw_filled_qty)
+        parsed_filled_avg_price: Optional[float] = parse_optional_float(raw_filled_avg_price)
 
         return OrderUpdateEvent(
             order_id=order_id,
@@ -99,8 +115,8 @@ class OrderUpdatesHandler:
             symbol=symbol,
             side=side_value,
             status=status_value,
-            filled_qty=float(filled_qty) if filled_qty else 0,
-            avg_fill_price=float(filled_avg_price) if filled_avg_price else None,
+            filled_qty=parsed_filled_qty,
+            avg_fill_price=parsed_filled_avg_price,
             timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
         )
 
