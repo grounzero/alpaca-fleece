@@ -12,7 +12,7 @@ Uses float at module boundaries for API compatibility.
 import asyncio
 import hashlib
 import logging
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any
 
 from src.broker import Broker
@@ -182,7 +182,7 @@ class OrderManager:
 
             # Cooldown + per-bar dedupe via gate_try_accept
             cooldown_min = int(self.config.get("entry_cooldown_minutes", 120))
-            from datetime import datetime, timedelta, timezone
+            from datetime import timedelta
 
             now_utc = datetime.now(timezone.utc)
             bar_ts = getattr(signal, "timestamp", None)
