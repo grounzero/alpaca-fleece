@@ -24,9 +24,26 @@ def main() -> int:
     else:
         paper = paper_env.strip().lower() in ("1", "true", "yes", "y")
 
+    # Validate required Alpaca credentials before creating the client
+    required_env_vars = ["ALPACA_API_KEY", "ALPACA_SECRET_KEY"]
+    missing = [name for name in required_env_vars if not os.getenv(name)]
+    if missing:
+        missing_list = ", ".join(missing)
+        print(
+            f"Error: Missing required environment variable(s): {missing_list}.\n"
+            "Set them in your shell, for example:\n"
+            "  export ALPACA_API_KEY='<your_api_key>'\n"
+            "  export ALPACA_SECRET_KEY='<your_secret_key>'",
+            file=sys.stderr,
+        )
+        return 1
+
+    api_key = os.getenv("ALPACA_API_KEY")
+    secret_key = os.getenv("ALPACA_SECRET_KEY")
+
     client = TradingClient(
-        os.environ["ALPACA_API_KEY"],
-        os.environ["ALPACA_SECRET_KEY"],
+        api_key,
+        secret_key,
         paper=paper,
     )
 
