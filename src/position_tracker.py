@@ -231,6 +231,14 @@ class PositionTracker:
                 qty = abs(float(pos.get("qty", 0) or 0))
                 entry_price = float(pos.get("avg_entry_price") or 0.0)
                 side = "long" if float(pos.get("qty", 0) or 0) > 0 else "short"
+                # If the broker returns a zero-quantity position record, avoid
+                # tracking it. Starting tracking for qty == 0 can create
+                # phantom positions (and the > 0 check above will classify
+                # zero as "short"). Skip near-zero quantities to prevent
+                # persisting and acting on meaningless positions.
+                if qty == 0:
+                    continue
+
                 self.start_tracking(symbol=symbol, fill_price=entry_price, qty=qty, side=side)
                 new_positions.append(symbol)
 
