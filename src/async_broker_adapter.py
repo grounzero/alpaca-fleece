@@ -180,6 +180,26 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 del self._executor
             except Exception:
                 pass
+        # Also attempt to shutdown the underlying sync Broker's legacy executor
+        broker_exec = getattr(self._broker, "_executor", None)
+        if broker_exec is not None:
+            try:
+                loop = asyncio.get_running_loop()
+                await loop.run_in_executor(None, broker_exec.shutdown, True)
+            except RuntimeError:
+                # No running loop - call synchronously
+                try:
+                    broker_exec.shutdown(True)
+                except Exception:
+                    logger.exception("Failed to shutdown underlying Broker executor")
+            finally:
+                try:
+                    delattr(self._broker, "_executor")
+                except Exception:
+                    try:
+                        del self._broker._executor
+                    except Exception:
+                        pass
 
     async def __aenter__(self) -> "AsyncBrokerAdapter":
         return self

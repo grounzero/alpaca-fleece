@@ -20,6 +20,7 @@ FILTER TIER (if enabled, must pass — no bypass):
 """
 
 import asyncio
+import inspect
 import logging
 from datetime import datetime, timezone
 from typing import Any
@@ -208,7 +209,7 @@ class RiskManager:
         # Market open (fresh clock call)
         try:
             maybe = self.broker.get_clock()
-            clock = await maybe if asyncio.iscoroutine(maybe) else maybe
+            clock = await maybe if inspect.isawaitable(maybe) else maybe
             if not clock["is_open"]:
                 raise RiskManagerError("Market not open")
         except RiskManagerError:
@@ -234,7 +235,7 @@ class RiskManager:
             limits = self._get_limits(symbol)
 
             maybe_acc = self.broker.get_account()
-            account = await maybe_acc if asyncio.iscoroutine(maybe_acc) else maybe_acc
+            account = await maybe_acc if inspect.isawaitable(maybe_acc) else maybe_acc
             equity = account["equity"]
 
             # Daily loss limit (Win #3: persisted) + Session-aware
@@ -252,7 +253,7 @@ class RiskManager:
 
             # Concurrent positions + Session-aware
             maybe_pos = self.broker.get_positions()
-            positions = await maybe_pos if asyncio.iscoroutine(maybe_pos) else maybe_pos
+            positions = await maybe_pos if inspect.isawaitable(maybe_pos) else maybe_pos
             max_concurrent = limits.get("max_concurrent_positions", 10)
             if len(positions) >= max_concurrent:
                 raise RiskManagerError(f"Concurrent positions limit reached: {len(positions)}")
@@ -372,7 +373,7 @@ class RiskManager:
         # Market open check (fresh clock call)
         try:
             maybe = self.broker.get_clock()
-            clock = await maybe if asyncio.iscoroutine(maybe) else maybe
+            clock = await maybe if inspect.isawaitable(maybe) else maybe
             if not clock["is_open"]:
                 raise RiskManagerError("Market not open - exit blocked")
         except RiskManagerError:
