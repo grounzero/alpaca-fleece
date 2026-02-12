@@ -95,23 +95,29 @@ class PositionTracker:
         side: str = "long",
         atr: Optional[float] = None,
     ) -> PositionData:
-        now = datetime.now(timezone.utc)
+        # Use a single timestamp for entry_time and last_updated to avoid
+        # ordering ambiguities between creation and persistence.
+        now_dt = datetime.now(timezone.utc)
         position = PositionData(
             symbol=symbol,
             side=side,
             qty=qty,
             entry_price=fill_price,
-            entry_time=now,
+            entry_time=now_dt,
             extreme_price=fill_price,
             atr=atr,
+            last_updated=now_dt,
         )
         self._positions[symbol] = position
+        # Update per-symbol freshness before persistence and use the same
+        # timestamp when writing the DB so the values remain consistent.
+        self._last_updates[symbol] = now_dt
+        self._last_update = now_dt
+        # Call internal persist without forcing an extra timestamp arg so
+        # test monkeypatches that replace `_persist_position(position)`
+        # still work. `_persist_position` will prefer `position.last_updated`
+        # if set above.
         self._persist_position(position)
-        # mark last update time when we modify snapshot
-        now = datetime.now(timezone.utc)
-        position.last_updated = now
-        self._last_updates[symbol] = now
-        self._last_update = now
         return position
 
     def stop_tracking(self, symbol: str) -> None:
@@ -252,9 +258,18 @@ class PositionTracker:
             "total_tracked": len(self._positions),
         }
 
-    def _persist_position(self, position: PositionData) -> None:
-        now_dt = datetime.now(timezone.utc)
-        now = now_dt.isoformat()
+    def _persist_position(self, position: PositionData, now_dt: Optional[datetime] = None) -> None:
+        # Determine the timestamp we'll use for persistence. Prefer an
+        # externally-provided `now_dt`, otherwise use `position.last_updated`
+        # if it was set by the caller (so callers can provide a single
+        # timestamp), else compute a fresh timestamp.
+        if now_dt is not None:
+            used_dt = now_dt
+        elif position.last_updated is not None:
+            used_dt = position.last_updated
+        else:
+            used_dt = datetime.now(timezone.utc)
+        now = used_dt.isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -279,15 +294,15 @@ class PositionTracker:
                 ),
             )
             conn.commit()
-        # mark last update timestamp after successful commit
-        position.last_updated = now_dt
-        self._last_updates[position.symbol] = now_dt
-        self._last_update = now_dt
+        # mark last update timestamp after successful commit (idempotent)
+        position.last_updated = used_dt
+        self._last_updates[position.symbol] = used_dt
+        self._last_update = used_dt
 
     # Public persistence API
-    def persist_position(self, position: PositionData) -> None:
+    def persist_position(self, position: PositionData, now_dt: Optional[datetime] = None) -> None:
         """Persist a position (public wrapper)."""
-        return self._persist_position(position)
+        return self._persist_position(position, now_dt)
 
     def _remove_position(self, symbol: str) -> None:
         with sqlite3.connect(self.state_store.db_path) as conn:

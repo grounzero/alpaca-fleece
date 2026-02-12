@@ -177,7 +177,15 @@ class OrderManager:
         # Decide action: buy -> ENTER_LONG (typically exposure-increasing)
         # sell -> if currently long, it's an exit; if flat, treat as ENTER_SHORT
         if side == "buy":
-            action = "ENTER_LONG"
+            # If we couldn't determine current position (pos_qty is None),
+            # assume this is an entry. If we're currently short (pos_qty < 0),
+            # treat BUY as a cover/exit rather than opening a long.
+            if pos_qty is None:
+                action = "ENTER_LONG"
+            elif pos_qty < 0:
+                action = "EXIT_SHORT"
+            else:
+                action = "ENTER_LONG"
         else:
             # sell
             # If we couldn't determine current position (pos_qty is None),
