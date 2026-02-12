@@ -112,7 +112,7 @@ class Broker:
         # Runtime paths should prefer `AsyncBrokerAdapter` which owns the real
         # concurrency boundary. The executor is test-only and is shut down via
         # `close`/`__del__` to avoid leaking threads.
-        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
+        self._executor: Optional[ThreadPoolExecutor] = ThreadPoolExecutor(max_workers=1)
 
     def close(self) -> None:
         """Release any resources owned by this broker instance.
