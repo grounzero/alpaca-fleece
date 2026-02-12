@@ -398,13 +398,16 @@ class SchemaManager:
                         cols = [info_row[2] for info_row in cursor.fetchall()]
                         unique_index_columns.append(cols)
 
+                # Required UNIQUE constraints (column order is not semantically significant
+                # for drift detection, so we will compare using unordered sets of columns).
                 required_pairs = [
                     ["order_id", "fill_id"],
                     ["order_id", "client_order_id"],
                 ]
 
+                unique_index_sets = {frozenset(cols) for cols in unique_index_columns}
                 missing_pairs = [
-                    pair for pair in required_pairs if pair not in unique_index_columns
+                    pair for pair in required_pairs if frozenset(pair) not in unique_index_sets
                 ]
 
                 if missing_pairs:
