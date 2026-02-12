@@ -18,6 +18,7 @@ from typing import Optional
 from src import __version__ as version
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
+from src.async_broker_adapter import AsyncBrokerAdapter
 from src.broker import Broker
 from src.config import load_env, load_trading_config, validate_config
 from src.data_handler import DataHandler
@@ -156,12 +157,13 @@ class Orchestrator:
             logger.info("   Config valid")
 
             logger.info("Connecting to broker...")
-            self.broker = Broker(
+            # Create the synchronous Broker for startup tasks (allowed in Orchestrator)
+            b_sync = Broker(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
                 paper=self.env["ALPACA_PAPER"],
             )
-            account = self.broker.get_account()
+            account = b_sync.get_account()
             logger.info("   Broker connected")
             logger.info(f"      Equity: ${account['equity']:,.2f}")
             logger.info(f"      Buying Power: ${account['buying_power']:,.2f}")
@@ -177,6 +179,10 @@ class Orchestrator:
             logger.info("Setting up state store...")
             self.state_store = StateStore(self.env["DATABASE_PATH"])
             logger.info(f"   State store ready ({self.env['DATABASE_PATH']})")
+
+            # Wrap the sync broker in the AsyncBrokerAdapter and use that
+            self.broker = AsyncBrokerAdapter(b_sync)
+            logger.info("   Async broker adapter ready")
 
             # Tier 1 alerts
             logger.info("Starting alert notifier...")
@@ -665,7 +671,7 @@ class Orchestrator:
                                 )
 
                                 # Get account equity
-                                account = self.broker.get_account()
+                                account = await self.broker.get_account()
                                 account_equity = float(account.get("equity", 0))
 
                                 # Get risk config with defaults

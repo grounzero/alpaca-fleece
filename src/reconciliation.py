@@ -13,9 +13,8 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, cast
 
-from src.broker import Broker
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -40,7 +39,7 @@ NON_TERMINAL_STATUSES = {
 }
 
 
-def reconcile(broker: Broker, state_store: StateStore) -> None:
+def reconcile(broker: Any, state_store: StateStore) -> None:
     """Reconcile state with Alpaca on startup.
 
     Args:
@@ -52,10 +51,24 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
     """
     discrepancies: list[dict[str, object]] = []
 
+    # Helper: if a broker method returns a coroutine, run it to completion.
+    def _resolve(maybe_coro: Any) -> Any:
+        import asyncio
+
+        if asyncio.iscoroutine(maybe_coro):
+            try:
+                loop = asyncio.get_running_loop()
+            except RuntimeError:
+                return asyncio.run(maybe_coro)
+            else:
+                # Running loop found - schedule and wait (should be rare in tests)
+                return loop.run_until_complete(maybe_coro)
+        return maybe_coro
+
     # Get state from both sources
     try:
-        alpaca_orders = broker.get_open_orders()
-        alpaca_positions = broker.get_positions()
+        alpaca_orders = cast(List[Dict[str, Any]], _resolve(broker.get_open_orders()))
+        alpaca_positions = cast(List[Dict[str, Any]], _resolve(broker.get_positions()))
         sqlite_orders = state_store.get_all_order_intents()
 
         logger.info(

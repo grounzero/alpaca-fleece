@@ -19,11 +19,12 @@ FILTER TIER (if enabled, must pass — no bypass):
 └── Time-of-day acceptable? → skip if too early/late
 """
 
+import asyncio
 import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from src.broker import Broker
+from src.async_broker_adapter import AsyncBrokerInterface
 from src.data_handler import DataHandler
 from src.event_bus import SignalEvent
 from src.state_store import StateStore
@@ -42,7 +43,7 @@ class RiskManager:
 
     def __init__(
         self,
-        broker: Broker,
+        broker: AsyncBrokerInterface,
         data_handler: DataHandler,
         state_store: StateStore,
         config: dict[str, Any],
@@ -201,10 +202,11 @@ class RiskManager:
 
         # Market open (fresh clock call)
         try:
-            clock = self.broker.get_clock()
+            maybe = self.broker.get_clock()
+            clock = await maybe if asyncio.iscoroutine(maybe) else maybe
             if not clock["is_open"]:
                 raise RiskManagerError("Market not open")
-        except (ConnectionError, TimeoutError) as e:
+        except Exception as e:
             raise RiskManagerError(f"Clock fetch failed: {e}")
 
     async def _check_risk_tier(self, symbol: str, side: str) -> None:
@@ -216,7 +218,8 @@ class RiskManager:
             # Get session-specific limits (Hybrid crypto support)
             limits = self._get_limits(symbol)
 
-            account = self.broker.get_account()
+            maybe_acc = self.broker.get_account()
+            account = await maybe_acc if asyncio.iscoroutine(maybe_acc) else maybe_acc
             equity = account["equity"]
 
             # Daily loss limit (Win #3: persisted) + Session-aware
@@ -233,7 +236,8 @@ class RiskManager:
                 raise RiskManagerError(f"Daily trade count exceeded: {daily_trade_count}")
 
             # Concurrent positions + Session-aware
-            positions = self.broker.get_positions()
+            maybe_pos = self.broker.get_positions()
+            positions = await maybe_pos if asyncio.iscoroutine(maybe_pos) else maybe_pos
             max_concurrent = limits.get("max_concurrent_positions", 10)
             if len(positions) >= max_concurrent:
                 raise RiskManagerError(f"Concurrent positions limit reached: {len(positions)}")
@@ -352,10 +356,11 @@ class RiskManager:
 
         # Market open check (fresh clock call)
         try:
-            clock = self.broker.get_clock()
+            maybe = self.broker.get_clock()
+            clock = await maybe if asyncio.iscoroutine(maybe) else maybe
             if not clock["is_open"]:
                 raise RiskManagerError("Market not open - exit blocked")
-        except (ConnectionError, TimeoutError) as e:
+        except Exception as e:
             raise RiskManagerError(f"Clock fetch failed - exit blocked: {e}")
 
         logger.debug(f"Exit order validated: {symbol} {side} {qty}")

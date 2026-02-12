@@ -15,7 +15,7 @@ import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from src.broker import Broker
+from src.async_broker_adapter import AsyncBrokerInterface
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
 from src.position_tracker import PositionTracker
 from src.state_store import StateStore
@@ -35,7 +35,7 @@ class OrderManager:
 
     def __init__(
         self,
-        broker: Broker,
+        broker: AsyncBrokerInterface,
         state_store: StateStore,
         event_bus: EventBus,
         config: dict[str, Any],
@@ -137,7 +137,7 @@ class OrderManager:
 
         async def _fetch_positions_from_broker() -> float | None:
             try:
-                positions = await asyncio.to_thread(self.broker.get_positions)
+                positions = await self.broker.get_positions()
                 for p in positions:
                     if p.get("symbol") == symbol:
                         return float(p.get("qty", 0) or 0)
@@ -318,7 +318,7 @@ class OrderManager:
 
         # Submit order
         try:
-            order = self.broker.submit_order(
+            maybe = self.broker.submit_order(
                 symbol=symbol,
                 side=side,
                 qty=float(qty),  # Convert Decimal to float for API
@@ -326,6 +326,7 @@ class OrderManager:
                 order_type=self.order_type,
                 time_in_force=self.time_in_force,
             )
+            order = await maybe if asyncio.iscoroutine(maybe) else maybe
 
             # Update with Alpaca order ID. Do not overwrite filled fields; pass
             # None so StateStore's COALESCE preserves existing values when

@@ -23,7 +23,7 @@ class AlertNotifier:
         self.retries = 3
         self.backoff = 1.0
 
-    def send_alert(self, title: str, message: str, severity: str = "ERROR") -> bool:
+    def _send_alert_sync(self, title: str, message: str, severity: str = "ERROR") -> bool:
         """Send alert to configured channel (Tier 1).
 
         Args:
@@ -101,58 +101,17 @@ class AlertNotifier:
         import asyncio
 
         loop = asyncio.get_running_loop()
+        # Delegate to the synchronous send implementation inside the shared threadpool
+        try:
+            ok = await loop.run_in_executor(None, self._send_alert_sync, title, message, severity)
+            return bool(ok)
+        except Exception as e:
+            logger.error(f"Async alert send failed: {e}")
+            return False
 
-        last_exc = None
-        for attempt in range(self.retries):
-            try:
-                # Run the blocking channel send in a threadpool
-                if self.alert_channel == "whatsapp":
-                    ok = await loop.run_in_executor(
-                        None, self._send_whatsapp_alert, title, message, severity
-                    )
-                elif self.alert_channel == "slack":
-                    ok = await loop.run_in_executor(
-                        None, self._send_slack_alert, title, message, severity
-                    )
-                elif self.alert_channel == "email":
-                    ok = await loop.run_in_executor(
-                        None, self._send_email_alert, title, message, severity
-                    )
-                else:
-                    logger.warning(f"Unknown alert channel: {self.alert_channel}")
-                    return False
-
-                if ok:
-                    return True
-                logger.warning(
-                    "Alert send returned False (attempt %d/%d) for %s",
-                    attempt + 1,
-                    self.retries,
-                    self.alert_channel,
-                )
-
-            except Exception as e:
-                last_exc = e
-                logger.warning(
-                    "Exception sending alert (attempt %d/%d): %s",
-                    attempt + 1,
-                    self.retries,
-                    e,
-                )
-
-            # Non-blocking backoff using asyncio.sleep
-            if attempt < self.retries - 1:
-                try:
-                    delay = self.backoff * (2**attempt)
-                    await asyncio.sleep(delay)
-                except Exception:
-                    logger.debug("Async sleep interrupted during alert backoff")
-
-        if last_exc:
-            logger.error(f"Failed to send alert after {self.retries} attempts: {last_exc}")
-        else:
-            logger.error(f"Failed to send alert after {self.retries} attempts (no exception)")
-        return False
+    def send_alert(self, title: str, message: str, severity: str = "ERROR") -> bool:
+        """Backward-compatible synchronous API expected by tests and callers."""
+        return self._send_alert_sync(title, message, severity)
 
     def _send_whatsapp_alert(self, title: str, message: str, severity: str) -> bool:
         """Send alert via WhatsApp (Tier 1).
@@ -270,7 +229,7 @@ class AlertNotifier:
 
     def alert_circuit_breaker_tripped(self, failure_count: int) -> bool:
         """Alert: Circuit breaker tripped (Tier 1)."""
-        return self.send_alert(
+        return self._send_alert_sync(
             title="⚡ CIRCUIT BREAKER TRIPPED",
             message=f"Order submission failures: {failure_count}/5. Bot halted.",
             severity="CRITICAL",
@@ -285,7 +244,7 @@ class AlertNotifier:
 
     def alert_daily_loss_limit_exceeded(self, daily_pnl: float, limit: float) -> bool:
         """Alert: Daily loss limit exceeded (Tier 1)."""
-        return self.send_alert(
+        return self._send_alert_sync(
             title="💰 DAILY LOSS LIMIT EXCEEDED",
             message=f"Daily P&L: ${daily_pnl:.2f} (limit: ${limit:.2f}). Trading halted.",
             severity="CRITICAL",
@@ -300,7 +259,7 @@ class AlertNotifier:
 
     def alert_position_limit_exceeded(self, current: int, limit: int) -> bool:
         """Alert: Position limit exceeded (Tier 1)."""
-        return self.send_alert(
+        return self._send_alert_sync(
             title="📍 POSITION LIMIT EXCEEDED",
             message=f"Concurrent positions: {current}/{limit}. New trades blocked.",
             severity="WARNING",
@@ -315,7 +274,7 @@ class AlertNotifier:
 
     def alert_order_submission_failed(self, symbol: str, error: str) -> bool:
         """Alert: Order submission failed (Tier 1)."""
-        return self.send_alert(
+        return self._send_alert_sync(
             title="❌ ORDER SUBMISSION FAILED",
             message=f"Symbol: {symbol}\nError: {error}",
             severity="ERROR",
