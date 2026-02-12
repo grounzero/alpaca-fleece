@@ -239,8 +239,13 @@ class SchemaManager:
         backup_dir.mkdir(exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         backup_path = backup_dir / f"{db_file.stem}.{timestamp}.bak"
-        shutil.copy2(db_path, str(backup_path))
 
+        # Use SQLite's backup API instead of raw file copy to ensure a
+        # consistent snapshot even when WAL mode is enabled.
+        with sqlite3.connect(db_path) as src_conn, sqlite3.connect(
+            str(backup_path)
+        ) as dst_conn:
+            src_conn.backup(dst_conn)
         if not backup_path.exists() or backup_path.stat().st_size == 0:
             raise SchemaError(f"Schema backup failed: {backup_path} missing or empty")
 
