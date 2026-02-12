@@ -52,6 +52,7 @@ class AsyncBrokerInterface(Protocol):
 
     async def cancel_order(self, order_id: str) -> None: ...
     async def invalidate_cache(self, *keys: str) -> None: ...
+    async def close(self) -> None: ...
 
 
 @dataclass
@@ -131,6 +132,50 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
             if k in self._cache:
                 del self._cache[k]
                 self._metric_inc(f"broker_cache_invalidations_total{{method={k}}}")
+
+    async def close(self) -> None:
+        """Shutdown the adapter's threadpool and release resources.
+
+        This is safe to call multiple times. Prefer `async with AsyncBrokerAdapter(...)`
+        or explicitly `await adapter.close()` during shutdown.
+        """
+        # If executor already shutdown or disabled, nothing to do
+        exec_ref = getattr(self, "_executor", None)
+        if exec_ref is None:
+            return
+
+        try:
+            # Shutdown is blocking; run it off the event loop to avoid blocking
+            loop = asyncio.get_running_loop()
+            await loop.run_in_executor(None, exec_ref.shutdown, True)
+        except RuntimeError:
+            # No running loop - call shutdown synchronously
+            try:
+                exec_ref.shutdown(True)
+            except Exception:
+                logger.exception("Failed to shutdown broker adapter executor")
+        finally:
+            # Remove reference to executor
+            try:
+                del self._executor
+            except Exception:
+                pass
+
+    async def __aenter__(self) -> "AsyncBrokerAdapter":
+        return self  # type: ignore[return-value]
+
+    async def __aexit__(self, exc_type, exc, tb) -> None:
+        await self.close()
+
+    def __del__(self) -> None:
+        # Best-effort synchronous shutdown to avoid dangling threads at interpreter exit.
+        exec_ref = getattr(self, "_executor", None)
+        if exec_ref is not None:
+            try:
+                exec_ref.shutdown(wait=False)
+            except Exception:
+                # Avoid raising in __del__
+                pass
 
     async def _run_sync(
         self,
