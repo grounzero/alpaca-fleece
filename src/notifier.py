@@ -1,8 +1,8 @@
 """Alert notifier - send critical alerts via messaging (Tier 1)."""
 
+import asyncio
 import logging
 import random
-import asyncio
 from typing import Optional
 
 logger = logging.getLogger(__name__)

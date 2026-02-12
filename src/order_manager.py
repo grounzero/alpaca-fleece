@@ -10,8 +10,8 @@ Uses float at module boundaries for API compatibility.
 """
 
 import asyncio
-import inspect
 import hashlib
+import inspect
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
