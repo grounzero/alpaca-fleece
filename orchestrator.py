@@ -145,7 +145,6 @@ class Orchestrator:
         try:
             logger.info("Loading environment...")
             self.env = load_env()
-            logger.info(f"   Env loaded (api_key={self.env['ALPACA_API_KEY'][:10]}...)")
 
             logger.info("Loading trading config...")
             self.trading_config = load_trading_config(self.env["CONFIG_PATH"])
