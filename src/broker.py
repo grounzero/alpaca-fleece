@@ -21,8 +21,9 @@ from typing import Any, Callable, Optional, TypedDict, TypeVar, Union
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.models import Clock, Order, Position, TradeAccount
-from src.utils import parse_optional_float
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
+
+from src.utils import parse_optional_float
 
 T = TypeVar("T")
 
@@ -231,7 +232,9 @@ class Broker:
                         "status": o.status.value if o.status else None,
                         "filled_qty": parse_optional_float(getattr(o, "filled_qty", None)),
                         "filled_avg_price": (
-                            parse_optional_float(getattr(o, "filled_avg_price", None)) if getattr(o, "filled_avg_price", None) is not None else None
+                            parse_optional_float(getattr(o, "filled_avg_price", None))
+                            if getattr(o, "filled_avg_price", None) is not None
+                            else None
                         ),
                         "created_at": o.created_at.isoformat() if o.created_at else None,
                     }
@@ -341,7 +344,9 @@ class Broker:
                     "status": str(order_result["status"]) if order_result.get("status") else None,
                     "filled_qty": parse_optional_float(order_result.get("filled_qty")),
                     "filled_avg_price": (
-                        parse_optional_float(order_result.get("filled_avg_price")) if order_result.get("filled_avg_price") is not None else None
+                        parse_optional_float(order_result.get("filled_avg_price"))
+                        if order_result.get("filled_avg_price") is not None
+                        else None
                     ),
                 }
             else:
@@ -356,7 +361,9 @@ class Broker:
                     "status": order_result.status.value if order_result.status else None,
                     "filled_qty": parse_optional_float(getattr(order_result, "filled_qty", None)),
                     "filled_avg_price": (
-                        parse_optional_float(getattr(order_result, "filled_avg_price", None)) if getattr(order_result, "filled_avg_price", None) is not None else None
+                        parse_optional_float(getattr(order_result, "filled_avg_price", None))
+                        if getattr(order_result, "filled_avg_price", None) is not None
+                        else None
                     ),
                 }
         except BrokerError:
