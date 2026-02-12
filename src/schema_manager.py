@@ -370,6 +370,39 @@ class SchemaManager:
                         "migration logic for reference."
                     )
 
+                # Verify required UNIQUE constraints (or equivalent unique indexes)
+                # on (order_id, fill_id) and (order_id, client_order_id).
+                cursor.execute("PRAGMA index_list(trades)")
+                index_rows = cursor.fetchall()
+
+                unique_index_columns = []
+                for row in index_rows:
+                    # row layout: seq, name, unique, origin, partial, ...
+                    if len(row) >= 3 and row[2]:
+                        idx_name = row[1]
+                        # idx_name is obtained from SQLite metadata; still quote defensively.
+                        safe_idx_name = idx_name.replace("'", "''")
+                        cursor.execute(f"PRAGMA index_info('{safe_idx_name}')")
+                        cols = [info_row[2] for info_row in cursor.fetchall()]
+                        unique_index_columns.append(cols)
+
+                required_pairs = [
+                    ["order_id", "fill_id"],
+                    ["order_id", "client_order_id"],
+                ]
+
+                missing_pairs = [
+                    pair for pair in required_pairs if pair not in unique_index_columns
+                ]
+
+                if missing_pairs:
+                    conn.rollback()
+                    raise SchemaError(
+                        "trades table exists but lacks required UNIQUE constraints "
+                        "on (order_id, fill_id) and/or (order_id, client_order_id). "
+                        "This requires a manual migration (table rebuild). See prior "
+                        "state_store.py migration logic for reference."
+                    )
             # ------ Update schema version ------
             now = datetime.now(timezone.utc).isoformat()
             if stored_version is None:
