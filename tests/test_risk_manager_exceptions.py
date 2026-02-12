@@ -1,14 +1,12 @@
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
 
-from src.risk_manager import RiskManager, RiskManagerError
 from src.async_broker_adapter import (
-    BrokerTimeoutError,
-    BrokerTransientError,
     BrokerFatalError,
+    BrokerTimeoutError,
 )
+from src.risk_manager import RiskManager, RiskManagerError
 
 
 @pytest.mark.asyncio

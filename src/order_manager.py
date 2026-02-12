@@ -318,7 +318,7 @@ class OrderManager:
 
         # Submit order
         try:
-            maybe = self.broker.submit_order(
+            maybe: Any = self.broker.submit_order(
                 symbol=symbol,
                 side=side,
                 qty=float(qty),  # Convert Decimal to float for API

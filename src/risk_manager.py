@@ -26,9 +26,9 @@ from typing import Any
 
 from src.async_broker_adapter import (
     AsyncBrokerInterface,
+    BrokerFatalError,
     BrokerTimeoutError,
     BrokerTransientError,
-    BrokerFatalError,
 )
 from src.data_handler import DataHandler
 from src.event_bus import SignalEvent

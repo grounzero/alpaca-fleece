@@ -24,6 +24,9 @@ from typing import Any, Callable, Dict, List, Optional, Protocol, cast
 from src.broker import Broker
 from src.broker import BrokerError as SyncBrokerError
 
+# Use asyncio.Lock for async-safe cache protection
+
+
 logger = logging.getLogger(__name__)
 
 
@@ -73,6 +76,9 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
     ) -> None:
         self._broker = broker
         self._executor = ThreadPoolExecutor(max_workers=max_workers)
+        # Protect cache and metrics for safe concurrent access from
+        # multiple coroutines running on the event loop.
+        self._cache_lock = asyncio.Lock()
         self._enable_cache = enable_cache
         self._cache: Dict[str, _CacheItem] = {}
 
@@ -99,27 +105,41 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
         self.metrics: Dict[str, int] = {}
 
     # --- Internal helpers -------------------------------------------------
-    def _metric_inc(self, key: str) -> None:
-        self.metrics[key] = self.metrics.get(key, 0) + 1
+    async def _metric_inc(self, key: str) -> None:
+        # Protect metrics map updates
+        async with self._cache_lock:
+            self.metrics[key] = self.metrics.get(key, 0) + 1
 
-    def _cache_get(self, key: str) -> Optional[Any]:
+    async def _cache_get(self, key: str) -> Optional[Any]:
         if not self._enable_cache:
             return None
-        it = self._cache.get(key)
-        if not it:
-            self._metric_inc(f"broker_cache_misses_total{{method={key}}}")
-            return None
-        if time.time() >= it.expires_at:
-            del self._cache[key]
-            self._metric_inc(f"broker_cache_misses_total{{method={key}}}")
-            return None
-        self._metric_inc(f"broker_cache_hits_total{{method={key}}}")
-        return it.value
+        async with self._cache_lock:
+            it = self._cache.get(key)
+            if not it:
+                # record miss
+                self.metrics[f"broker_cache_misses_total{{method={key}}}"] = (
+                    self.metrics.get(f"broker_cache_misses_total{{method={key}}}", 0) + 1
+                )
+                return None
 
-    def _cache_set(self, key: str, value: Any, ttl: float) -> None:
+            if time.time() >= it.expires_at:
+                del self._cache[key]
+                self.metrics[f"broker_cache_misses_total{{method={key}}}"] = (
+                    self.metrics.get(f"broker_cache_misses_total{{method={key}}}", 0) + 1
+                )
+                return None
+
+            # hit
+            self.metrics[f"broker_cache_hits_total{{method={key}}}"] = (
+                self.metrics.get(f"broker_cache_hits_total{{method={key}}}", 0) + 1
+            )
+            return it.value
+
+    async def _cache_set(self, key: str, value: Any, ttl: float) -> None:
         if not self._enable_cache:
             return
-        self._cache[key] = _CacheItem(value=value, expires_at=time.time() + ttl)
+        async with self._cache_lock:
+            self._cache[key] = _CacheItem(value=value, expires_at=time.time() + ttl)
 
     async def invalidate_cache(self, *keys: str) -> None:
         """Invalidate specific cache keys.
@@ -131,7 +151,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
         for k in keys:
             if k in self._cache:
                 del self._cache[k]
-                self._metric_inc(f"broker_cache_invalidations_total{{method={k}}}")
+                await self._metric_inc(f"broker_cache_invalidations_total{{method={k}}}")
 
     async def close(self) -> None:
         """Shutdown the adapter's threadpool and release resources.
@@ -162,9 +182,14 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 pass
 
     async def __aenter__(self) -> "AsyncBrokerAdapter":
-        return self  # type: ignore[return-value]
+        return self
 
-    async def __aexit__(self, exc_type, exc, tb) -> None:
+    async def __aexit__(
+        self,
+        exc_type: Optional[type],
+        exc: Optional[BaseException],
+        tb: Optional[Any],
+    ) -> None:
         await self.close()
 
     def __del__(self) -> None:
@@ -194,7 +219,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
             try:
                 loop = asyncio.get_running_loop()
                 fut = loop.run_in_executor(self._executor, func)
-                self._metric_inc(f"broker_calls_total{{method={method_name}}}")
+                await self._metric_inc(f"broker_calls_total{{method={method_name}}}")
                 result = await asyncio.wait_for(fut, timeout=timeout)
                 dur = int((time.time() - start) * 1000)
                 logger.info(
@@ -202,11 +227,11 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                     method_name,
                     dur,
                 )
-                self._metric_inc(f"broker_calls_success_total{{method={method_name}}}")
+                await self._metric_inc(f"broker_calls_success_total{{method={method_name}}}")
                 return result
             except asyncio.TimeoutError:
                 last_exc = BrokerTimeoutError(f"{method_name} timed out after {timeout}s")
-                self._metric_inc(f"broker_timeouts_total{{method={method_name}}}")
+                await self._metric_inc(f"broker_timeouts_total{{method={method_name}}}")
                 logger.warning(
                     "broker_call method=%s duration_ms=%d outcome=timeout",
                     method_name,
@@ -243,7 +268,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
 
                 if fatal:
                     last_exc = BrokerFatalError(str(e))
-                    self._metric_inc(f"broker_fatals_total{{method={method_name}}}")
+                    await self._metric_inc(f"broker_fatals_total{{method={method_name}}}")
                     logger.error(
                         "broker_call method=%s duration_ms=%d outcome=fatal exception=%s",
                         method_name,
@@ -254,7 +279,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
 
                 # Map underlying exceptions to transient taxonomy
                 last_exc = BrokerTransientError(str(e))
-                self._metric_inc(f"broker_retries_total{{method={method_name}}}")
+                await self._metric_inc(f"broker_retries_total{{method={method_name}}}")
                 logger.warning(
                     "broker_call method=%s duration_ms=%d outcome=transient exception=%s",
                     method_name,
@@ -275,7 +300,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
     async def get_clock(self) -> Dict[str, Any]:
         key = "get_clock"
         # Cache short TTL
-        cached = self._cache_get(key)
+        cached = await self._cache_get(key)
         if cached is not None:
             return cast(Dict[str, Any], cached)
 
@@ -288,12 +313,12 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 func, method_name=key, timeout=self._timeouts["get_clock"], retry=True
             ),
         )
-        self._cache_set(key, res, self._clock_ttl)
+        await self._cache_set(key, res, self._clock_ttl)
         return res
 
     async def get_account(self) -> Dict[str, Any]:
         key = "get_account"
-        cached = self._cache_get(key)
+        cached = await self._cache_get(key)
         if cached is not None:
             return cast(Dict[str, Any], cached)
 
@@ -306,12 +331,12 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 func, method_name=key, timeout=self._timeouts["get_account"], retry=True
             ),
         )
-        self._cache_set(key, res, self._account_ttl)
+        await self._cache_set(key, res, self._account_ttl)
         return res
 
     async def get_positions(self) -> List[Dict[str, Any]]:
         key = "get_positions"
-        cached = self._cache_get(key)
+        cached = await self._cache_get(key)
         if cached is not None:
             return cast(List[Dict[str, Any]], cached)
 
@@ -324,7 +349,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 func, method_name=key, timeout=self._timeouts["get_positions"], retry=True
             ),
         )
-        self._cache_set(key, res, self._positions_ttl)
+        await self._cache_set(key, res, self._positions_ttl)
         return res
 
     async def get_open_orders(self) -> List[Dict[str, Any]]:

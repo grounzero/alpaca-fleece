@@ -958,10 +958,29 @@ class Orchestrator:
             if self.broker:
                 logger.info("Cancelling open orders...")
                 try:
-                    orders = self.broker.get_open_orders()
+                    # Support both sync Broker and AsyncBrokerAdapter (await if needed)
+                    maybe_orders = self.broker.get_open_orders()
+                    if inspect.isawaitable(maybe_orders):
+                        orders = await maybe_orders
+                    else:
+                        orders = maybe_orders
+
                     for order in orders:
-                        self.broker.cancel_order(order["id"])
+                        maybe_cancel = self.broker.cancel_order(order["id"])
+                        if inspect.isawaitable(maybe_cancel):
+                            await maybe_cancel
+                        # Invalidate caches after cancel
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_inv = self.broker.invalidate_cache(
+                                    "get_positions", "get_open_orders"
+                                )
+                                if inspect.isawaitable(maybe_inv):
+                                    await maybe_inv
+                            except Exception:
+                                logger.debug("invalidate_cache failed after cancel", exc_info=True)
                         logger.info(f"  Cancelled: {order['id']} ({order['symbol']})")
+
                     if not orders:
                         logger.info("  No open orders to cancel")
                 except Exception as e:
@@ -970,14 +989,31 @@ class Orchestrator:
                 # Close positions
                 logger.info("Closing open positions...")
                 try:
-                    positions = self.broker.get_positions()
+                    # Support both sync and async broker methods
+                    maybe_positions = self.broker.get_positions()
+                    if inspect.isawaitable(maybe_positions):
+                        positions = await maybe_positions
+                    else:
+                        positions = maybe_positions
+
                     for position in positions:
                         symbol = position["symbol"]
                         qty = position["qty"]
                         side = "sell" if qty > 0 else "buy"
                         abs_qty = abs(qty)
                         logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
-                        self.broker.submit_order(symbol, abs_qty, side, "market")
+                        maybe_submit = self.broker.submit_order(symbol, abs_qty, side, "market")
+                        if inspect.isawaitable(maybe_submit):
+                            await maybe_submit
+                        # Invalidate caches after submitting close order
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_invp = self.broker.invalidate_cache("get_positions")
+                                if inspect.isawaitable(maybe_invp):
+                                    await maybe_invp
+                            except Exception:
+                                logger.debug("invalidate_cache failed after submit", exc_info=True)
+
                     if not positions:
                         logger.info("  No open positions to close")
                 except Exception as e:
@@ -987,6 +1023,16 @@ class Orchestrator:
             if self.event_bus:
                 logger.info("Stopping event bus...")
                 await self.event_bus.stop()
+
+            # Close/cleanup broker adapter if it exposes async close
+            if self.broker and hasattr(self.broker, "close"):
+                try:
+                    maybe_close = self.broker.close()
+                    if inspect.isawaitable(maybe_close):
+                        await maybe_close
+                    logger.info("Broker adapter closed")
+                except Exception as e:
+                    logger.error(f"Failed to close broker adapter: {e}")
 
             logger.info("=" * 60)
             logger.info("Shutdown complete")
@@ -1039,9 +1085,21 @@ async def main():
     logger.info("=" * 60)
 
     orchestrator = Orchestrator()
-    success = await orchestrator.run()
-
-    return 0 if success else 1
+    try:
+        success = await orchestrator.run()
+        return 0 if success else 1
+    finally:
+        # Ensure adapter executor is cleanly shutdown to avoid dangling threads
+        if getattr(orchestrator, "broker", None) is not None and hasattr(
+            orchestrator.broker, "close"
+        ):
+            try:
+                maybe_close = orchestrator.broker.close()
+                if inspect.isawaitable(maybe_close):
+                    await maybe_close
+                logger.info("Broker adapter closed in main()")
+            except Exception:
+                logger.exception("Failed to close broker adapter in main()")
 
 
 if __name__ == "__main__":

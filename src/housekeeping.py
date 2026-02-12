@@ -7,6 +7,7 @@ Responsibilities:
 """
 
 import asyncio
+import inspect
 import logging
 import sqlite3
 from datetime import datetime, timezone
@@ -90,8 +91,18 @@ class Housekeeping:
                     order_id = order.get("id")
                     if order_id:
                         maybe_cancel = self.broker.cancel_order(order_id)
-                        if asyncio.iscoroutine(maybe_cancel):
+                        if inspect.isawaitable(maybe_cancel):
                             await maybe_cancel
+                        # Invalidate relevant caches after cancelling an order
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_inv = self.broker.invalidate_cache(
+                                    "get_positions", "get_open_orders"
+                                )
+                                if inspect.isawaitable(maybe_inv):
+                                    await maybe_inv
+                            except Exception:
+                                logger.debug("invalidate_cache failed after cancel", exc_info=True)
                         logger.info(f"Cancelled order: {order_id}")
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to cancel orders: {e}")
@@ -120,8 +131,18 @@ class Housekeeping:
                         client_order_id=client_order_id,
                         order_type="market",
                     )
-                    if asyncio.iscoroutine(maybe_submit):
+                    if inspect.isawaitable(maybe_submit):
                         await maybe_submit
+                    # Invalidate caches after submitting a close order
+                    if hasattr(self.broker, "invalidate_cache"):
+                        try:
+                            maybe_inv2 = self.broker.invalidate_cache(
+                                "get_positions", "get_open_orders"
+                            )
+                            if inspect.isawaitable(maybe_inv2):
+                                await maybe_inv2
+                        except Exception:
+                            logger.debug("invalidate_cache failed after submit", exc_info=True)
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to close positions: {e}")
 
