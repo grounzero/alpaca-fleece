@@ -452,6 +452,17 @@ class StateStore:
                     return False
 
             # Monotonic upsert: only update if incoming timestamp is newer or row missing.
+            # Monotonic upsert SQL: only overwrite the stored `last_accepted_ts_utc`
+            # when the incoming `excluded.last_accepted_ts_utc` is newer (greater).
+            #
+            # Note for maintainers/tests: this behavior is subtle and should be
+            # covered by a unit test. A good test would:
+            # 1) call `gate_try_accept` with `now_utc = t2` and assert it returns True
+            #    and stores `t2`.
+            # 2) call `gate_try_accept` with an older `now_utc = t1 < t2` and assert
+            #    it returns False and that the stored timestamp remains `t2`.
+            # This will catch regressions in the COALESCE/strftime comparison logic
+            # and protect against older events overwriting newer gate timestamps.
             upsert_sql = """
                 INSERT INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc)
                 VALUES (?, ?, ?, ?, ?)
