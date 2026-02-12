@@ -113,12 +113,9 @@ class OrderManager:
         # Determine whether this signal is an exposure-increasing entry or an exit
         # Map to actions used by the gating table
         action = None
-        # NOTE: `submit_order` is async. Calling the broker synchronously here
-        # may perform network I/O and block the event loop. If `Broker.get_positions`
-        # is I/O-bound consider one of the following to avoid blocking:
-        # - make `get_positions` an async method and `await` it here,
-        # - call it in a thread with `await asyncio.to_thread(self.broker.get_positions)`,
-        # - or cache recent positions elsewhere (e.g. PositionTracker) and read from cache.
+        # NOTE: `submit_order` is async. Position lookup avoids blocking the event loop
+        # by preferring cached data from PositionTracker and otherwise calling
+        # `Broker.get_positions` via `await asyncio.to_thread(self.broker.get_positions)`.
         pos_qty: float | None = 0.0
         # Position determination strategy:
         # 1. Prefer a fast snapshot from PositionTracker when available.
