@@ -204,9 +204,19 @@ class SchemaManager:
         return True
 
     @staticmethod
+    def _quote_ident(name: str) -> str:
+        """Return a safely-quoted SQLite identifier.
+
+        SQLite identifiers are double-quoted; embedded double quotes are
+        escaped by doubling them. This helper ensures identifiers used in
+        PRAGMA/ALTER statements are properly quoted.
+        """
+        return '"' + name.replace('"', '""') + '"'
+
+    @staticmethod
     def _get_table_columns(cursor: sqlite3.Cursor, table: str) -> set[str]:
         """Return the set of column names for a table."""
-        cursor.execute(f"PRAGMA table_info({table})")  # noqa: S608
+        cursor.execute(f"PRAGMA table_info({SchemaManager._quote_ident(table)})")  # noqa: S608
         return {row[1] for row in cursor.fetchall()}
 
     @staticmethod
@@ -325,7 +335,7 @@ class SchemaManager:
 
                 existing_cols = cls._get_table_columns(cursor, table)
                 if col_name not in existing_cols:
-                    sql = f"ALTER TABLE {table} ADD COLUMN {col_name} {col_def}"
+                    sql = f"ALTER TABLE {cls._quote_ident(table)} ADD COLUMN {cls._quote_ident(col_name)} {col_def}"
                     cursor.execute(sql)
                     action = f"Added column {table}.{col_name}"
                     planned_actions.append(action)
