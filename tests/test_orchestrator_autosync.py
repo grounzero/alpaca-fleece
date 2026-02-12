@@ -41,7 +41,7 @@ async def test_phase1_autosync_success(monkeypatch, tmp_path):
     # reconcile: fail first, succeed second
     calls = {"n": 0}
 
-    def reconcile_stub(broker, state_store):
+    async def reconcile_stub(broker, state_store):
         if calls["n"] == 0:
             calls["n"] += 1
             from src.reconciliation import ReconciliationError
@@ -96,7 +96,7 @@ async def test_phase1_autosync_failure(monkeypatch, tmp_path):
     monkeypatch.setattr(orchestrator, "StateStore", MockStateStore)
 
     # reconcile always fails
-    def reconcile_always_fail(broker, state_store):
+    async def reconcile_always_fail(broker, state_store):
         from src.reconciliation import ReconciliationError
 
         raise ReconciliationError("discrepancies")

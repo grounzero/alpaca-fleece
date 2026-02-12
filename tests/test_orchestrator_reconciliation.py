@@ -58,7 +58,7 @@ async def test_phase1_auto_sync_success(monkeypatch):
     # reconcile: first call raises, second call succeeds
     call_count = {"n": 0}
 
-    def fake_reconcile(broker, state_store):
+    async def fake_reconcile(broker, state_store):
         call_count["n"] += 1
         if call_count["n"] == 1:
             raise ReconciliationError("initial mismatch")
@@ -83,9 +83,10 @@ async def test_phase1_auto_sync_sync_fails(monkeypatch):
     """When reconcile fails and sync process returns non-zero, reconciliation is reported as discrepancies."""
     _setup_basic_monkeypatch(monkeypatch)
 
-    monkeypatch.setattr(
-        orch, "reconcile", lambda b, s: (_ for _ in ()).throw(ReconciliationError("mismatch"))
-    )
+    async def _raise_reconcile(b, s):
+        raise ReconciliationError("mismatch")
+
+    monkeypatch.setattr(orch, "reconcile", _raise_reconcile)
 
     def fake_run_fail(args, **kwargs):
         return subprocess.CompletedProcess(args=args, returncode=2, stdout="", stderr="failed")
@@ -107,9 +108,10 @@ async def test_phase1_auto_sync_sync_timeout_raises(monkeypatch):
     """When the sync subprocess times out, phase1 should raise ReconciliationError."""
     _setup_basic_monkeypatch(monkeypatch)
 
-    monkeypatch.setattr(
-        orch, "reconcile", lambda b, s: (_ for _ in ()).throw(ReconciliationError("mismatch"))
-    )
+    async def _raise_reconcile(b, s):
+        raise ReconciliationError("mismatch")
+
+    monkeypatch.setattr(orch, "reconcile", _raise_reconcile)
 
     def fake_run_timeout(args, **kwargs):
         raise subprocess.TimeoutExpired(cmd=args, timeout=60)

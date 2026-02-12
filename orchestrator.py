@@ -199,7 +199,7 @@ class Orchestrator:
             # Run reconciliation
             logger.info("Running reconciliation...")
             try:
-                reconcile(self.broker, self.state_store)
+                await reconcile(self.broker, self.state_store)
                 logger.info("   Account synced (no discrepancies)")
                 reconciliation_status = "clean"
                 discrepancies = []
@@ -249,7 +249,7 @@ class Orchestrator:
 
                     # Re-check reconciliation
                     try:
-                        reconcile(self.broker, self.state_store)
+                        await reconcile(self.broker, self.state_store)
                         logger.info("   Reconciliation passed after auto-sync")
                         reconciliation_status = "clean"
                         discrepancies = []

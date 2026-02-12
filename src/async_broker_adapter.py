@@ -22,6 +22,7 @@ from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Protocol, cast
 
 from src.broker import Broker
+from src.broker import BrokerError as SyncBrokerError
 
 logger = logging.getLogger(__name__)
 
@@ -143,7 +144,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                     method_name,
                     dur,
                 )
-                self._metric_inc(f"broker_latency_ms{{method={method_name}}}")
+                self._metric_inc(f"broker_calls_success_total{{method={method_name}}}")
                 return result
             except asyncio.TimeoutError:
                 last_exc = BrokerTimeoutError(f"{method_name} timed out after {timeout}s")
@@ -157,7 +158,43 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 if not retry or attempt >= self._max_retries:
                     raise last_exc
             except Exception as e:
-                # Map underlying exceptions to taxonomy
+                # Detect non-retryable (fatal) errors such as invalid parameters
+                # or authentication failures and raise BrokerFatalError so
+                # callers can handle them without retries.
+                fatal = False
+                # Common Python errors that indicate programmer/config issues
+                if isinstance(e, (ValueError, TypeError, PermissionError)):
+                    fatal = True
+
+                # If underlying sync Broker raised a BrokerError with an
+                # authentication/invalid message, treat as fatal.
+                if isinstance(e, SyncBrokerError):
+                    msg = str(e).lower()
+                    if any(
+                        k in msg
+                        for k in (
+                            "auth",
+                            "authentication",
+                            "invalid",
+                            "unauthor",
+                            "forbidden",
+                            "permission",
+                        )
+                    ):
+                        fatal = True
+
+                if fatal:
+                    last_exc = BrokerFatalError(str(e))
+                    self._metric_inc(f"broker_fatals_total{{method={method_name}}}")
+                    logger.error(
+                        "broker_call method=%s duration_ms=%d outcome=fatal exception=%s",
+                        method_name,
+                        int((time.time() - start) * 1000),
+                        e,
+                    )
+                    raise last_exc
+
+                # Map underlying exceptions to transient taxonomy
                 last_exc = BrokerTransientError(str(e))
                 self._metric_inc(f"broker_retries_total{{method={method_name}}}")
                 logger.warning(

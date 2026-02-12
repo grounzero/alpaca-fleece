@@ -7,7 +7,8 @@ import pytest
 from src.reconciliation import ReconciliationError, reconcile
 
 
-def test_reconciliation_detects_alpaca_order_not_in_sqlite(state_store, mock_broker):
+@pytest.mark.asyncio
+async def test_reconciliation_detects_alpaca_order_not_in_sqlite(state_store, mock_broker):
     """Reconciliation detects orphaned orders in Alpaca."""
     # Alpaca has an open order not in SQLite
     mock_broker.get_open_orders.return_value = [
@@ -26,13 +27,14 @@ def test_reconciliation_detects_alpaca_order_not_in_sqlite(state_store, mock_bro
 
     # Reconciliation should fail
     with pytest.raises(ReconciliationError, match="discrepancies"):
-        reconcile(mock_broker, state_store)
+        await reconcile(mock_broker, state_store)
 
     # Should write error report
     assert Path("data/reconciliation_error.json").exists()
 
 
-def test_reconciliation_detects_sqlite_terminal_alpaca_nonterminal(state_store, mock_broker):
+@pytest.mark.asyncio
+async def test_reconciliation_detects_sqlite_terminal_alpaca_nonterminal(state_store, mock_broker):
     """Reconciliation detects order terminal locally but open in Alpaca."""
     client_id = "order-1"
 
@@ -54,20 +56,22 @@ def test_reconciliation_detects_sqlite_terminal_alpaca_nonterminal(state_store, 
 
     # Reconciliation should fail
     with pytest.raises(ReconciliationError, match="discrepancies"):
-        reconcile(mock_broker, state_store)
+        await reconcile(mock_broker, state_store)
 
 
-def test_reconciliation_clean_passes(state_store, mock_broker):
+@pytest.mark.asyncio
+async def test_reconciliation_clean_passes(state_store, mock_broker):
     """Reconciliation passes when state is clean."""
     # No orders in either system
     mock_broker.get_open_orders.return_value = []
     mock_broker.get_positions.return_value = []
 
     # Should not raise
-    reconcile(mock_broker, state_store)
+    await reconcile(mock_broker, state_store)
 
 
-def test_reconciliation_updates_terminal_orders(state_store, mock_broker):
+@pytest.mark.asyncio
+async def test_reconciliation_updates_terminal_orders(state_store, mock_broker):
     """Reconciliation updates SQLite when Alpaca reports terminal."""
     client_id = "order-1"
 
@@ -88,7 +92,7 @@ def test_reconciliation_updates_terminal_orders(state_store, mock_broker):
     mock_broker.get_positions.return_value = []
 
     # Reconciliation should pass and update
-    reconcile(mock_broker, state_store)
+    await reconcile(mock_broker, state_store)
 
     # Order should now be marked as filled
     order = state_store.get_order_intent(client_id)
