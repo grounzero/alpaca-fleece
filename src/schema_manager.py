@@ -249,8 +249,13 @@ class SchemaManager:
         backup_dir.mkdir(exist_ok=True)
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         backup_path = backup_dir / f"{db_file.stem}.{timestamp}.bak"
-        shutil.copy2(db_path, str(backup_path))
 
+        # Use SQLite's backup API instead of raw file copy to ensure a
+        # consistent snapshot even when WAL mode is enabled.
+        with sqlite3.connect(db_path) as src_conn, sqlite3.connect(
+            str(backup_path)
+        ) as dst_conn:
+            src_conn.backup(dst_conn)
         if not backup_path.exists() or backup_path.stat().st_size == 0:
             raise SchemaError(f"Schema backup failed: {backup_path} missing or empty")
 
@@ -282,12 +287,19 @@ class SchemaManager:
         try:
             cursor = conn.cursor()
 
-            # Set PRAGMAs before transaction
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA busy_timeout=5000")
+            # Set PRAGMAs before transaction. Avoid persistent changes and write
+            # locks when running in dry-run mode so the operation has no side
+            # effects and does not block other DB users.
+            if not dry_run:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
 
-            # Acquire write lock early
-            cursor.execute("BEGIN IMMEDIATE")
+                # Acquire write lock early
+                cursor.execute("BEGIN IMMEDIATE")
+            else:
+                # Still configure busy_timeout for consistent behavior, but do
+                # not alter journal mode or acquire a write lock.
+                cursor.execute("PRAGMA busy_timeout=5000")
 
             # ------ schema_meta table (always create first) ------
             existing_tables = cls._get_existing_tables(cursor)
@@ -368,6 +380,39 @@ class SchemaManager:
                         "migration logic for reference."
                     )
 
+                # Verify required UNIQUE constraints (or equivalent unique indexes)
+                # on (order_id, fill_id) and (order_id, client_order_id).
+                cursor.execute("PRAGMA index_list(trades)")
+                index_rows = cursor.fetchall()
+
+                unique_index_columns = []
+                for row in index_rows:
+                    # row layout: seq, name, unique, origin, partial, ...
+                    if len(row) >= 3 and row[2]:
+                        idx_name = row[1]
+                        # idx_name is obtained from SQLite metadata; still quote defensively.
+                        safe_idx_name = idx_name.replace("'", "''")
+                        cursor.execute(f"PRAGMA index_info('{safe_idx_name}')")
+                        cols = [info_row[2] for info_row in cursor.fetchall()]
+                        unique_index_columns.append(cols)
+
+                required_pairs = [
+                    ["order_id", "fill_id"],
+                    ["order_id", "client_order_id"],
+                ]
+
+                missing_pairs = [
+                    pair for pair in required_pairs if pair not in unique_index_columns
+                ]
+
+                if missing_pairs:
+                    conn.rollback()
+                    raise SchemaError(
+                        "trades table exists but lacks required UNIQUE constraints "
+                        "on (order_id, fill_id) and/or (order_id, client_order_id). "
+                        "This requires a manual migration (table rebuild). See prior "
+                        "state_store.py migration logic for reference."
+                    )
             # ------ Update schema version ------
             now = datetime.now(timezone.utc).isoformat()
             if stored_version is None:
@@ -375,10 +420,9 @@ class SchemaManager:
                     "INSERT INTO schema_meta (id, schema_version, updated_at) " "VALUES (1, ?, ?)",
                     (CURRENT_SCHEMA_VERSION, now),
                 )
-                if planned_actions:
-                    action = f"Set schema version to {CURRENT_SCHEMA_VERSION}"
-                    planned_actions.append(action)
-                    logger.info("[SchemaManager] %s", action)
+                action = f"Set schema version to {CURRENT_SCHEMA_VERSION}"
+                planned_actions.append(action)
+                logger.info("[SchemaManager] %s", action)
             elif stored_version < CURRENT_SCHEMA_VERSION:
                 cursor.execute(
                     "UPDATE schema_meta SET schema_version = ?, updated_at = ? " "WHERE id = 1",
