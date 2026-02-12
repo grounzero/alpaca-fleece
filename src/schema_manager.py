@@ -8,7 +8,6 @@ structures.
 
 import logging
 import re
-import shutil
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
@@ -252,9 +251,7 @@ class SchemaManager:
 
         # Use SQLite's backup API instead of raw file copy to ensure a
         # consistent snapshot even when WAL mode is enabled.
-        with sqlite3.connect(db_path) as src_conn, sqlite3.connect(
-            str(backup_path)
-        ) as dst_conn:
+        with sqlite3.connect(db_path) as src_conn, sqlite3.connect(str(backup_path)) as dst_conn:
             src_conn.backup(dst_conn)
         if not backup_path.exists() or backup_path.stat().st_size == 0:
             raise SchemaError(f"Schema backup failed: {backup_path} missing or empty")
@@ -300,6 +297,8 @@ class SchemaManager:
                 # Still configure busy_timeout for consistent behavior, but do
                 # not alter journal mode or acquire a write lock.
                 cursor.execute("PRAGMA busy_timeout=5000")
+                # Start a deferred transaction so dry-run DDL can be rolled back
+                cursor.execute("BEGIN")
 
             # ------ schema_meta table (always create first) ------
             existing_tables = cls._get_existing_tables(cursor)
@@ -391,8 +390,7 @@ class SchemaManager:
                     if len(row) >= 3 and row[2]:
                         idx_name = row[1]
                         # idx_name is obtained from SQLite metadata; still quote defensively.
-                        safe_idx_name = idx_name.replace("'", "''")
-                        cursor.execute(f"PRAGMA index_info('{safe_idx_name}')")
+                        cursor.execute(f"PRAGMA index_info({cls._quote_ident(idx_name)})")
                         cols = [info_row[2] for info_row in cursor.fetchall()]
                         unique_index_columns.append(cols)
 

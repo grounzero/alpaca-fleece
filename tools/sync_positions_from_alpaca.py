@@ -20,6 +20,11 @@ from typing import Optional
 from alpaca.trading.client import TradingClient
 
 
+def _quote_ident(name: str) -> str:
+    """Return a safely-quoted SQLite identifier (double-quote with embedded quotes escaped)."""
+    return '"' + name.replace('"', '""') + '"'
+
+
 def _get_bool_env(name: str, default: bool) -> bool:
     """Parse a boolean environment variable.
 
@@ -71,12 +76,14 @@ def backup_position_tracking(conn: sqlite3.Connection) -> Optional[str]:
         print("  position_tracking table does not exist yet")
         return None
 
-    # Create backup table
-    cursor.execute(f"CREATE TABLE {backup_table} AS SELECT * FROM position_tracking")
+    # Create backup table (quote identifiers to avoid injection)
+    cursor.execute(
+        f"CREATE TABLE {_quote_ident(backup_table)} AS SELECT * FROM {_quote_ident('position_tracking')}"
+    )
     conn.commit()
 
     # Count records
-    cursor.execute(f"SELECT COUNT(*) FROM {backup_table}")
+    cursor.execute(f"SELECT COUNT(*) FROM {_quote_ident(backup_table)}")
     count = cursor.fetchone()[0]
 
     print(f"  ✓ Backup created: {backup_table} ({count} records)")
