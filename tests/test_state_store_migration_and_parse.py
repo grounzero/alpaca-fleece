@@ -4,7 +4,6 @@ from decimal import Decimal
 import pytest
 
 from src.schema_manager import SchemaManager
-from src.state_store import StateStore
 from src.utils import parse_optional_float
 
 
