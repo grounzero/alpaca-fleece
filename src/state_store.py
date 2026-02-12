@@ -376,6 +376,7 @@ class StateStore:
         from datetime import timezone
 
         conn = _sqlite.connect(self.db_path, timeout=5.0)
+        try:
             conn.isolation_level = None
             cur = conn.cursor()
             try:
@@ -385,7 +386,9 @@ class StateStore:
                 cur.execute("PRAGMA busy_timeout=5000")
             except _sqlite.Error:
                 # Best-effort PRAGMA; do not fail the gate on PRAGMA issues.
-                logger.debug("Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True)
+                logger.debug(
+                    "Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True
+                )
 
             # Normalize timestamps to UTC ISO
             last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
