@@ -242,6 +242,9 @@ class StateStore:
                 ON order_intents(symbol)
             """)
 
+            # NOTE: composite index on (strategy, symbol, side, status)
+            # moved below so migrations that add `strategy` column run first.
+
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_trades_symbol_timestamp 
                 ON trades(symbol, timestamp_utc)
@@ -319,6 +322,21 @@ class StateStore:
                 logger.warning(
                     "Could not migrate order_intents to add atr, filled_avg_price, and strategy columns: %s",
                     e,
+                )
+            # Create composite index for strategy-scoped pending-order lookups.
+            # Place this after migrations that ensure the `strategy` column
+            # exists so we don't attempt to index a non-existent column on
+            # older DBs. Use a best-effort PRAGMA-safe try/except to avoid
+            # failing init if the column is still absent for any reason.
+            try:
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_order_intents_strategy_symbol_side_status
+                    ON order_intents(strategy, symbol, side, status)
+                    """)
+            except sqlite3.Error:
+                logger.debug(
+                    "Could not create composite index on order_intents(strategy,symbol,side,status); continuing without it.",
+                    exc_info=True,
                 )
 
     def get_state(self, key: str) -> Optional[str]:
