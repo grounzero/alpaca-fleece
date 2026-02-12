@@ -222,9 +222,7 @@ class SchemaManager:
         return {row[0] for row in cursor.fetchall()}
 
     @staticmethod
-    def _backup_if_needed(
-        db_path: str, changes: list[str], dry_run: bool
-    ) -> Optional[str]:
+    def _backup_if_needed(db_path: str, changes: list[str], dry_run: bool) -> Optional[str]:
         """Create a backup before applying schema changes.
 
         Returns the backup path if a backup was created, None otherwise.
@@ -244,9 +242,7 @@ class SchemaManager:
         shutil.copy2(db_path, str(backup_path))
 
         if not backup_path.exists() or backup_path.stat().st_size == 0:
-            raise SchemaError(
-                f"Schema backup failed: {backup_path} missing or empty"
-            )
+            raise SchemaError(f"Schema backup failed: {backup_path} missing or empty")
 
         logger.info("[SchemaManager] Backup created: %s", backup_path)
         return str(backup_path)
@@ -320,8 +316,7 @@ class SchemaManager:
             for table, col_name, col_def in sorted_columns:
                 if not cls._is_safe_column_def(col_def):
                     logger.warning(
-                        "[SchemaManager] Skipping unsafe column definition: "
-                        "%s.%s %s",
+                        "[SchemaManager] Skipping unsafe column definition: " "%s.%s %s",
                         table,
                         col_name,
                         col_def,
@@ -367,8 +362,7 @@ class SchemaManager:
             now = datetime.now(timezone.utc).isoformat()
             if stored_version is None:
                 cursor.execute(
-                    "INSERT INTO schema_meta (id, schema_version, updated_at) "
-                    "VALUES (1, ?, ?)",
+                    "INSERT INTO schema_meta (id, schema_version, updated_at) " "VALUES (1, ?, ?)",
                     (CURRENT_SCHEMA_VERSION, now),
                 )
                 if planned_actions:
@@ -377,14 +371,10 @@ class SchemaManager:
                     logger.info("[SchemaManager] %s", action)
             elif stored_version < CURRENT_SCHEMA_VERSION:
                 cursor.execute(
-                    "UPDATE schema_meta SET schema_version = ?, updated_at = ? "
-                    "WHERE id = 1",
+                    "UPDATE schema_meta SET schema_version = ?, updated_at = ? " "WHERE id = 1",
                     (CURRENT_SCHEMA_VERSION, now),
                 )
-                action = (
-                    f"Schema upgraded from v{stored_version} "
-                    f"to v{CURRENT_SCHEMA_VERSION}"
-                )
+                action = f"Schema upgraded from v{stored_version} " f"to v{CURRENT_SCHEMA_VERSION}"
                 planned_actions.append(action)
                 logger.info("[SchemaManager] %s", action)
 
