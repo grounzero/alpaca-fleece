@@ -345,9 +345,7 @@ class SchemaManager:
                         col_def,
                     )
                     conn.rollback()
-                    raise SchemaError(
-                        f"Unsafe column definition for {table}.{col_name}: {col_def}"
-                    )
+                    raise SchemaError(f"Unsafe column definition for {table}.{col_name}: {col_def}")
 
                 existing_cols = existing_cols_cache.get(table)
                 if existing_cols is None:
