@@ -110,9 +110,30 @@ class Broker:
         }
         # Legacy executor used by older code/tests; kept for backwards compatibility.
         # Runtime paths should prefer `AsyncBrokerAdapter` which owns the real
-        # concurrency boundary.
+        # concurrency boundary. The executor is test-only and is shut down via
+        # `close`/`__del__` to avoid leaking threads.
         self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=1)
 
+    def close(self) -> None:
+        """Release any resources owned by this broker instance.
+
+        In particular, this shuts down the legacy ThreadPoolExecutor used only by
+        older tests so we don't leak threads in long-lived processes.
+        """
+        executor = getattr(self, "_executor", None)
+        if executor is not None:
+            try:
+                executor.shutdown(wait=False)
+            finally:
+                self._executor = None
+
+    def __del__(self) -> None:
+        """Best-effort cleanup of resources on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            # Avoid raising from __del__; cleanup is best-effort only.
+            pass
     def _call_with_timeout(
         self,
         func: Callable[[], T],
