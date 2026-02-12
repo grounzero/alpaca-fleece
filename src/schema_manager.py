@@ -336,13 +336,17 @@ class SchemaManager:
             sorted_columns = sorted(ADDITIVE_COLUMNS, key=lambda c: (c[0], c[1]))
             for table, col_name, col_def in sorted_columns:
                 if not cls._is_safe_column_def(col_def):
-                    logger.warning(
-                        "[SchemaManager] Skipping unsafe column definition: " "%s.%s %s",
+                    # Fail fast rather than silently skipping an unsafe column
+                    logger.error(
+                        "[SchemaManager] Unsafe column definition encountered: %s.%s %s",
                         table,
                         col_name,
                         col_def,
                     )
-                    continue
+                    conn.rollback()
+                    raise SchemaError(
+                        f"Unsafe column definition for {table}.{col_name}: {col_def}"
+                    )
 
                 existing_cols = cls._get_table_columns(cursor, table)
                 if col_name not in existing_cols:
