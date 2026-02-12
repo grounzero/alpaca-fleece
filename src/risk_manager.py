@@ -24,7 +24,12 @@ import logging
 from datetime import datetime, timezone
 from typing import Any
 
-from src.async_broker_adapter import AsyncBrokerInterface
+from src.async_broker_adapter import (
+    AsyncBrokerInterface,
+    BrokerTimeoutError,
+    BrokerTransientError,
+    BrokerFatalError,
+)
 from src.data_handler import DataHandler
 from src.event_bus import SignalEvent
 from src.state_store import StateStore
@@ -209,7 +214,14 @@ class RiskManager:
         except RiskManagerError:
             # Propagate intentional risk-manager domain errors unchanged
             raise
-        except Exception as e:
+        except asyncio.CancelledError:
+            # Preserve task cancellation semantics
+            raise
+        except BrokerFatalError:
+            # Fatal broker errors should be handled by callers (do not wrap)
+            raise
+        except (BrokerTimeoutError, BrokerTransientError, ConnectionError, TimeoutError) as e:
+            # Expected operational failures -> translate to domain error
             raise RiskManagerError(f"Clock fetch failed: {e}") from e
 
     async def _check_risk_tier(self, symbol: str, side: str) -> None:
@@ -363,8 +375,16 @@ class RiskManager:
             clock = await maybe if asyncio.iscoroutine(maybe) else maybe
             if not clock["is_open"]:
                 raise RiskManagerError("Market not open - exit blocked")
-        except Exception as e:
-            raise RiskManagerError(f"Clock fetch failed - exit blocked: {e}")
+        except RiskManagerError:
+            raise
+        except asyncio.CancelledError:
+            raise
+        except BrokerFatalError:
+            # Let fatal broker errors propagate to callers
+            raise
+        except (BrokerTimeoutError, BrokerTransientError, ConnectionError, TimeoutError) as e:
+            # Expected operational failures -> translate to domain error
+            raise RiskManagerError(f"Clock fetch failed - exit blocked: {e}") from e
 
         logger.debug(f"Exit order validated: {symbol} {side} {qty}")
         return True
