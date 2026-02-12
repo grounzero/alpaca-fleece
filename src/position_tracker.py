@@ -35,6 +35,8 @@ class PositionData:
     trailing_stop_price: Optional[float] = None
     trailing_stop_activated: bool = False
     pending_exit: bool = False
+    # Timestamp when this position snapshot was last persisted/updated
+    last_updated: Optional[datetime] = None
 
 
 class PositionTrackerError(Exception):
@@ -60,6 +62,9 @@ class PositionTracker:
 
         # In-memory position tracking: symbol -> PositionData
         self._positions: Dict[str, PositionData] = {}
+        # Per-symbol last-updated timestamps (keeps freshness per symbol)
+        self._last_updates: Dict[str, datetime] = {}
+        # Global last update for full-tracker operations
         self._last_update: Optional[datetime] = None
 
     def init_schema(self) -> None:
@@ -103,7 +108,10 @@ class PositionTracker:
         self._positions[symbol] = position
         self._persist_position(position)
         # mark last update time when we modify snapshot
-        self._last_update = datetime.now(timezone.utc)
+        now = datetime.now(timezone.utc)
+        position.last_updated = now
+        self._last_updates[symbol] = now
+        self._last_update = now
         return position
 
     def stop_tracking(self, symbol: str) -> None:
@@ -245,7 +253,8 @@ class PositionTracker:
         }
 
     def _persist_position(self, position: PositionData) -> None:
-        now = datetime.now(timezone.utc).isoformat()
+        now_dt = datetime.now(timezone.utc)
+        now = now_dt.isoformat()
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -271,7 +280,9 @@ class PositionTracker:
             )
             conn.commit()
         # mark last update timestamp after successful commit
-        self._last_update = datetime.now(timezone.utc)
+        position.last_updated = now_dt
+        self._last_updates[position.symbol] = now_dt
+        self._last_update = now_dt
 
     # Public persistence API
     def persist_position(self, position: PositionData) -> None:
@@ -295,7 +306,7 @@ class PositionTracker:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT symbol, side, qty, entry_price, atr, entry_time, extreme_price,
-                       trailing_stop_price, trailing_stop_activated, COALESCE(pending_exit, 0)
+                       trailing_stop_price, trailing_stop_activated, COALESCE(pending_exit, 0), updated_at
                 FROM position_tracking
                 """)
             rows = cursor.fetchall()
@@ -314,11 +325,32 @@ class PositionTracker:
                     trailing_stop_activated=bool(int(row[8] or 0)),
                     pending_exit=bool(int(row[9] or 0)),
                 )
+                # Parse persisted updated_at if present and set per-symbol freshness
+                try:
+                    updated_at_raw = row[10]
+                    updated_dt = (
+                        datetime.fromisoformat(updated_at_raw).astimezone(timezone.utc)
+                        if updated_at_raw
+                        else None
+                    )
+                except Exception:
+                    updated_dt = None
+
+                position.last_updated = updated_dt
+                if updated_dt:
+                    self._last_updates[position.symbol] = updated_dt
+
                 self._positions[position.symbol] = position
                 positions.append(position)
 
         return positions
 
-    def last_updated(self) -> Optional[datetime]:
-        """Return timestamp when snapshot was last updated (or None)."""
-        return self._last_update
+    def last_updated(self, symbol: Optional[str] = None) -> Optional[datetime]:
+        """Return per-symbol last-updated timestamp if `symbol` provided,
+        otherwise return the global last-updated timestamp for the tracker.
+
+        This allows callers to assess freshness for a specific symbol.
+        """
+        if symbol is None:
+            return self._last_update
+        return self._last_updates.get(symbol)

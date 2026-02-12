@@ -152,7 +152,7 @@ class OrderManager:
                     # Use tracker value but check freshness
                     pos_qty = float(pos_obj.qty)
                     try:
-                        last = self.position_tracker.last_updated()
+                        last = self.position_tracker.last_updated(symbol)
                         if last is None or (now_ts - last).total_seconds() > ttl_seconds:
                             # Stale snapshot — reconcile with broker
                             broker_qty = await _fetch_positions_from_broker()
