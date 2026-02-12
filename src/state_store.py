@@ -440,7 +440,10 @@ class StateStore:
                 ON CONFLICT(strategy, symbol, action) DO UPDATE SET
                     last_accepted_ts_utc = excluded.last_accepted_ts_utc,
                     last_bar_ts_utc = excluded.last_bar_ts_utc
-                WHERE COALESCE(signal_gates.last_accepted_ts_utc, '') <= excluded.last_accepted_ts_utc
+                WHERE COALESCE(
+                    CAST(strftime('%s', signal_gates.last_accepted_ts_utc) AS REAL),
+                    0
+                ) <= CAST(strftime('%s', excluded.last_accepted_ts_utc) AS REAL)
             """
 
             cur.execute(upsert_sql, (strategy, symbol, action, last_accepted_iso, last_bar_iso))
