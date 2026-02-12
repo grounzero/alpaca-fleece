@@ -206,8 +206,11 @@ class RiskManager:
             clock = await maybe if asyncio.iscoroutine(maybe) else maybe
             if not clock["is_open"]:
                 raise RiskManagerError("Market not open")
+        except RiskManagerError:
+            # Propagate intentional risk-manager domain errors unchanged
+            raise
         except Exception as e:
-            raise RiskManagerError(f"Clock fetch failed: {e}")
+            raise RiskManagerError(f"Clock fetch failed: {e}") from e
 
     async def _check_risk_tier(self, symbol: str, side: str) -> None:
         """Check risk limits (daily loss, trade count, position size, concurrent positions).
