@@ -338,6 +338,16 @@ class OrderManager:
                 alpaca_order_id=order.get("id"),
             )
 
+            # Invalidate adapter cache for write consistency so subsequent
+            # reads (positions / open orders) observe the change sooner.
+            try:
+                if hasattr(self.broker, "invalidate_cache"):
+                    maybe = self.broker.invalidate_cache("get_positions", "get_open_orders")
+                    if asyncio.iscoroutine(maybe):
+                        await maybe
+            except Exception:
+                logger.exception("Failed to invalidate broker cache after submit")
+
             # Publish order intent event
             await self.event_bus.publish(
                 OrderIntentEvent(

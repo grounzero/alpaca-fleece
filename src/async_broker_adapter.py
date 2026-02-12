@@ -51,6 +51,7 @@ class AsyncBrokerInterface(Protocol):
     async def submit_order(self, *args: Any, **kwargs: Any) -> Dict[str, Any]: ...
 
     async def cancel_order(self, order_id: str) -> None: ...
+    async def invalidate_cache(self, *keys: str) -> None: ...
 
 
 @dataclass
@@ -118,6 +119,18 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
         if not self._enable_cache:
             return
         self._cache[key] = _CacheItem(value=value, expires_at=time.time() + ttl)
+
+    async def invalidate_cache(self, *keys: str) -> None:
+        """Invalidate specific cache keys.
+
+        Usage: `await adapter.invalidate_cache("get_positions", "get_open_orders")`.
+        """
+        if not self._enable_cache:
+            return
+        for k in keys:
+            if k in self._cache:
+                del self._cache[k]
+                self._metric_inc(f"broker_cache_invalidations_total{{method={k}}}")
 
     async def _run_sync(
         self,
