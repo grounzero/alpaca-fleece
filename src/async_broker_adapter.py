@@ -179,6 +179,7 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
             try:
                 del self._executor
             except Exception:
+                # Ignore failures during best-effort cleanup; executor is already shut down.
                 pass
         # Also attempt to shutdown the underlying sync Broker's legacy executor
         broker_exec = getattr(self._broker, "_executor", None)
