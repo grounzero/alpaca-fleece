@@ -272,12 +272,19 @@ class SchemaManager:
         try:
             cursor = conn.cursor()
 
-            # Set PRAGMAs before transaction
-            cursor.execute("PRAGMA journal_mode=WAL")
-            cursor.execute("PRAGMA busy_timeout=5000")
+            # Set PRAGMAs before transaction. Avoid persistent changes and write
+            # locks when running in dry-run mode so the operation has no side
+            # effects and does not block other DB users.
+            if not dry_run:
+                cursor.execute("PRAGMA journal_mode=WAL")
+                cursor.execute("PRAGMA busy_timeout=5000")
 
-            # Acquire write lock early
-            cursor.execute("BEGIN IMMEDIATE")
+                # Acquire write lock early
+                cursor.execute("BEGIN IMMEDIATE")
+            else:
+                # Still configure busy_timeout for consistent behavior, but do
+                # not alter journal mode or acquire a write lock.
+                cursor.execute("PRAGMA busy_timeout=5000")
 
             # ------ schema_meta table (always create first) ------
             existing_tables = cls._get_existing_tables(cursor)
