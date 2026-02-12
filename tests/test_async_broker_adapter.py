@@ -75,3 +75,4 @@ async def test_slow_broker_does_not_block_event_loop():
 
     keep_running = False
     await hb
+    await adapter.close()

@@ -19,6 +19,7 @@ async def test_run_sync_raises_fatal_on_value_error_and_metrics():
     # Metric should have recorded a fatal
     key = "broker_fatals_total{method=get_account}"
     assert adapter.metrics.get(key, 0) == 1
+    await adapter.close()
 
 
 @pytest.mark.asyncio
@@ -35,3 +36,4 @@ async def test_run_sync_raises_fatal_on_brokererror_auth_and_metrics():
 
     key = "broker_fatals_total{method=get_positions}"
     assert adapter.metrics.get(key, 0) == 1
+    await adapter.close()
