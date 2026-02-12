@@ -9,13 +9,15 @@ Key responsibilities:
 Uses float at module boundaries for API compatibility.
 """
 
+import asyncio
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.broker import Broker
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
+from src.position_tracker import PositionTracker
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -39,6 +41,7 @@ class OrderManager:
         config: dict[str, Any],
         strategy_name: str,
         timeframe: str = "1Min",
+        position_tracker: PositionTracker | None = None,
     ) -> None:
         """Initialise order manager.
 
@@ -56,6 +59,17 @@ class OrderManager:
         self.config = config
         self.strategy_name = strategy_name
         self.timeframe = timeframe
+        self.position_tracker = position_tracker
+
+        # Optionally enforce that a PositionTracker is provided. This is
+        # controlled by the `REQUIRE_POSITION_TRACKER` flag in `config` so
+        # unit tests and backtests can remain lightweight while orchestrator
+        # can opt into strict wiring during runtime startup.
+        require_tracker = bool(self.config.get("REQUIRE_POSITION_TRACKER", False))
+        if require_tracker and self.position_tracker is None:
+            raise ValueError(
+                "OrderManager requires a PositionTracker instance when REQUIRE_POSITION_TRACKER is set"
+            )
 
         # Execution config
         execution_config = config.get("execution", {})
@@ -106,6 +120,94 @@ class OrderManager:
         symbol = signal.symbol
         side = "buy" if signal.signal_type == "BUY" else "sell"
 
+        # Determine whether this signal is an exposure-increasing entry or an exit
+        # Map to actions used by the gating table
+        action = None
+        # NOTE: `submit_order` is async. Position lookup avoids blocking the event loop
+        # by preferring cached data from PositionTracker and otherwise calling
+        # `Broker.get_positions` via `await asyncio.to_thread(self.broker.get_positions)`.
+        pos_qty: float | None = 0.0
+        # Position determination strategy:
+        # 1. Prefer a fast snapshot from PositionTracker when available.
+        # 2. If the snapshot is missing the symbol or is stale (TTL), consult
+        #    the broker as the authoritative source via a thread call.
+        # 3. If no tracker is present, call the broker directly.
+        ttl_seconds = int(self.config.get("position_tracker_ttl_seconds", 5))
+        now_ts = datetime.now(timezone.utc)
+
+        async def _fetch_positions_from_broker() -> float | None:
+            try:
+                positions = await asyncio.to_thread(self.broker.get_positions)
+                for p in positions:
+                    if p.get("symbol") == symbol:
+                        return float(p.get("qty", 0) or 0)
+                return 0.0
+            except asyncio.CancelledError:
+                raise
+            except Exception:
+                logger.exception(
+                    "Failed to fetch positions from broker; treating position as unknown for %s",
+                    symbol,
+                )
+                return None
+
+        if self.position_tracker is not None:
+            try:
+                # PositionTracker.get_position is synchronous and returns PositionData or None
+                pos_obj = self.position_tracker.get_position(symbol)
+                if pos_obj is None:
+                    # Unknown to tracker — consult broker (authoritative)
+                    pos_qty = await _fetch_positions_from_broker()
+                else:
+                    # Use tracker value but check freshness
+                    pos_qty = float(pos_obj.qty)
+                    try:
+                        last = self.position_tracker.last_updated(symbol)
+                        if last is None or (now_ts - last).total_seconds() > ttl_seconds:
+                            # Stale snapshot — reconcile with broker
+                            broker_qty = await _fetch_positions_from_broker()
+                            # If broker query succeeded, prefer authoritative value
+                            if broker_qty is not None:
+                                pos_qty = broker_qty
+                    except Exception:
+                        logger.exception(
+                            "Failed to check PositionTracker freshness; using tracker value for %s",
+                            symbol,
+                        )
+            except Exception:
+                logger.exception(
+                    "PositionTracker lookup failed; treating position as unknown for %s",
+                    symbol,
+                )
+                pos_qty = await _fetch_positions_from_broker()
+        else:
+            # No tracker available — authoritative broker call
+            pos_qty = await _fetch_positions_from_broker()
+
+        # Decide action: buy -> ENTER_LONG (typically exposure-increasing)
+        # sell -> if currently long, it's an exit; if flat, treat as ENTER_SHORT
+        if side == "buy":
+            # If we couldn't determine current position (pos_qty is None),
+            # assume this is an entry. If we're currently short (pos_qty < 0),
+            # treat BUY as a cover/exit rather than opening a long.
+            if pos_qty is None:
+                action = "ENTER_LONG"
+            elif pos_qty < 0:
+                action = "EXIT_SHORT"
+            else:
+                action = "ENTER_LONG"
+        else:
+            # sell
+            # If we couldn't determine current position (pos_qty is None),
+            # be conservative and treat sell as an exit rather than opening a
+            # short position.
+            if pos_qty is None:
+                action = "EXIT_LONG"
+            elif pos_qty > 0:
+                action = "EXIT_LONG"
+            else:
+                action = "ENTER_SHORT"
+
         # Log signal metadata (Win #2: multi-timeframe SMA + regime detection)
         sma_period = signal.metadata.get("sma_period", (10, 30))
         confidence = signal.metadata.get("confidence", 0.5)
@@ -115,6 +217,70 @@ class OrderManager:
             f"Trading {symbol}: {side.upper()} "
             f"SMA{sma_period} confidence={confidence:.2f} regime={regime}"
         )
+
+        # If this is an exposure-increasing action, enforce gating and pending checks
+        entry_actions = ("ENTER_LONG", "ENTER_SHORT")
+        if action in entry_actions:
+            # Position-aware block: don't open same-direction exposure if already in position
+            if action == "ENTER_LONG" and pos_qty is not None and pos_qty > 0:
+                logger.info(
+                    "Blocking entry: already_in_position symbol=%s action=%s pos_qty=%s",
+                    symbol,
+                    action,
+                    pos_qty,
+                )
+                return False
+            if action == "ENTER_SHORT" and pos_qty is not None and pos_qty < 0:
+                logger.info(
+                    "Blocking entry: already_in_position symbol=%s action=%s pos_qty=%s",
+                    symbol,
+                    action,
+                    pos_qty,
+                )
+                return False
+
+            # Pending-order-aware block
+            entry_side = "buy" if action == "ENTER_LONG" else "sell"
+            if self.state_store.has_open_exposure_increasing_order(
+                symbol, entry_side, strategy=self.strategy_name
+            ):
+                logger.info(
+                    "Blocking entry: open_order symbol=%s action=%s side=%s",
+                    symbol,
+                    action,
+                    entry_side,
+                )
+                return False
+
+            # Cooldown + per-bar dedupe via gate_try_accept
+            cooldown_min = int(self.config.get("entry_cooldown_minutes", 120))
+
+            # Copilot AI: Importing `timedelta` inside `submit_order()` adds avoidable
+            # overhead on a hot path and is inconsistent with the module's other
+            # imports. `timedelta` is imported at module level to keep imports
+            # centralized and reduce per-call work.
+            now_utc = datetime.now(timezone.utc)
+            bar_ts = getattr(signal, "timestamp", None)
+            cooldown_td = timedelta(minutes=cooldown_min)
+            accepted = self.state_store.gate_try_accept(
+                strategy=self.strategy_name,
+                symbol=symbol,
+                action=action,
+                now_utc=now_utc,
+                bar_ts_utc=bar_ts,
+                cooldown=cooldown_td,
+            )
+            if not accepted:
+                # Determine reason heuristically by re-checking recent state
+                logger.info(
+                    "Blocking entry: gate_rejected symbol=%s action=%s bar_ts=%s now_ts=%s cooldown_min=%s",
+                    symbol,
+                    action,
+                    str(bar_ts),
+                    now_utc.isoformat(),
+                    cooldown_min,
+                )
+                return False
 
         # Generate deterministic order ID
         client_order_id = self._generate_client_order_id(
@@ -135,6 +301,7 @@ class OrderManager:
         atr_value: float | None = parse_optional_float(atr_raw)
         self.state_store.save_order_intent(
             client_order_id=client_order_id,
+            strategy=self.strategy_name,
             symbol=symbol,
             side=side,
             qty=float(qty),  # Convert Decimal to float for storage
@@ -160,11 +327,13 @@ class OrderManager:
                 time_in_force=self.time_in_force,
             )
 
-            # Update with Alpaca order ID
+            # Update with Alpaca order ID. Do not overwrite filled fields; pass
+            # None so StateStore's COALESCE preserves existing values when
+            # the broker response omits them.
             self.state_store.update_order_intent(
                 client_order_id=client_order_id,
                 status="submitted",
-                filled_qty=0,
+                filled_qty=None,
                 alpaca_order_id=order.get("id"),
             )
 

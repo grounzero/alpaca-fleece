@@ -6,7 +6,7 @@ and bot state. All financial values use NUMERIC for precision.
 
 import logging
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional, TypedDict
 
@@ -26,6 +26,7 @@ class OrderIntentRow(TypedDict, total=False):
     side: str
     qty: float
     atr: Optional[float]
+    strategy: Optional[str]
     status: str
     filled_qty: Optional[float]
     filled_avg_price: Optional[float]
@@ -241,6 +242,9 @@ class StateStore:
                 ON order_intents(symbol)
             """)
 
+            # NOTE: composite index on (strategy, symbol, side, status)
+            # moved below so migrations that add `strategy` column run first.
+
             cursor.execute("""
                 CREATE INDEX IF NOT EXISTS idx_trades_symbol_timestamp 
                 ON trades(symbol, timestamp_utc)
@@ -263,6 +267,40 @@ class StateStore:
 
             conn.commit()
 
+            # Signal gates table for persistent entry gating (one-row per strategy/symbol/action)
+            cursor.execute("""
+                CREATE TABLE IF NOT EXISTS signal_gates (
+                    strategy TEXT NOT NULL,
+                    symbol TEXT NOT NULL,
+                    action TEXT NOT NULL,
+                    last_accepted_ts_utc TEXT NOT NULL,
+                    last_bar_ts_utc TEXT,
+                    PRIMARY KEY (strategy, symbol, action)
+                )
+            """)
+
+            cursor.execute("""
+                CREATE INDEX IF NOT EXISTS idx_signal_gates_symbol
+                ON signal_gates(symbol)
+            """)
+
+            # Ensure WAL mode and a sensible busy timeout for concurrent access.
+            # Commit any implicit transaction opened by preceding DDL so PRAGMAs take effect.
+            conn.commit()
+            try:
+                # Ensure WAL mode once during schema initialization (per-process).
+                # This avoids repeatedly changing journal mode on hot paths.
+                cursor.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.Error as e:
+                logger.debug("Failed to set SQLite journal_mode=WAL during init: %s", e)
+
+            try:
+                # busy_timeout is per-connection and safe to set here for the
+                # connection used during initialization.
+                cursor.execute("PRAGMA busy_timeout=5000")
+            except sqlite3.Error as e:
+                logger.debug("Failed to set SQLite busy_timeout during init: %s", e)
+
             # Migration: ensure `atr` column exists on order_intents for older DBs
             try:
                 cursor.execute("PRAGMA table_info(order_intents)")
@@ -276,10 +314,29 @@ class StateStore:
                         "ALTER TABLE order_intents ADD COLUMN filled_avg_price NUMERIC(10, 4)"
                     )
                     conn.commit()
+                # Migration: ensure `strategy` column exists on order_intents
+                if "strategy" not in oi_columns:
+                    cursor.execute("ALTER TABLE order_intents ADD COLUMN strategy TEXT DEFAULT ''")
+                    conn.commit()
             except sqlite3.Error as e:
                 logger.warning(
-                    "Could not migrate order_intents to add atr and filled_avg_price columns: %s",
+                    "Could not migrate order_intents to add atr, filled_avg_price, and strategy columns: %s",
                     e,
+                )
+            # Create composite index for strategy-scoped pending-order lookups.
+            # Place this after migrations that ensure the `strategy` column
+            # exists so we don't attempt to index a non-existent column on
+            # older DBs. Use a best-effort PRAGMA-safe try/except to avoid
+            # failing init if the column is still absent for any reason.
+            try:
+                cursor.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_order_intents_strategy_symbol_side_status
+                    ON order_intents(strategy, symbol, side, status)
+                    """)
+            except sqlite3.Error:
+                logger.debug(
+                    "Could not create composite index on order_intents(strategy,symbol,side,status); continuing without it.",
+                    exc_info=True,
                 )
 
     def get_state(self, key: str) -> Optional[str]:
@@ -289,6 +346,203 @@ class StateStore:
             cursor.execute("SELECT value FROM bot_state WHERE key = ?", (key,))
             row = cursor.fetchone()
             return row[0] if row else None
+
+    def has_open_exposure_increasing_order(
+        self, symbol: str, side: str, strategy: Optional[str] = None
+    ) -> bool:
+        """Return True if an exposure-increasing order intent exists.
+
+        If `strategy` is provided, scope the query to that strategy. Otherwise
+        behaves like the previous global check.
+        """
+        statuses = ("new", "accepted", "pending_new", "submitted", "partially_filled")
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            # If a strategy is provided, scope the query to that strategy to avoid
+            # cross-strategy blocking when multiple strategies share the same account.
+            if strategy:
+                cursor.execute(
+                    "SELECT 1 FROM order_intents WHERE strategy = ? AND symbol = ? AND side = ? AND status IN (?,?,?,?,?) LIMIT 1",
+                    (strategy, symbol, side, *statuses),
+                )
+            else:
+                cursor.execute(
+                    "SELECT 1 FROM order_intents WHERE symbol = ? AND side = ? AND status IN (?,?,?,?,?) LIMIT 1",
+                    (symbol, side, *statuses),
+                )
+            return cursor.fetchone() is not None
+
+    def gate_try_accept(
+        self,
+        strategy: str,
+        symbol: str,
+        action: str,
+        now_utc: datetime,
+        bar_ts_utc: Optional[datetime],
+        cooldown: timedelta,
+        force: bool = False,
+    ) -> bool:
+        """Atomically try to accept an entry signal for (strategy, symbol, action).
+
+        Non-force behavior: perform a monotonic upsert so older timestamps cannot
+        overwrite newer ones. Returns True only when the stored row contains the
+        new `now_utc` value after the operation.
+
+        If `force=True` the row is replaced unconditionally (useful for tests/admin).
+        """
+        import sqlite3 as _sqlite
+        from datetime import timezone
+
+        conn = _sqlite.connect(self.db_path, timeout=5.0)
+        try:
+            conn.isolation_level = None
+            cur = conn.cursor()
+            try:
+                # Only set per-connection busy timeout on this hot path. The
+                # journal_mode (WAL) is configured once during `init_schema()`
+                # to avoid the overhead of repeatedly setting it here.
+                cur.execute("PRAGMA busy_timeout=5000")
+            except _sqlite.Error:
+                # Best-effort PRAGMA; do not fail the gate on PRAGMA issues.
+                logger.debug(
+                    "Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True
+                )
+
+            # Normalize timestamps to UTC ISO
+            last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
+            last_bar_iso = bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
+
+            if force:
+                cur.execute(
+                    "INSERT OR REPLACE INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc) VALUES (?, ?, ?, ?, ?)",
+                    (strategy, symbol, action, last_accepted_iso, last_bar_iso),
+                )
+                conn.commit()
+                return True
+
+            # Use an explicit immediate transaction to avoid races between concurrent workers.
+            cur.execute("BEGIN IMMEDIATE")
+            cur.execute(
+                "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            row = cur.fetchone()
+
+            def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+                if not ts:
+                    return None
+                try:
+                    return datetime.fromisoformat(ts).astimezone(timezone.utc)
+                except Exception:
+                    return None
+
+            stored_last_accepted = _parse_iso(row[0]) if row else None
+            stored_last_bar = _parse_iso(row[1]) if row else None
+
+            # Same-bar dedupe
+            if bar_ts_utc is not None and stored_last_bar is not None:
+                if bar_ts_utc.astimezone(timezone.utc) == stored_last_bar:
+                    conn.rollback()
+                    return False
+
+            # Cooldown check
+            if stored_last_accepted is not None:
+                if now_utc.astimezone(timezone.utc) - stored_last_accepted < cooldown:
+                    conn.rollback()
+                    return False
+
+            # Monotonic upsert: only update if incoming timestamp is newer or row missing.
+            # Monotonic upsert SQL: only overwrite the stored `last_accepted_ts_utc`
+            # when the incoming `excluded.last_accepted_ts_utc` is newer (greater).
+            #
+            # Note for maintainers/tests: this behavior is subtle and should be
+            # covered by a unit test. A good test would:
+            # 1) call `gate_try_accept` with `now_utc = t2` and assert it returns True
+            #    and stores `t2`.
+            # 2) call `gate_try_accept` with an older `now_utc = t1 < t2` and assert
+            #    it returns False and that the stored timestamp remains `t2`.
+            # This will catch regressions in the COALESCE/strftime comparison logic
+            # and protect against older events overwriting newer gate timestamps.
+            upsert_sql = """
+                INSERT INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc)
+                VALUES (?, ?, ?, ?, ?)
+                ON CONFLICT(strategy, symbol, action) DO UPDATE SET
+                    last_accepted_ts_utc = excluded.last_accepted_ts_utc,
+                    last_bar_ts_utc = excluded.last_bar_ts_utc
+                WHERE COALESCE(
+                    CAST(strftime('%s', signal_gates.last_accepted_ts_utc) AS REAL),
+                    0
+                ) <= CAST(strftime('%s', excluded.last_accepted_ts_utc) AS REAL)
+            """
+
+            cur.execute(upsert_sql, (strategy, symbol, action, last_accepted_iso, last_bar_iso))
+
+            # Re-read to verify we own the stored timestamp
+            cur.execute(
+                "SELECT last_accepted_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            row2 = cur.fetchone()
+            conn.commit()
+
+            if not row2:
+                return False
+
+            # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
+            stored_val: str = str(row2[0])
+            try:
+                # Compare normalized datetimes (in UTC) rather than raw ISO strings to
+                # avoid issues with differing ISO formatting (e.g., fractional seconds).
+                stored_dt = datetime.fromisoformat(stored_val).astimezone(timezone.utc)
+                new_dt = now_utc.astimezone(timezone.utc)
+                accepted: bool = stored_dt == new_dt
+            except (TypeError, ValueError):
+                # Fallback to string comparison if parsing fails for any reason.
+                accepted = stored_val == last_accepted_iso
+            return accepted
+        except _sqlite.Error as e:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            logger.exception("signal gate DB error: %s", e)
+            return False
+        finally:
+            conn.close()
+
+    def get_gate(
+        self, strategy: str, symbol: str, action: str
+    ) -> Optional[dict[str, Optional[datetime]]]:
+        """Return gate row parsed as datetimes or None if missing."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+
+            def _parse(ts: Optional[str]) -> Optional[datetime]:
+                if not ts:
+                    return None
+                try:
+                    return datetime.fromisoformat(ts).astimezone(timezone.utc)
+                except Exception:
+                    return None
+
+            return {"last_accepted": _parse(row[0]), "last_bar": _parse(row[1])}
+
+    def release_gate(self, strategy: str, symbol: str, action: str) -> None:
+        """Delete the persisted gate row (useful for tests/admin)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cur = conn.cursor()
+            cur.execute(
+                "DELETE FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                (strategy, symbol, action),
+            )
+            conn.commit()
 
     def set_state(self, key: str, value: str) -> None:
         """Set state value."""
@@ -309,6 +563,7 @@ class StateStore:
         qty: float,
         status: str = "new",
         atr: float | None = None,
+        strategy: str = "",
     ) -> None:
         """Save order intent before submission (crash safety)."""
         now = datetime.now(timezone.utc).isoformat()
@@ -316,9 +571,9 @@ class StateStore:
             cursor = conn.cursor()
             cursor.execute(
                 """INSERT INTO order_intents 
-                   (client_order_id, symbol, side, qty, atr, status, created_at_utc, updated_at_utc)
-                   VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
-                (client_order_id, symbol, side, qty, atr, status, now, now),
+                   (client_order_id, strategy, symbol, side, qty, atr, status, created_at_utc, updated_at_utc)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (client_order_id, strategy, symbol, side, qty, atr, status, now, now),
             )
             conn.commit()
 
@@ -334,6 +589,12 @@ class StateStore:
         now = datetime.now(timezone.utc).isoformat()
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
+            # Coerce alpaca_order_id to a DB-friendly scalar (tests may pass MagicMock)
+            if alpaca_order_id is not None and not isinstance(
+                alpaca_order_id, (str, bytes, int, float)
+            ):
+                alpaca_order_id = str(alpaca_order_id)
+
             cursor.execute(
                 """UPDATE order_intents 
                    SET status = ?, filled_qty = COALESCE(?, filled_qty), alpaca_order_id = COALESCE(?, alpaca_order_id), filled_avg_price = COALESCE(?, filled_avg_price), updated_at_utc = ?
@@ -347,24 +608,25 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
+                "SELECT client_order_id, strategy, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE client_order_id = ?",
                 (client_order_id,),
             )
             row = cursor.fetchone()
             if row:
-                atr_val = parse_optional_float(row[4])
+                atr_val = parse_optional_float(row[5])
                 # Convert required numeric fields to float and optional ones
                 # via the shared helper to avoid leaking Decimal/str values.
                 return {
                     "client_order_id": row[0],
-                    "symbol": row[1],
-                    "side": row[2],
-                    "qty": float(row[3]),
+                    "strategy": row[1],
+                    "symbol": row[2],
+                    "side": row[3],
+                    "qty": float(row[4]),
                     "atr": atr_val,
-                    "status": row[5],
-                    "filled_qty": parse_optional_float(row[6]),
-                    "filled_avg_price": parse_optional_float(row[7]),
-                    "alpaca_order_id": row[8],
+                    "status": row[6],
+                    "filled_qty": parse_optional_float(row[7]),
+                    "filled_avg_price": parse_optional_float(row[8]),
+                    "alpaca_order_id": row[9],
                 }
             return None
 
@@ -381,28 +643,29 @@ class StateStore:
             cursor = conn.cursor()
             if status:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE status = ?",
+                    "SELECT client_order_id, strategy, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents WHERE status = ?",
                     (status,),
                 )
             else:
                 cursor.execute(
-                    "SELECT client_order_id, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents"
+                    "SELECT client_order_id, strategy, symbol, side, qty, atr, status, filled_qty, filled_avg_price, alpaca_order_id FROM order_intents"
                 )
 
             rows = cursor.fetchall()
 
             def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
-                atr_val = parse_optional_float(row[4])
+                atr_val = parse_optional_float(row[5])
                 return {
                     "client_order_id": row[0],
-                    "symbol": row[1],
-                    "side": row[2],
-                    "qty": float(row[3]),
+                    "strategy": row[1],
+                    "symbol": row[2],
+                    "side": row[3],
+                    "qty": float(row[4]),
                     "atr": atr_val,
-                    "status": row[5],
-                    "filled_qty": parse_optional_float(row[6]),
-                    "filled_avg_price": parse_optional_float(row[7]),
-                    "alpaca_order_id": row[8],
+                    "status": row[6],
+                    "filled_qty": parse_optional_float(row[7]),
+                    "filled_avg_price": parse_optional_float(row[8]),
+                    "alpaca_order_id": row[9],
                 }
 
             return [map_row(row) for row in rows]

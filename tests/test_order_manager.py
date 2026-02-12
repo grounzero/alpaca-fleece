@@ -187,6 +187,8 @@ async def test_order_manager_trips_circuit_breaker_at_5_failures(
     state_store, event_bus, mock_broker, config
 ):
     """Circuit breaker trips after 5 consecutive failures."""
+    # Disable entry cooldown for this test so repeated attempts reach the broker
+    config["entry_cooldown_minutes"] = 0
     order_mgr = OrderManager(
         broker=mock_broker,
         state_store=state_store,
@@ -198,10 +200,12 @@ async def test_order_manager_trips_circuit_breaker_at_5_failures(
     # Mock broker to fail
     mock_broker.submit_order.side_effect = Exception("Broker error")
 
-    # Submit 5 different signals (will fail each time)
+    # Submit 5 different signals (will fail each time). Use different symbols so
+    # the pending-order gate (per-symbol) does not block subsequent attempts.
     for i in range(5):
+        sig_sym = f"AAPL{i}"
         signal = SignalEvent(
-            symbol="AAPL",
+            symbol=sig_sym,
             signal_type="BUY",
             timestamp=datetime(2024, 1, 1, 10, i, 0, tzinfo=timezone.utc),
             metadata={},
