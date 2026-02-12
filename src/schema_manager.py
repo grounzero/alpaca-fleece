@@ -334,9 +334,10 @@ class SchemaManager:
 
             # ------ Add missing columns (sorted deterministically) ------
             sorted_columns = sorted(ADDITIVE_COLUMNS, key=lambda c: (c[0], c[1]))
+            # Cache table -> set(column names) to avoid repeated PRAGMA calls
+            existing_cols_cache: dict[str, set[str]] = {}
             for table, col_name, col_def in sorted_columns:
                 if not cls._is_safe_column_def(col_def):
-                    # Fail fast rather than silently skipping an unsafe column
                     logger.error(
                         "[SchemaManager] Unsafe column definition encountered: %s.%s %s",
                         table,
@@ -348,10 +349,16 @@ class SchemaManager:
                         f"Unsafe column definition for {table}.{col_name}: {col_def}"
                     )
 
-                existing_cols = cls._get_table_columns(cursor, table)
+                existing_cols = existing_cols_cache.get(table)
+                if existing_cols is None:
+                    existing_cols = cls._get_table_columns(cursor, table)
+                    existing_cols_cache[table] = existing_cols
                 if col_name not in existing_cols:
                     sql = f"ALTER TABLE {cls._quote_ident(table)} ADD COLUMN {cls._quote_ident(col_name)} {col_def}"
                     cursor.execute(sql)
+                    # Update cached columns immediately so subsequent
+                    # iterations for the same table don't re-query PRAGMA.
+                    existing_cols.add(col_name)
                     action = f"Added column {table}.{col_name}"
                     planned_actions.append(action)
                     logger.info("[SchemaManager] %s", action)

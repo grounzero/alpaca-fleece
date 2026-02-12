@@ -290,7 +290,6 @@ class TestUnsafeColumnSkipped:
         """A column def containing UNIQUE is rejected."""
         from src import schema_manager
 
-        original_columns = schema_manager.ADDITIVE_COLUMNS
         monkeypatch.setattr(
             schema_manager,
             "ADDITIVE_COLUMNS",
@@ -298,15 +297,8 @@ class TestUnsafeColumnSkipped:
         )
 
         db = str(tmp_path / "unsafe.db")
-        SchemaManager.ensure_schema(db)
-
-        with sqlite3.connect(db) as conn:
-            cur = conn.cursor()
-            cur.execute("PRAGMA table_info(bot_state)")
-            cols = {row[1] for row in cur.fetchall()}
-
-        assert "bad_col" not in cols
-        monkeypatch.setattr(schema_manager, "ADDITIVE_COLUMNS", original_columns)
+        with pytest.raises(SchemaError, match="Unsafe column definition"):
+            SchemaManager.ensure_schema(db)
 
     def test_primary_key_column_skipped(self, tmp_path, monkeypatch):
         """A column def containing PRIMARY KEY is rejected."""
@@ -319,14 +311,8 @@ class TestUnsafeColumnSkipped:
         )
 
         db = str(tmp_path / "unsafe_pk.db")
-        SchemaManager.ensure_schema(db)
-
-        with sqlite3.connect(db) as conn:
-            cur = conn.cursor()
-            cur.execute("PRAGMA table_info(bot_state)")
-            cols = {row[1] for row in cur.fetchall()}
-
-        assert "pk_col" not in cols
+        with pytest.raises(SchemaError, match="Unsafe column definition"):
+            SchemaManager.ensure_schema(db)
 
 
 class TestTradesDrift:
