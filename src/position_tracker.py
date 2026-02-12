@@ -67,26 +67,6 @@ class PositionTracker:
         # Global last update for full-tracker operations
         self._last_update: Optional[datetime] = None
 
-    def init_schema(self) -> None:
-        with sqlite3.connect(self.state_store.db_path) as conn:
-            cursor = conn.cursor()
-            cursor.execute("""
-                CREATE TABLE IF NOT EXISTS position_tracking (
-                    symbol TEXT PRIMARY KEY,
-                    side TEXT NOT NULL,
-                    qty NUMERIC(10, 4) NOT NULL,
-                    entry_price NUMERIC(10, 4) NOT NULL,
-                    atr NUMERIC(10, 4),
-                    entry_time TEXT NOT NULL,
-                    extreme_price NUMERIC(10,4) NOT NULL,
-                    trailing_stop_price NUMERIC(10, 4),
-                    trailing_stop_activated INTEGER DEFAULT 0,
-                    pending_exit INTEGER DEFAULT 0,
-                    updated_at TEXT NOT NULL
-                )
-                """)
-            conn.commit()
-
     def start_tracking(
         self,
         symbol: str,
@@ -339,7 +319,6 @@ class PositionTracker:
         return self._remove_position(symbol)
 
     def load_persisted_positions(self) -> List[PositionData]:
-        self.init_schema()
         positions: List[PositionData] = []
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()

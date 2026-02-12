@@ -4,6 +4,7 @@ from pathlib import Path
 
 import pytest
 
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
@@ -33,7 +34,8 @@ def test_migration_adds_atr_and_persists():
         # create old schema without atr
         create_old_schema(str(db_path))
 
-        # instantiate StateStore which should run init_schema and migration
+        # SchemaManager should add missing columns
+        SchemaManager.ensure_schema(str(db_path))
         store = StateStore(str(db_path))
 
         # ensure migration added the column by inserting a row with atr
@@ -56,7 +58,8 @@ def test_migration_adds_atr_and_persists():
 def test_get_all_order_intents_handles_null_atr():
     with tempfile.TemporaryDirectory() as td:
         db_path = Path(td) / "state2.db"
-        # use current StateStore to create full schema
+        # use SchemaManager + StateStore to create full schema
+        SchemaManager.ensure_schema(str(db_path))
         store = StateStore(str(db_path))
 
         # insert one with atr None

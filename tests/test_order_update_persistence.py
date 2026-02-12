@@ -1,8 +1,10 @@
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
 def test_missing_filled_fields_do_not_overwrite(tmp_path):
     db_path = tmp_path / "test_store.db"
+    SchemaManager.ensure_schema(str(db_path))
     ss = StateStore(str(db_path))
 
     client_id = "test_client_1"

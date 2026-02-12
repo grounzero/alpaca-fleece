@@ -129,8 +129,10 @@ async def test_gate_blocks_same_bar_timestamp(state_store, event_bus, mock_broke
 @pytest.mark.asyncio
 async def test_gate_persists_across_restart(tmp_db, event_bus, mock_broker, config):
     # Prime a gate in initial state store
+    from src.schema_manager import SchemaManager
     from src.state_store import StateStore
 
+    SchemaManager.ensure_schema(tmp_db)
     ss1 = StateStore(tmp_db)
     now = datetime.now(timezone.utc)
     ss1.gate_try_accept(

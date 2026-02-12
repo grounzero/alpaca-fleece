@@ -12,14 +12,15 @@ from src.position_tracker import PositionTracker
 def position_tracker(tmp_path):
     """Create position tracker with test database."""
     from src.broker import Broker
+    from src.schema_manager import SchemaManager
     from src.state_store import StateStore
 
     db_path = str(tmp_path / "test.db")
+    SchemaManager.ensure_schema(db_path)
     state_store = StateStore(db_path)
     broker = MagicMock(spec=Broker)
 
     tracker = PositionTracker(broker, state_store)
-    tracker.init_schema()
     return tracker
 
 
@@ -29,9 +30,11 @@ def exit_manager(position_tracker, tmp_path):
     from src.broker import Broker
     from src.data_handler import DataHandler
     from src.event_bus import EventBus
+    from src.schema_manager import SchemaManager
     from src.state_store import StateStore
 
     db_path = str(tmp_path / "test.db")
+    SchemaManager.ensure_schema(db_path)
     state_store = StateStore(db_path)
     broker = MagicMock(spec=Broker)
     event_bus = EventBus()

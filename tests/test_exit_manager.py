@@ -7,12 +7,14 @@ import pytest
 
 from src.exit_manager import ExitManager
 from src.position_tracker import PositionTracker
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
 @pytest.fixture
 def exit_manager(tmp_db, mock_broker, event_bus):
     """Exit manager with all dependencies."""
+    SchemaManager.ensure_schema(tmp_db)
     state_store = StateStore(tmp_db)
     position_tracker = PositionTracker(
         broker=mock_broker,
@@ -21,7 +23,6 @@ def exit_manager(tmp_db, mock_broker, event_bus):
         trailing_stop_activation_pct=0.01,
         trailing_stop_trail_pct=0.005,
     )
-    position_tracker.init_schema()
 
     # Start tracking a position
     position_tracker.start_tracking("AAPL", 100.0, 10.0, "long")
@@ -390,6 +391,7 @@ class TestCheckSinglePosition:
 @pytest.fixture
 def exit_manager_short(tmp_db, mock_broker, event_bus):
     """Exit manager for a short position."""
+    SchemaManager.ensure_schema(tmp_db)
     state_store = StateStore(tmp_db)
     position_tracker = PositionTracker(
         broker=mock_broker,
@@ -398,7 +400,6 @@ def exit_manager_short(tmp_db, mock_broker, event_bus):
         trailing_stop_activation_pct=0.01,
         trailing_stop_trail_pct=0.005,
     )
-    position_tracker.init_schema()
 
     # Start tracking a SHORT position
     position_tracker.start_tracking("TSHORT", 100.0, 10.0, "short")

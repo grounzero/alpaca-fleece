@@ -3,11 +3,13 @@ from datetime import datetime, timezone
 
 from src.data.order_updates import OrderUpdatesHandler
 from src.event_bus import EventBus, OrderUpdateEvent
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
 def test_record_trade_idempotent(tmp_path):
     db_path = str(tmp_path / "state.db")
+    SchemaManager.ensure_schema(db_path)
     store = StateStore(db_path)
     eb = EventBus()
     handler = OrderUpdatesHandler(store, eb)
