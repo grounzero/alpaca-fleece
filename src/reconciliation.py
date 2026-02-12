@@ -17,6 +17,7 @@ from typing import Any
 
 from src.broker import Broker
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -81,7 +82,7 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
                 state_store.update_order_intent(
                     client_order_id=client_id,
                     status=alpaca_status or "unknown",
-                    filled_qty=float(order.get("filled_qty", 0)),
+                    filled_qty=parse_optional_float(order.get("filled_qty")),
                     alpaca_order_id=order.get("id"),
                 )
 

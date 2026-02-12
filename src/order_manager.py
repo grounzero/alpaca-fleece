@@ -314,11 +314,13 @@ class OrderManager:
                 time_in_force=self.time_in_force,
             )
 
-            # Update with Alpaca order ID
+            # Update with Alpaca order ID. Do not overwrite filled fields; pass
+            # None so StateStore's COALESCE preserves existing values when
+            # the broker response omits them.
             self.state_store.update_order_intent(
                 client_order_id=client_order_id,
                 status="submitted",
-                filled_qty=0,
+                filled_qty=None,
                 alpaca_order_id=order.get("id"),
             )
 

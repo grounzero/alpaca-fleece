@@ -21,6 +21,7 @@ from typing import Any, Callable, Optional, TypedDict, TypeVar, Union
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.models import Clock, Order, Position, TradeAccount
+from src.utils import parse_optional_float
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
 T = TypeVar("T")
@@ -53,7 +54,7 @@ class OrderInfo(TypedDict, total=False):
     side: Optional[str]
     qty: Optional[float]
     status: Optional[str]
-    filled_qty: float
+    filled_qty: Optional[float]
     filled_avg_price: Optional[float]
     created_at: Optional[str]
 
@@ -228,9 +229,9 @@ class Broker:
                         "side": o.side.value if o.side else None,
                         "qty": float(o.qty) if o.qty else None,
                         "status": o.status.value if o.status else None,
-                        "filled_qty": float(o.filled_qty) if o.filled_qty else 0,
+                        "filled_qty": parse_optional_float(getattr(o, "filled_qty", None)),
                         "filled_avg_price": (
-                            float(o.filled_avg_price) if o.filled_avg_price else None
+                            parse_optional_float(getattr(o, "filled_avg_price", None)) if getattr(o, "filled_avg_price", None) is not None else None
                         ),
                         "created_at": o.created_at.isoformat() if o.created_at else None,
                     }
@@ -338,13 +339,9 @@ class Broker:
                     "side": str(order_result.get("side")) if order_result.get("side") else None,
                     "qty": float(order_result["qty"]) if order_result.get("qty") else None,
                     "status": str(order_result["status"]) if order_result.get("status") else None,
-                    "filled_qty": (
-                        float(order_result["filled_qty"]) if order_result.get("filled_qty") else 0
-                    ),
+                    "filled_qty": parse_optional_float(order_result.get("filled_qty")),
                     "filled_avg_price": (
-                        float(order_result["filled_avg_price"])
-                        if order_result.get("filled_avg_price")
-                        else None
+                        parse_optional_float(order_result.get("filled_avg_price")) if order_result.get("filled_avg_price") is not None else None
                     ),
                 }
             else:
@@ -357,11 +354,9 @@ class Broker:
                     "side": order_result.side.value if order_result.side else None,
                     "qty": float(order_result.qty) if order_result.qty else None,
                     "status": order_result.status.value if order_result.status else None,
-                    "filled_qty": float(order_result.filled_qty) if order_result.filled_qty else 0,
+                    "filled_qty": parse_optional_float(getattr(order_result, "filled_qty", None)),
                     "filled_avg_price": (
-                        float(order_result.filled_avg_price)
-                        if order_result.filled_avg_price
-                        else None
+                        parse_optional_float(getattr(order_result, "filled_avg_price", None)) if getattr(order_result, "filled_avg_price", None) is not None else None
                     ),
                 }
         except BrokerError:
