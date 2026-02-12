@@ -435,21 +435,14 @@ class Orchestrator:
             self.housekeeping = Housekeeping(self.broker, self.state_store)
             logger.info("   Housekeeping ready")
 
-            # Initialise position tracker
-            logger.info("Initialising position tracker...")
-            exits_config = self.trading_config.get("exits", {})
-            self.position_tracker = PositionTracker(
-                broker=self.broker,
-                state_store=self.state_store,
-                trailing_stop_enabled=exits_config.get("trailing_stop_enabled", False),
-                trailing_stop_activation_pct=exits_config.get("trailing_stop_activation_pct", 0.01),
-                trailing_stop_trail_pct=exits_config.get("trailing_stop_trail_pct", 0.005),
-            )
-            # Load any persisted positions
-            self.position_tracker.load_persisted_positions()
-            # Sync with broker
-            await self.position_tracker.sync_with_broker()
-            logger.info("   Position tracker ready")
+            # (Removed duplicate initialization block.)
+            # The position tracker must be initialised, loaded from persistence,
+            # and reconciled with the broker exactly once before constructing
+            # the `OrderManager`. A previous version attempted to sync a
+            # non-existent tracker earlier in this method which would raise,
+            # and then immediately re-initialised the tracker, discarding the
+            # earlier state. The code below performs the init/load/sync once
+            # and is the authoritative startup sequence.
 
             # Initialise position tracker
             logger.info("Initialising position tracker...")
