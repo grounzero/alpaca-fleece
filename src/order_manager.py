@@ -12,7 +12,7 @@ Uses float at module boundaries for API compatibility.
 import asyncio
 import hashlib
 import logging
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from typing import Any
 
 from src.broker import Broker
@@ -244,8 +244,11 @@ class OrderManager:
 
             # Cooldown + per-bar dedupe via gate_try_accept
             cooldown_min = int(self.config.get("entry_cooldown_minutes", 120))
-            from datetime import timedelta
 
+            # Copilot AI: Importing `timedelta` inside `submit_order()` adds avoidable
+            # overhead on a hot path and is inconsistent with the module's other
+            # imports. `timedelta` is imported at module level to keep imports
+            # centralized and reduce per-call work.
             now_utc = datetime.now(timezone.utc)
             bar_ts = getattr(signal, "timestamp", None)
             cooldown_td = timedelta(minutes=cooldown_min)
