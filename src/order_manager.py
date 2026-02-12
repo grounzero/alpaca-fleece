@@ -10,6 +10,7 @@ Uses float at module boundaries for API compatibility.
 """
 
 import asyncio
+import inspect
 import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
@@ -326,7 +327,7 @@ class OrderManager:
                 order_type=self.order_type,
                 time_in_force=self.time_in_force,
             )
-            order = await maybe if asyncio.iscoroutine(maybe) else maybe
+            order = await maybe if inspect.isawaitable(maybe) else maybe
 
             # Update with Alpaca order ID. Do not overwrite filled fields; pass
             # None so StateStore's COALESCE preserves existing values when
@@ -343,7 +344,7 @@ class OrderManager:
             try:
                 if hasattr(self.broker, "invalidate_cache"):
                     maybe = self.broker.invalidate_cache("get_positions", "get_open_orders")
-                    if asyncio.iscoroutine(maybe):
+                    if inspect.isawaitable(maybe):
                         await maybe
             except Exception:
                 logger.exception("Failed to invalidate broker cache after submit")
