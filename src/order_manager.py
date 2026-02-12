@@ -61,6 +61,16 @@ class OrderManager:
         self.timeframe = timeframe
         self.position_tracker = position_tracker
 
+        # Optionally enforce that a PositionTracker is provided. This is
+        # controlled by the `REQUIRE_POSITION_TRACKER` flag in `config` so
+        # unit tests and backtests can remain lightweight while orchestrator
+        # can opt into strict wiring during runtime startup.
+        require_tracker = bool(self.config.get("REQUIRE_POSITION_TRACKER", False))
+        if require_tracker and self.position_tracker is None:
+            raise ValueError(
+                "OrderManager requires a PositionTracker instance when REQUIRE_POSITION_TRACKER is set"
+            )
+
         # Execution config
         execution_config = config.get("execution", {})
         self.order_type = execution_config.get("order_type", "market")

@@ -425,17 +425,10 @@ class Orchestrator:
             )
             logger.info("   Risk manager ready")
 
-            # Initialise order manager
-            logger.info("Initialising order manager...")
-            self.order_manager = OrderManager(
-                broker=self.broker,
-                state_store=self.state_store,
-                event_bus=self.event_bus,
-                config=self.trading_config,
-                strategy_name=strategy_name,
-                position_tracker=self.position_tracker,
-            )
-            logger.info("   Order manager ready")
+            # Defer order manager initialization until position tracker is
+            # initialised and reconciled. This prevents the OrderManager from
+            # operating with a None/stale tracker during startup.
+            logger.info("Deferring order manager initialisation until position tracker ready")
 
             # Initialise housekeeping
             logger.info("Initialising housekeeping...")
@@ -457,6 +450,39 @@ class Orchestrator:
             # Sync with broker
             await self.position_tracker.sync_with_broker()
             logger.info("   Position tracker ready")
+
+            # Initialise position tracker
+            logger.info("Initialising position tracker...")
+            exits_config = self.trading_config.get("exits", {})
+            self.position_tracker = PositionTracker(
+                broker=self.broker,
+                state_store=self.state_store,
+                trailing_stop_enabled=exits_config.get("trailing_stop_enabled", False),
+                trailing_stop_activation_pct=exits_config.get("trailing_stop_activation_pct", 0.01),
+                trailing_stop_trail_pct=exits_config.get("trailing_stop_trail_pct", 0.005),
+            )
+            # Load any persisted positions first
+            self.position_tracker.load_persisted_positions()
+            # Reconcile/sync with broker to ensure tracker reflects live state
+            await self.position_tracker.sync_with_broker()
+            logger.info("   Position tracker ready")
+
+            # Ensure orchestrator enforces that OrderManager receives a tracker
+            # during runtime startup so position-aware gating cannot run with
+            # a None/stale tracker.
+            self.trading_config["REQUIRE_POSITION_TRACKER"] = True
+
+            # Initialise order manager AFTER position tracker is ready
+            logger.info("Initialising order manager...")
+            self.order_manager = OrderManager(
+                broker=self.broker,
+                state_store=self.state_store,
+                event_bus=self.event_bus,
+                config=self.trading_config,
+                strategy_name=strategy_name,
+                position_tracker=self.position_tracker,
+            )
+            logger.info("   Order manager ready")
 
             # Initialise exit manager
             logger.info("Initialising exit manager...")
