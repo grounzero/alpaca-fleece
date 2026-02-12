@@ -94,7 +94,7 @@ class AlertNotifier:
 
             # Backoff before next attempt unless this was the last attempt
             if attempt < self.retries - 1:
-                delay = self.backoff * (2 ** attempt)
+                delay = self.backoff * (2**attempt)
                 # Add jitter
                 delay = delay * (0.5 + random.random() * 0.5)
                 try:
@@ -135,7 +135,7 @@ class AlertNotifier:
                 try:
                     import time
 
-                    delay = self.backoff * (2 ** attempt)
+                    delay = self.backoff * (2**attempt)
                     # jitter
                     delay = delay * (0.5 + random.random() * 0.5)
                     time.sleep(delay)

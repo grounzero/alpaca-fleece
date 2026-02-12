@@ -86,6 +86,7 @@ def mock_broker():
             self.get_clock = self._AwaitableMockMethod(self._sync.get_clock)
             self.submit_order = self._AwaitableMockMethod(self._sync.submit_order)
             self.cancel_order = self._AwaitableMockMethod(self._sync.cancel_order)
+
             # Provide no-op awaitable methods for adapter lifecycle and cache
             # to satisfy the AsyncBrokerInterface used in runtime.
             async def _noop_invalidate(*keys: str) -> None:  # type: ignore[unused-def]

@@ -134,6 +134,7 @@ class Broker:
         except Exception:
             # Avoid raising from __del__; cleanup is best-effort only.
             pass
+
     def _call_with_timeout(
         self,
         func: Callable[[], T],
