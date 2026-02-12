@@ -8,6 +8,7 @@ import pytest
 
 from src.broker import Broker
 from src.event_bus import EventBus
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
@@ -29,7 +30,8 @@ def tmp_db():
 
 @pytest.fixture
 def state_store(tmp_db):
-    """State store with temporary database."""
+    """State store with temporary database (schema ensured by SchemaManager)."""
+    SchemaManager.ensure_schema(tmp_db)
     return StateStore(tmp_db)
 
 

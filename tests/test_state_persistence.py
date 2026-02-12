@@ -2,6 +2,7 @@
 
 import pytest
 
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
@@ -9,6 +10,7 @@ from src.state_store import StateStore
 def state_store(tmp_path):
     """Create temporary state store for testing."""
     db_path = str(tmp_path / "test_persistence.db")
+    SchemaManager.ensure_schema(db_path)
     return StateStore(db_path)
 
 
@@ -28,6 +30,7 @@ class TestCircuitBreakerPersistence:
     def test_circuit_breaker_survives_restart(self, tmp_path):
         """Circuit breaker should survive simulated restart."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Session 1: Save count
         store1 = StateStore(db_path)
@@ -68,6 +71,7 @@ class TestDailyPnLPersistence:
     def test_daily_pnl_survives_restart(self, tmp_path):
         """Daily P&L should survive simulated restart."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Session 1: Save P&L
         store1 = StateStore(db_path)
@@ -112,6 +116,7 @@ class TestDailyTradeCountPersistence:
     def test_daily_trade_count_survives_restart(self, tmp_path):
         """Daily trade count should survive simulated restart."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Session 1: Save count
         store1 = StateStore(db_path)
@@ -152,6 +157,7 @@ class TestLastSignalPersistence:
     def test_last_signal_survives_restart(self, tmp_path):
         """Last signal should survive simulated restart."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Session 1: Save signal
         store1 = StateStore(db_path)
@@ -236,6 +242,7 @@ class TestIntegrationRecoveryScenarios:
     def test_full_state_recovery_after_crash(self, tmp_path):
         """Full state should be recoverable after simulated crash."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Session 1: Before crash
         store1 = StateStore(db_path)
@@ -258,6 +265,7 @@ class TestIntegrationRecoveryScenarios:
     def test_circuit_breaker_prevents_retrading_after_restart(self, tmp_path):
         """Circuit breaker should prevent trading if it was tripped before crash."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Before crash: 4 failures (almost tripped)
         store1 = StateStore(db_path)
@@ -277,6 +285,7 @@ class TestIntegrationRecoveryScenarios:
     def test_daily_limits_respected_after_restart(self, tmp_path):
         """Daily loss limit should be enforced after restart."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Before crash: -$800 loss today (near $1000 limit)
         store1 = StateStore(db_path)
@@ -293,6 +302,7 @@ class TestIntegrationRecoveryScenarios:
     def test_duplicate_signal_prevention_after_restart(self, tmp_path):
         """Should prevent duplicate signals even after restart."""
         db_path = str(tmp_path / "persistent.db")
+        SchemaManager.ensure_schema(db_path)
 
         # Before crash: AAPL BUY signal at 10:30 SMA
         store1 = StateStore(db_path)

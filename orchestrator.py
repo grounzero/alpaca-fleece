@@ -32,6 +32,7 @@ from src.position_sizer import calculate_position_size
 from src.position_tracker import PositionTracker
 from src.reconciliation import ReconciliationError, reconcile
 from src.risk_manager import RiskManager
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
@@ -166,6 +167,13 @@ class Orchestrator:
             logger.info(f"      Equity: ${account['equity']:,.2f}")
             logger.info(f"      Buying Power: ${account['buying_power']:,.2f}")
             logger.info(f"      Cash: ${account['cash']:,.2f}")
+
+            logger.info("Ensuring database schema...")
+            schema_changes = SchemaManager.ensure_schema(self.env["DATABASE_PATH"])
+            if schema_changes:
+                logger.info(f"   Schema updated ({len(schema_changes)} change(s))")
+            else:
+                logger.info("   Schema up to date")
 
             logger.info("Setting up state store...")
             self.state_store = StateStore(self.env["DATABASE_PATH"])

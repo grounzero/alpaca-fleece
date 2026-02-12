@@ -7,6 +7,7 @@ from types import SimpleNamespace
 import pytest
 
 from src.data.order_updates import OrderUpdatesHandler
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
@@ -21,6 +22,7 @@ class DummyEventBus:
 @pytest.mark.asyncio
 async def test_preserve_existing_filled_qty_when_missing(tmp_path):
     db_path = str(tmp_path / "test.db")
+    SchemaManager.ensure_schema(db_path)
     store = StateStore(db_path)
     bus = DummyEventBus()
     handler = OrderUpdatesHandler(store, bus)
@@ -69,6 +71,7 @@ async def test_preserve_existing_filled_qty_when_missing(tmp_path):
 @pytest.mark.asyncio
 async def test_apply_partial_fill_updates_filled_qty(tmp_path):
     db_path = str(tmp_path / "test2.db")
+    SchemaManager.ensure_schema(db_path)
     store = StateStore(db_path)
     bus = DummyEventBus()
     handler = OrderUpdatesHandler(store, bus)
@@ -121,6 +124,7 @@ async def test_preserve_existing_filled_qty_when_attribute_absent(tmp_path):
     parsing should treat it as missing (None) and preserve the DB value.
     """
     db_path = str(tmp_path / "test-absent.db")
+    SchemaManager.ensure_schema(db_path)
     store = StateStore(db_path)
     bus = DummyEventBus()
     handler = OrderUpdatesHandler(store, bus)
@@ -168,6 +172,7 @@ async def test_order_dict_parsing_preserves_missing_filled_qty(tmp_path):
     treated as None and not overwrite existing DB values.
     """
     db_path = str(tmp_path / "test-dict.db")
+    SchemaManager.ensure_schema(db_path)
     store = StateStore(db_path)
     bus = DummyEventBus()
     handler = OrderUpdatesHandler(store, bus)

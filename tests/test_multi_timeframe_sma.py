@@ -5,6 +5,7 @@ import pandas as pd
 import pytest
 
 from src.regime_detector import RegimeDetector
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 from src.strategy.sma_crossover import SMACrossover
 
@@ -13,6 +14,7 @@ from src.strategy.sma_crossover import SMACrossover
 def state_store(tmp_path):
     """Create temporary state store for testing."""
     db_path = str(tmp_path / "test_trade.db")
+    SchemaManager.ensure_schema(db_path)
     return StateStore(db_path)
 
 

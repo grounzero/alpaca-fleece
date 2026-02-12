@@ -4,6 +4,7 @@ import pytest
 
 from src.order_manager import OrderManager
 from src.position_tracker import PositionTracker
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
@@ -11,6 +12,7 @@ from src.state_store import StateStore
 async def test_order_manager_receives_loaded_position_tracker(tmp_path):
     # Prepare a temporary DB for StateStore
     db_path = str(tmp_path / "state.db")
+    SchemaManager.ensure_schema(db_path)
     state_store = StateStore(db_path)
 
     # Mock broker to avoid network calls; ensure sync_with_broker will call get_positions

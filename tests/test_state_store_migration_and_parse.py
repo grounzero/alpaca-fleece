@@ -3,6 +3,7 @@ from decimal import Decimal
 
 import pytest
 
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -27,8 +28,8 @@ def test_migration_adds_atr_column(tmp_path):
             )
             """)
 
-    # Instantiate StateStore which should run migrations and add 'atr' column
-    _ = StateStore(db_path=str(db_file))
+    # SchemaManager should add the missing 'atr' column
+    SchemaManager.ensure_schema(str(db_file))
 
     with sqlite3.connect(db_file) as conn:
         cur = conn.cursor()

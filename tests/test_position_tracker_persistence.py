@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from src.position_tracker import PositionData, PositionTracker
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
@@ -13,11 +14,10 @@ class DummyBroker:
 def test_load_persisted_positions_converts_numeric_types(tmp_path):
     db_file = tmp_path / "positions.db"
 
+    SchemaManager.ensure_schema(str(db_file))
     ss = StateStore(db_path=str(db_file))
 
-    # ensure schema exists
     pt = PositionTracker(broker=DummyBroker(), state_store=ss)
-    pt.init_schema()
 
     now = datetime.now(timezone.utc).isoformat()
 
@@ -57,6 +57,7 @@ def test_load_persisted_positions_converts_numeric_types(tmp_path):
 
 def test_start_tracking_persists_atr(tmp_path, monkeypatch):
     db_file = tmp_path / "positions2.db"
+    SchemaManager.ensure_schema(str(db_file))
     ss = StateStore(db_path=str(db_file))
 
     pt = PositionTracker(broker=DummyBroker(), state_store=ss)

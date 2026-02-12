@@ -3,12 +3,14 @@
 import pytest
 
 from src.position_tracker import PositionTracker
+from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
 
 @pytest.fixture
 def position_tracker(tmp_db, mock_broker):
     """Position tracker with temporary database."""
+    SchemaManager.ensure_schema(tmp_db)
     state_store = StateStore(tmp_db)
     tracker = PositionTracker(
         broker=mock_broker,
@@ -17,7 +19,6 @@ def position_tracker(tmp_db, mock_broker):
         trailing_stop_activation_pct=0.01,
         trailing_stop_trail_pct=0.005,
     )
-    tracker.init_schema()
     return tracker
 
 
