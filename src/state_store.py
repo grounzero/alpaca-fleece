@@ -445,7 +445,15 @@ class StateStore:
 
             # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
             stored_val: str = str(row2[0])
-            accepted: bool = stored_val == last_accepted_iso
+            try:
+                # Compare normalized datetimes (in UTC) rather than raw ISO strings to
+                # avoid issues with differing ISO formatting (e.g., fractional seconds).
+                stored_dt = datetime.fromisoformat(stored_val).astimezone(timezone.utc)
+                new_dt = now_utc.astimezone(timezone.utc)
+                accepted: bool = stored_dt == new_dt
+            except (TypeError, ValueError):
+                # Fallback to string comparison if parsing fails for any reason.
+                accepted = stored_val == last_accepted_iso
             return accepted
         except _sqlite.Error as e:
             try:
