@@ -373,7 +373,6 @@ class StateStore:
             conn.isolation_level = None
             cur = conn.cursor()
             try:
-                cur.execute("PRAGMA journal_mode=WAL")
                 cur.execute("PRAGMA busy_timeout=5000")
             except Exception:
                 pass
