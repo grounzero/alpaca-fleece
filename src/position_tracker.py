@@ -312,6 +312,22 @@ class PositionTracker:
         """Persist a position (public wrapper)."""
         return self._persist_position(position, now_dt)
 
+    def upsert_position(self, position: PositionData) -> None:
+        """Public API to upsert a position: update in-memory state and persist.
+
+        This method centralises the logic for keeping the in-memory tracker and
+        the persistent store in sync. Callers should use this instead of
+        reaching into private persistence helpers.
+        """
+        now_dt = datetime.now(timezone.utc)
+        # Update in-memory structures
+        self._positions[position.symbol] = position
+        position.last_updated = now_dt
+        self._last_updates[position.symbol] = now_dt
+        self._last_update = now_dt
+        # Persist the authoritative snapshot
+        self._persist_position(position, now_dt)
+
     def _remove_position(self, symbol: str) -> None:
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()

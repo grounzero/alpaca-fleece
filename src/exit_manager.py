@@ -268,7 +268,10 @@ class ExitManager:
                         continue
                     # Mark position as having pending exit only after successful publish
                     position.pending_exit = True
-                    self.position_tracker.persist_position(position)
+                    # Use the public upsert API so ExitManager never reaches into
+                    # PositionTracker internals. This updates the in-memory
+                    # snapshot and persists it atomically.
+                    self.position_tracker.upsert_position(position)
                     logger.info(
                         f"Exit signal: {signal.symbol} {signal.reason} "
                         f"(P&L: {signal.pnl_pct * 100:.1f}%)"
