@@ -133,8 +133,7 @@ class Broker:
             try:
                 return fut.result(timeout=timeout)
             except FutureTimeoutError:
-                op = f" {operation_name}" if operation_name else ""
-                raise BrokerError(f"{operation_name or 'operation'} timed out{op}")
+                raise BrokerError(f"{operation_name or 'operation'} timed out")
             except Exception as e:
                 op = f" ({operation_name})" if operation_name else ""
                 raise BrokerError(f"Broker call failed{op}: {e}")
