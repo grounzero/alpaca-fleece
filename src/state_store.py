@@ -285,11 +285,18 @@ class StateStore:
             # Commit any implicit transaction opened by preceding DDL so PRAGMAs take effect.
             conn.commit()
             try:
+                # Ensure WAL mode once during schema initialization (per-process).
+                # This avoids repeatedly changing journal mode on hot paths.
                 cursor.execute("PRAGMA journal_mode=WAL")
+            except sqlite3.Error as e:
+                logger.debug("Failed to set SQLite journal_mode=WAL during init: %s", e)
+
+            try:
+                # busy_timeout is per-connection and safe to set here for the
+                # connection used during initialization.
                 cursor.execute("PRAGMA busy_timeout=5000")
             except sqlite3.Error as e:
-                # Non-fatal; log and continue with default settings
-                logger.warning("Failed to configure SQLite WAL/busy_timeout: %s", e)
+                logger.debug("Failed to set SQLite busy_timeout during init: %s", e)
 
             # Migration: ensure `atr` column exists on order_intents for older DBs
             try:
@@ -369,14 +376,16 @@ class StateStore:
         from datetime import timezone
 
         conn = _sqlite.connect(self.db_path, timeout=5.0)
-        try:
             conn.isolation_level = None
             cur = conn.cursor()
             try:
-                cur.execute("PRAGMA journal_mode=WAL")
+                # Only set per-connection busy timeout on this hot path. The
+                # journal_mode (WAL) is configured once during `init_schema()`
+                # to avoid the overhead of repeatedly setting it here.
                 cur.execute("PRAGMA busy_timeout=5000")
-            except Exception:
-                pass
+            except _sqlite.Error:
+                # Best-effort PRAGMA; do not fail the gate on PRAGMA issues.
+                logger.debug("Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True)
 
             # Normalize timestamps to UTC ISO
             last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
