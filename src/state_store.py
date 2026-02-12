@@ -310,7 +310,7 @@ class StateStore:
                     conn.commit()
             except sqlite3.Error as e:
                 logger.warning(
-                    "Could not migrate order_intents to add atr and filled_avg_price columns: %s",
+                    "Could not migrate order_intents to add atr, filled_avg_price, and strategy columns: %s",
                     e,
                 )
 
