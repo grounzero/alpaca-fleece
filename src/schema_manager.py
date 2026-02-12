@@ -377,10 +377,9 @@ class SchemaManager:
                     "INSERT INTO schema_meta (id, schema_version, updated_at) " "VALUES (1, ?, ?)",
                     (CURRENT_SCHEMA_VERSION, now),
                 )
-                if planned_actions:
-                    action = f"Set schema version to {CURRENT_SCHEMA_VERSION}"
-                    planned_actions.append(action)
-                    logger.info("[SchemaManager] %s", action)
+                action = f"Set schema version to {CURRENT_SCHEMA_VERSION}"
+                planned_actions.append(action)
+                logger.info("[SchemaManager] %s", action)
             elif stored_version < CURRENT_SCHEMA_VERSION:
                 cursor.execute(
                     "UPDATE schema_meta SET schema_version = ?, updated_at = ? " "WHERE id = 1",
