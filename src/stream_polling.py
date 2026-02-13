@@ -503,12 +503,30 @@ class StreamPolling:
                 parsed_filled_qty = _to_float_safe(filled_qty)
                 parsed_filled_avg_price = _to_float_safe(filled_avg_price)
 
-                # If status changed, persist to DB and trigger update
+                # Detect whether an event should be emitted:
+                # 1. Status changed, OR
+                # 2. Cumulative filled qty increased (incremental fill detection)
+                status_changed = current_status != order["status"]
 
-                if current_status != order["status"]:
-                    logger.info(f"Order {client_id} status: {order['status']} -> {current_status}")
+                # Compare cumulative fill qty to detect incremental fills
+                stored_filled_qty = order.get("filled_qty") or 0.0
+                polled_filled_qty = parsed_filled_qty if parsed_filled_qty is not None else 0.0
+                fill_qty_increased = polled_filled_qty > stored_filled_qty + 1e-9
 
-                    # Only persist filled_qty/filled_avg_price if parsed, else preserve DB value
+                should_emit = status_changed or fill_qty_increased
+
+                if should_emit:
+                    if status_changed:
+                        logger.info(
+                            f"Order {client_id} status: {order['status']} -> {current_status}"
+                        )
+                    if fill_qty_increased:
+                        logger.info(
+                            f"Order {client_id} incremental fill detected: "
+                            f"stored_qty={stored_filled_qty} -> polled_qty={polled_filled_qty}"
+                        )
+
+                    # Persist to DB
                     await asyncio.to_thread(
                         self._update_order_status,
                         client_id,

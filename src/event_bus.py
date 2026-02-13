@@ -58,7 +58,13 @@ class OrderIntentEvent:
 
 @dataclass(frozen=True)
 class OrderUpdateEvent:
-    """Order status update from broker."""
+    """Order status update from broker.
+
+    IMPORTANT: filled_qty and avg_fill_price are CUMULATIVE values from the
+    broker (not per-fill deltas). The cum_filled_qty / cum_avg_fill_price
+    aliases make this explicit; the original names are kept for backwards
+    compatibility but should be treated as cumulative everywhere.
+    """
 
     order_id: str
     client_order_id: str
@@ -69,6 +75,17 @@ class OrderUpdateEvent:
     avg_fill_price: Optional[float]
     timestamp: datetime
     fill_id: Optional[str] = None
+    delta_qty: Optional[float] = None
+
+    @property
+    def cum_filled_qty(self) -> Optional[float]:
+        """Alias making cumulative semantics explicit."""
+        return self.filled_qty
+
+    @property
+    def cum_avg_fill_price(self) -> Optional[float]:
+        """Alias making cumulative semantics explicit."""
+        return self.avg_fill_price
 
 
 @dataclass(frozen=True)

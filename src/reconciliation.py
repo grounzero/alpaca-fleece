@@ -203,3 +203,115 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
     conn.close()
 
     logger.info(f"Reconciliation complete: {len(alpaca_positions)} positions recorded")
+
+
+async def reconcile_fills(
+    broker: Any,
+    state_store: StateStore,
+    on_order_update: Any = None,
+) -> int:
+    """Reconcile fill quantities on startup.
+
+    Compares broker order filled_qty to DB order_intents.filled_qty for all
+    non-terminal orders. If broker > DB, synthesises an order update event and
+    passes it through the handler to insert fill rows and apply deltas.
+
+    Args:
+        broker: Broker client (async)
+        state_store: State store
+        on_order_update: Async handler for synthesised order update events
+
+    Returns:
+        Number of fill reconciliation events synthesised
+    """
+    synthesised_count = 0
+    try:
+        all_intents = state_store.get_all_order_intents()
+        # Only reconcile orders that could have fills we missed
+        non_terminal = [
+            o
+            for o in all_intents
+            if str(o.get("status", "")).lower() in NON_TERMINAL_STATUSES
+            and o.get("alpaca_order_id")
+        ]
+
+        if not non_terminal:
+            logger.info("Fill reconciliation: no non-terminal orders to reconcile")
+            return 0
+
+        logger.info("Fill reconciliation: checking %d non-terminal orders", len(non_terminal))
+
+        # Fetch all open orders from broker
+        try:
+            broker_orders = cast(List[Dict[str, Any]], await broker.get_open_orders())
+        except Exception as e:
+            logger.error("Fill reconciliation: failed to fetch broker orders: %s", e)
+            return 0
+
+        broker_order_map: Dict[str, Dict[str, Any]] = {}
+        for bo in broker_orders:
+            cid = bo.get("client_order_id")
+            aid = bo.get("id")
+            if cid:
+                broker_order_map[cid] = bo
+            if aid:
+                broker_order_map[str(aid)] = bo
+
+        for intent in non_terminal:
+            try:
+                client_id = str(intent["client_order_id"])
+                alpaca_id = str(intent.get("alpaca_order_id") or "")
+                db_filled_qty = float(intent.get("filled_qty") or 0)
+
+                # Look up broker order
+                broker_order = broker_order_map.get(client_id) or broker_order_map.get(alpaca_id)
+                if not broker_order:
+                    continue
+
+                broker_filled_qty = parse_optional_float(broker_order.get("filled_qty")) or 0.0
+                broker_avg_price = parse_optional_float(broker_order.get("filled_avg_price"))
+                broker_status = str(broker_order.get("status", "unknown")).lower()
+
+                if broker_filled_qty > db_filled_qty + 1e-9:
+                    logger.warning(
+                        "Fill reconciliation drift: order=%s broker_qty=%.4f db_qty=%.4f "
+                        "— synthesising update",
+                        client_id,
+                        broker_filled_qty,
+                        db_filled_qty,
+                    )
+
+                    if on_order_update is not None:
+                        from src.stream_polling import OrderUpdateWrapper
+
+                        # Synthesise an OrderUpdateWrapper that mimics a stream event
+                        synth_order_data = {
+                            "id": alpaca_id,
+                            "client_order_id": client_id,
+                            "symbol": intent.get("symbol", ""),
+                            "side": intent.get("side", "unknown"),
+                            "status": broker_status,
+                            "filled_qty": broker_filled_qty,
+                            "filled_avg_price": broker_avg_price,
+                        }
+                        synth_event = OrderUpdateWrapper(synth_order_data)
+                        await on_order_update(synth_event)
+
+                    synthesised_count += 1
+
+            except Exception as e:
+                logger.error(
+                    "Fill reconciliation error for order %s: %s",
+                    intent.get("client_order_id", "?"),
+                    e,
+                )
+
+    except Exception as e:
+        logger.error("Fill reconciliation failed: %s", e)
+
+    if synthesised_count > 0:
+        logger.info("Fill reconciliation: synthesised %d update(s)", synthesised_count)
+    else:
+        logger.info("Fill reconciliation: all fills in sync")
+
+    return synthesised_count
