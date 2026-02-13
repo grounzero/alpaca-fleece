@@ -160,7 +160,7 @@ class AlertNotifier:
         logger.info(f"WhatsApp alert to {self.alert_target}: {title}")
         logger.info(f"  Message: {formatted}")
 
-        # TODO: Integrate with OpenClaw message tool
+        # TODO: Integrate with message tool
         # from message import send_alert
         # return send_alert(to=self.alert_target, message=formatted, channel="whatsapp")
 
@@ -264,7 +264,7 @@ class AlertNotifier:
 
     def alert_circuit_breaker_tripped(self, failure_count: int) -> bool:
         """Alert: Circuit breaker tripped (Tier 1)."""
-        return self._send_alert_sync(
+        return self.send_alert(
             title="⚡ CIRCUIT BREAKER TRIPPED",
             message=f"Order submission failures: {failure_count}/5. Bot halted.",
             severity="CRITICAL",
@@ -279,7 +279,7 @@ class AlertNotifier:
 
     def alert_daily_loss_limit_exceeded(self, daily_pnl: float, limit: float) -> bool:
         """Alert: Daily loss limit exceeded (Tier 1)."""
-        return self._send_alert_sync(
+        return self.send_alert(
             title="💰 DAILY LOSS LIMIT EXCEEDED",
             message=f"Daily P&L: ${daily_pnl:.2f} (limit: ${limit:.2f}). Trading halted.",
             severity="CRITICAL",
@@ -294,7 +294,7 @@ class AlertNotifier:
 
     def alert_position_limit_exceeded(self, current: int, limit: int) -> bool:
         """Alert: Position limit exceeded (Tier 1)."""
-        return self._send_alert_sync(
+        return self.send_alert(
             title="📍 POSITION LIMIT EXCEEDED",
             message=f"Concurrent positions: {current}/{limit}. New trades blocked.",
             severity="WARNING",
@@ -309,7 +309,7 @@ class AlertNotifier:
 
     def alert_order_submission_failed(self, symbol: str, error: str) -> bool:
         """Alert: Order submission failed (Tier 1)."""
-        return self._send_alert_sync(
+        return self.send_alert(
             title="❌ ORDER SUBMISSION FAILED",
             message=f"Symbol: {symbol}\nError: {error}",
             severity="ERROR",
