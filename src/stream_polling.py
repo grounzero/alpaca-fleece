@@ -18,7 +18,7 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 
 from src.state_store import StateStore
-from src.utils import batch_iter
+from src.utils import batch_iter, parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -503,12 +503,38 @@ class StreamPolling:
                 parsed_filled_qty = _to_float_safe(filled_qty)
                 parsed_filled_avg_price = _to_float_safe(filled_avg_price)
 
-                # If status changed, persist to DB and trigger update
+                # Detect whether an event should be emitted:
+                # 1. Status changed, OR
+                # 2. Cumulative filled qty increased (incremental fill detection)
+                status_changed = current_status != order["status"]
 
-                if current_status != order["status"]:
-                    logger.info(f"Order {client_id} status: {order['status']} -> {current_status}")
+                # Compare cumulative fill qty to detect incremental fills
+                # Use parse_optional_float for type safety (DB may store as string/Decimal)
+                stored_filled_qty_raw = order.get("filled_qty")
+                # Ensure stored_filled_qty is a concrete float (coerce None -> 0.0)
+                if stored_filled_qty_raw is None:
+                    stored_filled_qty = 0.0
+                else:
+                    parsed_stored = parse_optional_float(stored_filled_qty_raw)
+                    stored_filled_qty = parsed_stored if parsed_stored is not None else 0.0
 
-                    # Only persist filled_qty/filled_avg_price if parsed, else preserve DB value
+                polled_filled_qty = parsed_filled_qty if parsed_filled_qty is not None else 0.0
+                fill_qty_increased = polled_filled_qty > stored_filled_qty + 1e-9
+
+                should_emit = status_changed or fill_qty_increased
+
+                if should_emit:
+                    if status_changed:
+                        logger.info(
+                            f"Order {client_id} status: {order['status']} -> {current_status}"
+                        )
+                    if fill_qty_increased:
+                        logger.info(
+                            f"Order {client_id} incremental fill detected: "
+                            f"stored_qty={stored_filled_qty} -> polled_qty={polled_filled_qty}"
+                        )
+
+                    # Persist to DB
                     await asyncio.to_thread(
                         self._update_order_status,
                         client_id,

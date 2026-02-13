@@ -277,10 +277,11 @@ class TestDeterministicOrder:
 
         # Extract column addition changes
         col_changes = [c for c in changes if "Added column" in c]
-        col_names = [c.split(".")[-1] for c in col_changes]
+        # Full format is "Added column <table>.<column>"
+        table_col_pairs = [c.split("Added column ")[-1] for c in col_changes]
 
-        # Verify alphabetical: atr, filled_avg_price, strategy
-        assert col_names == sorted(col_names)
+        # Verify alphabetical by (table, column): columns are sorted by table first, then by column name
+        assert table_col_pairs == sorted(table_col_pairs)
 
 
 class TestUnsafeColumnSkipped:

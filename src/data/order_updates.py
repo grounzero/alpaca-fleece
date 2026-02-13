@@ -2,9 +2,11 @@
 
 Receives raw order updates from the stream via the DataHandler.
 Converts them to OrderUpdateEvent objects.
-Updates the order_intents table.
-If filled, inserts a record into the trades table.
-Publishes to EventBus.
+Computes incremental (delta) fills from cumulative broker data.
+Persists fill rows idempotently in the fills table.
+Updates the order_intents table with monotonically increasing cumulative fills.
+If terminal (filled), records in the trades table (idempotent).
+Publishes OrderUpdateEvent (with delta_qty) to the EventBus.
 """
 
 import logging
@@ -12,54 +14,293 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.event_bus import EventBus, OrderUpdateEvent
+from src.models.order_state import OrderState
+from src.position_tracker import PositionTracker
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
+# Epsilon for floating-point comparisons on fill quantities
+_QTY_EPSILON = 1e-9
+
 
 class OrderUpdatesHandler:
-    """Order updates handler."""
+    """Order updates handler with partial-fill support."""
 
-    def __init__(self, state_store: StateStore, event_bus: EventBus) -> None:
+    def __init__(
+        self,
+        state_store: StateStore,
+        event_bus: EventBus,
+        position_tracker: Optional[PositionTracker] = None,
+    ) -> None:
         """Initialise order updates handler.
 
         Args:
             state_store: SQLite state store
             event_bus: Event bus for publishing
+            position_tracker: Optional PositionTracker for fill-to-position wiring
         """
         self.state_store = state_store
         self.event_bus = event_bus
+        self.position_tracker = position_tracker
 
     async def on_order_update(self, raw_update: Any) -> None:
         """Process raw order update from stream.
+
+        Computes incremental fills, persists them idempotently, and publishes
+        an OrderUpdateEvent with the computed delta_qty.
 
         Args:
             raw_update: Raw order update object from SDK
         """
         try:
-            # Convert raw SDK update to a canonical OrderUpdateEvent
+            # Convert raw SDK update to a canonical OrderUpdateEvent (without delta yet)
             event = self._to_canonical_order_update(raw_update)
 
-            # Update order_intents table (including avg fill price when available)
-            self.state_store.update_order_intent(
-                client_order_id=event.client_order_id,
-                status=event.status,
-                filled_qty=event.filled_qty,
-                alpaca_order_id=event.order_id,
-                filled_avg_price=event.avg_fill_price,
-            )
+            # Compute delta fill and get the augmented event
+            event = self._process_fill_delta(event)
 
-            # If filled: record in trades table
-            if event.status == "filled":
+            # Terminal trade recording (idempotent)
+            if event.state == OrderState.FILLED:
                 self._record_trade(event)
+
+            # Update PositionTracker on fill delta (if tracker available)
+            # Priority cascade for fill price:
+            # 1. last_fill_price (incremental, most accurate)
+            # 2. cum_avg_fill_price (cumulative average, fallback)
+            # 3. None (skip position update)
+            delta_fill_price: Optional[float] = None
+
+            if event.last_fill_price is not None:
+                delta_fill_price = event.last_fill_price
+            elif event.cum_avg_fill_price is not None:
+                delta_fill_price = event.cum_avg_fill_price
+
+            # Only warn about missing fill price when a positive delta fill
+            # needs to be applied to the PositionTracker and we therefore
+            # require a price for the position update.
+            if (
+                self.position_tracker is not None
+                and event.delta_qty is not None
+                and event.delta_qty > 0
+                and delta_fill_price is None
+            ):
+                logger.warning(
+                    "No fill price available for order %s (neither last_fill_price nor cum_avg_fill_price) "
+                    "for positive delta_qty=%s; skipping position update.",
+                    event.order_id,
+                    event.delta_qty,
+                )
+
+            if (
+                self.position_tracker is not None
+                and event.delta_qty is not None
+                and event.delta_qty > 0
+                and delta_fill_price is not None
+            ):
+                # Update the position tracker
+                await self.position_tracker.update_position_from_fill(
+                    symbol=event.symbol,
+                    delta_qty=event.delta_qty,
+                    fill_price=delta_fill_price,
+                    side=event.side,
+                    timestamp=event.timestamp,
+                )
+                # Retrieve any closed-position snapshot recorded by the tracker
+                # (e.g., when a sell fully closes a position for P&L calculation).
+                snapshot = None
+                try:
+                    snapshot = self.position_tracker.pop_last_closed_snapshot(event.symbol)
+                except Exception:
+                    logger.debug("Failed to pop last closed snapshot", exc_info=True)
+
+                # Attach snapshot by creating new event (frozen dataclass)
+                if snapshot is not None:
+                    event = OrderUpdateEvent(
+                        order_id=event.order_id,
+                        client_order_id=event.client_order_id,
+                        symbol=event.symbol,
+                        side=event.side,
+                        status=event.status,
+                        state=event.state,
+                        filled_qty=event.filled_qty,
+                        avg_fill_price=event.avg_fill_price,
+                        timestamp=event.timestamp,
+                        fill_id=event.fill_id,
+                        delta_qty=event.delta_qty,
+                        last_fill_qty=event.last_fill_qty,
+                        last_fill_price=event.last_fill_price,
+                        position_snapshot=snapshot,
+                    )
 
             # Publish to EventBus
             await self.event_bus.publish(event)
 
-            logger.debug(f"Order update: {event.client_order_id} → {event.status}")
+            if event.delta_qty and event.delta_qty > 0:
+                logger.info(
+                    "Fill delta: order=%s symbol=%s delta_qty=%.4f cum_qty=%.4f status=%s",
+                    event.client_order_id,
+                    event.symbol,
+                    event.delta_qty,
+                    event.cum_filled_qty,
+                    event.status,
+                )
+            else:
+                logger.debug(
+                    "Order update: %s → %s (no new fill)",
+                    event.client_order_id,
+                    event.status,
+                )
         except (AttributeError, TypeError, ValueError) as e:
             logger.error(f"Failed to process order update: {e}")
+
+    def _process_fill_delta(self, event: OrderUpdateEvent) -> OrderUpdateEvent:
+        """Compute delta fill, persist fill row, and update order_intents.
+
+        Returns a new OrderUpdateEvent with delta_qty set.
+
+        Requires alpaca_order_id to be non-null for fill processing. If missing,
+        returns event with delta_qty=0 and logs a warning.
+        """
+        alpaca_order_id = event.order_id
+        client_order_id = event.client_order_id
+        timestamp_utc = event.timestamp.isoformat()
+
+        # Guard: alpaca_order_id is required for all fill operations
+        if not alpaca_order_id:
+            logger.warning(
+                "Cannot process fills: missing alpaca_order_id for order %s",
+                client_order_id,
+            )
+            return OrderUpdateEvent(
+                order_id=event.order_id,
+                client_order_id=event.client_order_id,
+                symbol=event.symbol,
+                side=event.side,
+                status=event.status,
+                state=event.state,
+                filled_qty=event.filled_qty,
+                avg_fill_price=event.avg_fill_price,
+                fill_id=event.fill_id,
+                timestamp=event.timestamp,
+                delta_qty=0.0,
+            )
+
+        # Resolve the order intent to get prev_cum_qty
+        prev_cum_qty = 0.0
+        if alpaca_order_id and self.state_store is not None:
+            prev_cum_qty = self.state_store.get_last_cum_qty_for_order(alpaca_order_id)
+
+        # Parse new cumulative qty, guard against None/NaN
+        new_cum_qty = event.cum_filled_qty if event.cum_filled_qty is not None else prev_cum_qty
+
+        # Monotonic regression guard
+        if new_cum_qty < prev_cum_qty - _QTY_EPSILON:
+            logger.warning(
+                "Out-of-order cum fill regression: order=%s prev=%.4f new=%.4f — "
+                "ignoring fill decrease",
+                client_order_id,
+                prev_cum_qty,
+                new_cum_qty,
+            )
+            # Still update status/timestamp but don't apply fill
+            if alpaca_order_id and self.state_store is not None:
+                self.state_store.update_order_intent_cumulative(
+                    alpaca_order_id=alpaca_order_id,
+                    status=event.status,
+                    new_cum_qty=prev_cum_qty,  # keep old value
+                    new_cum_avg_price=event.cum_avg_fill_price,
+                    timestamp_utc=timestamp_utc,
+                )
+            return OrderUpdateEvent(
+                order_id=event.order_id,
+                client_order_id=event.client_order_id,
+                symbol=event.symbol,
+                side=event.side,
+                status=event.status,
+                state=event.state,
+                filled_qty=event.filled_qty,
+                avg_fill_price=event.avg_fill_price,
+                fill_id=event.fill_id,
+                timestamp=event.timestamp,
+                delta_qty=0.0,
+            )
+
+        delta_qty = max(0.0, new_cum_qty - prev_cum_qty)
+
+        # Persist cumulative update to order_intents (monotonic)
+        if self.state_store is not None:
+            self.state_store.update_order_intent_cumulative(
+                alpaca_order_id=alpaca_order_id,
+                status=event.status,
+                new_cum_qty=new_cum_qty,
+                new_cum_avg_price=event.cum_avg_fill_price,
+                timestamp_utc=timestamp_utc,
+            )
+
+        fill_inserted = False
+        if delta_qty > _QTY_EPSILON and alpaca_order_id and self.state_store is not None:
+            # Compute delta_fill_price with priority cascade (same logic as in on_order_update)
+            delta_fill_price_for_db: Optional[float] = None
+            price_is_estimate_flag = True
+
+            if event.last_fill_price is not None:
+                delta_fill_price_for_db = event.last_fill_price
+                price_is_estimate_flag = False
+            elif event.cum_avg_fill_price is not None:
+                delta_fill_price_for_db = event.cum_avg_fill_price
+                price_is_estimate_flag = True
+
+            fill_inserted = self.state_store.insert_fill_idempotent(
+                alpaca_order_id=alpaca_order_id,
+                client_order_id=client_order_id,
+                symbol=event.symbol,
+                side=event.side,
+                delta_qty=delta_qty,
+                cum_qty=new_cum_qty,
+                cum_avg_price=event.cum_avg_fill_price,
+                timestamp_utc=timestamp_utc,
+                fill_id=event.fill_id,
+                price_is_estimate=price_is_estimate_flag,
+                delta_fill_price=delta_fill_price_for_db,
+            )
+
+            if fill_inserted:
+                logger.info(
+                    "Fill inserted: order=%s delta=%.4f cum=%.4f",
+                    client_order_id,
+                    delta_qty,
+                    new_cum_qty,
+                )
+            else:
+                logger.debug(
+                    "Fill duplicate (idempotent skip): order=%s cum=%.4f",
+                    client_order_id,
+                    new_cum_qty,
+                )
+                # Duplicate fill — set delta to 0 so downstream doesn't double-count
+                delta_qty = 0.0
+
+        # Return augmented event with delta_qty, preserving all original fields/metadata
+        final_delta = delta_qty if delta_qty > _QTY_EPSILON else 0.0
+
+        return OrderUpdateEvent(
+            order_id=event.order_id,
+            client_order_id=event.client_order_id,
+            symbol=event.symbol,
+            side=event.side,
+            status=event.status,
+            state=event.state,
+            filled_qty=event.filled_qty,
+            avg_fill_price=event.avg_fill_price,
+            timestamp=event.timestamp,
+            fill_id=event.fill_id,
+            delta_qty=final_delta,
+            last_fill_qty=event.last_fill_qty,
+            last_fill_price=event.last_fill_price,
+            position_snapshot=event.position_snapshot,
+        )
 
     def _extract_enum_value(self, attr: Any, default: str = "unknown") -> str:
         """Convert enum-or-string attributes to a lowercase string with a default.
@@ -112,6 +353,17 @@ class OrderUpdatesHandler:
         parsed_filled_qty: Optional[float] = parse_optional_float(raw_filled_qty)
         parsed_filled_avg_price: Optional[float] = parse_optional_float(raw_filled_avg_price)
 
+        # Extract incremental fill fields (Alpaca: lastFillQty, lastFillPrice)
+        raw_last_fill_qty = _get_raw("lastfill_qty") or _get_raw("last_fill_qty")
+        raw_last_fill_price = _get_raw("lastfill_price") or _get_raw("last_fill_price")
+
+        parsed_last_fill_qty: Optional[float] = parse_optional_float(raw_last_fill_qty)
+        parsed_last_fill_price: Optional[float] = parse_optional_float(raw_last_fill_price)
+
+        # Extract order_qty for partial terminal detection
+        raw_order_qty = _get_raw("qty")
+        parsed_order_qty: Optional[float] = parse_optional_float(raw_order_qty)
+
         # Attempt to extract a fill id if provided by the broker payload.
         # Some brokers include a `fill_id` or a `fills` list with ids.
         raw_fill_id = _get_raw("fill_id")
@@ -132,29 +384,32 @@ class OrderUpdatesHandler:
         if raw_fill_id is not None:
             fill_id_value = str(raw_fill_id)
 
-        # Note: `parsed_filled_qty` and `parsed_filled_avg_price` may be None.
-        # We intentionally preserve None here (do not coerce filled_qty to 0)
-        # so that the StateStore's SQL `COALESCE(?, filled_qty)` can decide
-        # whether to overwrite the stored value. Downstream consumers that
-        # assume `filled_qty` is numeric must guard against None (for example,
-        # `_record_trade` should skip recording a trade or retrieve the
-        # existing DB quantity when `filled_qty` is None) to avoid inserting
-        # invalid trades or violating DB constraints.
+        # Convert status to OrderState enum with partial terminal detection
+        order_state = OrderState.from_alpaca(
+            status_value, filled_qty=parsed_filled_qty, order_qty=parsed_order_qty
+        )
+
         return OrderUpdateEvent(
             order_id=order_id,
             client_order_id=client_order_id,
             symbol=symbol,
             side=side_value,
             status=status_value,
+            state=order_state,
             filled_qty=parsed_filled_qty,
             avg_fill_price=parsed_filled_avg_price,
             fill_id=fill_id_value,
             timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
+            last_fill_qty=parsed_last_fill_qty,
+            last_fill_price=parsed_last_fill_price,
         )
 
     def _record_trade(self, event: OrderUpdateEvent) -> None:
-        """Record filled order in trades table."""
+        """Record filled order in trades table (idempotent)."""
         import sqlite3
+
+        if self.state_store is None:
+            return
 
         # Require an avg fill price to record trades
         if event.avg_fill_price is None:
@@ -168,8 +423,6 @@ class OrderUpdatesHandler:
         if qty_to_record is None:
             oi = self.state_store.get_order_intent(event.client_order_id)
             if oi:
-                # `oi` is a mapping of `str`->`object`; coerce using the
-                # shared helper to a float or None.
                 qty_to_record = parse_optional_float(oi.get("filled_qty"))
 
         if qty_to_record is None:
@@ -178,16 +431,10 @@ class OrderUpdatesHandler:
                 event.client_order_id,
             )
             return
-        # Insert trade using a context manager for the DB connection
+
         with sqlite3.connect(self.state_store.db_path) as conn:
             cursor = conn.cursor()
 
-            # Use a single upsert path keyed on (order_id, client_order_id).
-            # This avoids ordering issues where an initial insert without
-            # `fill_id` would later cause a conflicting insert when a
-            # `fill_id` appears. The DO UPDATE will populate `fill_id` if
-            # it's newly provided while keeping the row deduplicated by
-            # the baseline key.
             sql = """
                 INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
@@ -209,9 +456,6 @@ class OrderUpdatesHandler:
             try:
                 cursor.execute(sql, params)
             except sqlite3.IntegrityError:
-                # IntegrityError here indicates a genuine DB constraint
-                # violation (NULL in NOT NULL column, etc.) rather than a
-                # duplicate. Log and re-raise so callers / CI can detect it.
                 logger.exception(
                     "Failed to insert/update trade for %s due to integrity error",
                     event.client_order_id,

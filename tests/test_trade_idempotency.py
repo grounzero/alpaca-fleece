@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 
 from src.data.order_updates import OrderUpdatesHandler
 from src.event_bus import EventBus, OrderUpdateEvent
+from src.models.order_state import OrderState
 from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
@@ -21,6 +22,7 @@ def test_record_trade_idempotent(tmp_path):
         symbol="TEST",
         side="buy",
         status="filled",
+        state=OrderState.FILLED,
         filled_qty=1.0,
         avg_fill_price=123.45,
         fill_id=None,
@@ -34,6 +36,7 @@ def test_record_trade_idempotent(tmp_path):
         symbol="TEST",
         side="buy",
         status="filled",
+        state=OrderState.FILLED,
         filled_qty=1.0,
         avg_fill_price=123.45,
         fill_id="fill-xyz",

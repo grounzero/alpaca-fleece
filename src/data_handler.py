@@ -19,6 +19,7 @@ from src.data.bars import BarsHandler
 from src.data.order_updates import OrderUpdatesHandler
 from src.data.snapshots import SnapshotsHandler
 from src.event_bus import EventBus
+from src.position_tracker import PositionTracker
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -32,6 +33,7 @@ class DataHandler:
         state_store: StateStore,
         event_bus: EventBus,
         market_data_client: MarketDataClient,
+        position_tracker: Optional[PositionTracker] = None,
     ) -> None:
         """Initialise data handler.
 
@@ -39,6 +41,7 @@ class DataHandler:
             state_store: SQLite state store
             event_bus: Event bus
             market_data_client: Market data API client
+            position_tracker: Optional PositionTracker for fill-to-position wiring
         """
         self.state_store = state_store
         self.event_bus = event_bus
@@ -47,7 +50,9 @@ class DataHandler:
         # Handlers
         self.bars = BarsHandler(state_store, event_bus, market_data_client)
         self.snapshots = SnapshotsHandler(market_data_client)
-        self.order_updates = OrderUpdatesHandler(state_store, event_bus)
+        self.order_updates = OrderUpdatesHandler(
+            state_store, event_bus, position_tracker=position_tracker
+        )
 
     async def on_bar(self, raw_bar: Any) -> None:
         """Route raw bar to bars handler.

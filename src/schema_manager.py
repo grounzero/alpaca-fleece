@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Schema version — bump when adding tables, columns, or indexes
 # ---------------------------------------------------------------------------
-CURRENT_SCHEMA_VERSION = 1
+CURRENT_SCHEMA_VERSION = 3
 
 # ---------------------------------------------------------------------------
 # Canonical table definitions (CREATE TABLE IF NOT EXISTS)
@@ -111,6 +111,23 @@ TABLES: dict[str, str] = {
             PRIMARY KEY (strategy, symbol, action)
         )
     """,
+    "fills": """
+        CREATE TABLE IF NOT EXISTS fills (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            alpaca_order_id TEXT NOT NULL,
+            client_order_id TEXT NOT NULL,
+            symbol TEXT NOT NULL,
+            side TEXT NOT NULL,
+            delta_qty NUMERIC(10, 4) NOT NULL,
+            cum_qty NUMERIC(10, 4) NOT NULL,
+            cum_avg_price NUMERIC(10, 4),
+            timestamp_utc TEXT NOT NULL,
+            fill_id TEXT,
+            price_is_estimate INTEGER NOT NULL DEFAULT 1,
+            fill_dedupe_key TEXT NOT NULL,
+            UNIQUE(alpaca_order_id, fill_dedupe_key)
+        )
+    """,
     "position_tracking": """
         CREATE TABLE IF NOT EXISTS position_tracking (
             symbol TEXT PRIMARY KEY,
@@ -124,6 +141,14 @@ TABLES: dict[str, str] = {
             trailing_stop_activated INTEGER DEFAULT 0,
             pending_exit INTEGER DEFAULT 0,
             updated_at TEXT NOT NULL
+        )
+    """,
+    "exit_attempts": """
+        CREATE TABLE IF NOT EXISTS exit_attempts (
+            symbol TEXT PRIMARY KEY,
+            attempt_count INTEGER NOT NULL DEFAULT 0,
+            last_attempt_ts_utc TEXT NOT NULL,
+            reason TEXT
         )
     """,
 }
@@ -141,6 +166,7 @@ ADDITIVE_COLUMNS: list[tuple[str, str, str]] = [
     ("order_intents", "atr", "NUMERIC(10, 4)"),
     ("order_intents", "filled_avg_price", "NUMERIC(10, 4)"),
     ("order_intents", "strategy", "TEXT DEFAULT ''"),
+    ("fills", "delta_fill_price", "NUMERIC(10, 4)"),
 ]
 
 # ---------------------------------------------------------------------------
@@ -172,6 +198,24 @@ INDEXES: dict[str, str] = {
     ),
     "idx_signal_gates_symbol": (
         "CREATE INDEX IF NOT EXISTS idx_signal_gates_symbol ON signal_gates(symbol)"
+    ),
+    "idx_fills_alpaca_order_id": (
+        "CREATE INDEX IF NOT EXISTS idx_fills_alpaca_order_id ON fills(alpaca_order_id)"
+    ),
+    "idx_fills_client_order_id": (
+        "CREATE INDEX IF NOT EXISTS idx_fills_client_order_id ON fills(client_order_id)"
+    ),
+    "idx_fills_symbol": ("CREATE INDEX IF NOT EXISTS idx_fills_symbol ON fills(symbol)"),
+    "idx_fills_timestamp": (
+        "CREATE INDEX IF NOT EXISTS idx_fills_timestamp ON fills(timestamp_utc)"
+    ),
+    "idx_order_intents_alpaca_order_id": (
+        "CREATE INDEX IF NOT EXISTS idx_order_intents_alpaca_order_id "
+        "ON order_intents(alpaca_order_id)"
+    ),
+    "idx_position_tracking_pending_exit": (
+        "CREATE INDEX IF NOT EXISTS idx_position_tracking_pending_exit "
+        "ON position_tracking(pending_exit)"
     ),
 }
 

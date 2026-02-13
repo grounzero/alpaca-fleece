@@ -452,3 +452,274 @@ class StateStore:
         """Reset daily limits at market open (Win #3)."""
         self.save_daily_pnl(0.0)
         self.save_daily_trade_count(0)
+
+    # ------------------------------------------------------------------
+    # Partial-fill support
+    # ------------------------------------------------------------------
+
+    def get_order_intent_by_alpaca_id(self, alpaca_order_id: str) -> Optional[dict[str, object]]:
+        """Get order intent by Alpaca order ID (primary lookup for fills)."""
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT client_order_id, strategy, symbol, side, qty, atr, "
+                "status, filled_qty, filled_avg_price, alpaca_order_id "
+                "FROM order_intents WHERE alpaca_order_id = ? LIMIT 1",
+                (alpaca_order_id,),
+            )
+            row = cursor.fetchone()
+            if row:
+                return {
+                    "client_order_id": row[0],
+                    "strategy": row[1],
+                    "symbol": row[2],
+                    "side": row[3],
+                    "qty": float(row[4]),
+                    "atr": parse_optional_float(row[5]),
+                    "status": row[6],
+                    "filled_qty": parse_optional_float(row[7]),
+                    "filled_avg_price": parse_optional_float(row[8]),
+                    "alpaca_order_id": row[9],
+                }
+            return None
+
+    def get_last_cum_qty_for_order(self, alpaca_order_id: str) -> float:
+        """Return the last-known cumulative filled qty for an order.
+
+        Prefers order_intents.filled_qty (fast). Falls back to
+        MAX(fills.cum_qty) for audit trail consistency.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            # Fast path: order_intents
+            cursor.execute(
+                "SELECT filled_qty FROM order_intents " "WHERE alpaca_order_id = ? LIMIT 1",
+                (alpaca_order_id,),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                try:
+                    return float(row[0])
+                except (TypeError, ValueError):
+                    pass
+
+            # Audit fallback: fills table
+            cursor.execute(
+                "SELECT MAX(cum_qty) FROM fills WHERE alpaca_order_id = ?",
+                (alpaca_order_id,),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                try:
+                    return float(row[0])
+                except (TypeError, ValueError):
+                    pass
+
+        return 0.0
+
+    def insert_fill_idempotent(
+        self,
+        alpaca_order_id: str,
+        client_order_id: str,
+        symbol: str,
+        side: str,
+        delta_qty: float,
+        cum_qty: float,
+        cum_avg_price: Optional[float],
+        timestamp_utc: str,
+        fill_id: Optional[str] = None,
+        price_is_estimate: bool = True,
+        delta_fill_price: Optional[float] = None,
+    ) -> bool:
+        """Insert a fill row idempotently. Returns True if inserted, False if duplicate.
+
+        Uses a computed fill_dedupe_key for the unique constraint:
+        - If fill_id is present: uses the fill_id
+        - If fill_id is absent: uses 'CUM:<cum_qty>' as the key
+
+        Args:
+            delta_fill_price: Incremental fill price (preferred over cumulative avg)
+        """
+        dedupe_key = fill_id if fill_id else f"CUM:{cum_qty}"
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute(
+                    """INSERT INTO fills
+                       (alpaca_order_id, client_order_id, symbol, side,
+                        delta_qty, cum_qty, cum_avg_price, timestamp_utc,
+                        fill_id, price_is_estimate, fill_dedupe_key, delta_fill_price)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                    (
+                        alpaca_order_id,
+                        client_order_id,
+                        symbol,
+                        side,
+                        delta_qty,
+                        cum_qty,
+                        cum_avg_price,
+                        timestamp_utc,
+                        fill_id,
+                        1 if price_is_estimate else 0,
+                        dedupe_key,
+                        delta_fill_price,
+                    ),
+                )
+                conn.commit()
+                return True
+            except sqlite3.IntegrityError:
+                # Duplicate — unique constraint on (alpaca_order_id, fill_dedupe_key)
+                return False
+
+    def update_order_intent_cumulative(
+        self,
+        alpaca_order_id: str,
+        status: str,
+        new_cum_qty: float,
+        new_cum_avg_price: Optional[float],
+        timestamp_utc: str,
+    ) -> None:
+        """Update order intent with monotonically increasing cumulative fill data.
+
+        Only increases filled_qty (never decreases). Status and timestamp are
+        always updated.
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            # Monotonic update: only set filled_qty when new value >= existing.
+            # Status/timestamp are always updated.
+            cursor.execute(
+                """UPDATE order_intents
+                   SET status = ?,
+                       filled_qty = CASE
+                           WHEN COALESCE(filled_qty, 0) < ? THEN ?
+                           ELSE filled_qty
+                       END,
+                       filled_avg_price = CASE
+                           WHEN COALESCE(filled_qty, 0) < ? THEN COALESCE(?, filled_avg_price)
+                           ELSE filled_avg_price
+                       END,
+                       updated_at_utc = ?
+                   WHERE alpaca_order_id = ?""",
+                (
+                    status,
+                    new_cum_qty,
+                    new_cum_qty,
+                    new_cum_qty,
+                    new_cum_avg_price,
+                    timestamp_utc,
+                    alpaca_order_id,
+                ),
+            )
+            conn.commit()
+
+    # ------------------------------------------------------------------
+    # Exit retry backoff tracking
+    # ------------------------------------------------------------------
+
+    def record_exit_attempt(self, symbol: str, reason: str) -> None:
+        """Record an exit attempt for a symbol (upsert to exit_attempts table).
+
+        Increments attempt_count and updates last_attempt_ts_utc.
+
+        Args:
+            symbol: Stock symbol
+            reason: Exit reason (e.g., "stop_loss", "profit_target")
+        """
+        now_utc = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO exit_attempts (symbol, attempt_count, last_attempt_ts_utc, reason)
+                   VALUES (?, 1, ?, ?)
+                   ON CONFLICT(symbol) DO UPDATE SET
+                       attempt_count = attempt_count + 1,
+                       last_attempt_ts_utc = excluded.last_attempt_ts_utc,
+                       reason = excluded.reason""",
+                (symbol, now_utc, reason),
+            )
+            conn.commit()
+
+    def get_exit_backoff_seconds(self, symbol: str) -> int:
+        """Compute exponential backoff for exit retries.
+
+        Returns backoff seconds based on attempt count:
+        - Progression: 30s, 60s, 120s, 240s, 480s, 600s (max)
+        - Reset after 1 hour of no attempts
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            Backoff seconds (0 if no backoff or reset)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT attempt_count, last_attempt_ts_utc FROM exit_attempts WHERE symbol = ?",
+                (symbol,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return 0
+
+            attempt_count = int(row[0])
+            last_attempt_ts_str = row[1]
+
+            try:
+                last_attempt_ts = datetime.fromisoformat(last_attempt_ts_str).astimezone(
+                    timezone.utc
+                )
+            except (ValueError, TypeError):
+                return 0
+
+            now_utc = datetime.now(timezone.utc)
+            elapsed_seconds = (now_utc - last_attempt_ts).total_seconds()
+
+            # Reset after 1 hour
+            if elapsed_seconds > 3600:
+                return 0
+
+            # Exponential backoff: 30s * 2^(attempt-1), capped at 600s
+            backoff = int(min(30 * (2 ** (attempt_count - 1)), 600))
+            return backoff
+
+    def can_retry_exit(self, symbol: str) -> bool:
+        """Check if exit retry backoff period has elapsed.
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            True if retry is allowed, False if backoff active
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT attempt_count, last_attempt_ts_utc FROM exit_attempts WHERE symbol = ?",
+                (symbol,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                # No attempts recorded - allowed
+                return True
+
+            attempt_count = int(row[0])
+            last_attempt_ts_str = row[1]
+            try:
+                last_attempt_ts = datetime.fromisoformat(last_attempt_ts_str).astimezone(
+                    timezone.utc
+                )
+            except (ValueError, TypeError):
+                return True
+
+            now_utc = datetime.now(timezone.utc)
+            elapsed_seconds = (now_utc - last_attempt_ts).total_seconds()
+
+            # Reset after 1 hour
+            if elapsed_seconds > 3600:
+                return True
+
+            # Compute exponential backoff inline (same logic as get_exit_backoff_seconds)
+            backoff = int(min(30 * (2 ** (attempt_count - 1)), 600))
+            return elapsed_seconds >= backoff
