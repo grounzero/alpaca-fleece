@@ -26,7 +26,7 @@ from src.reconciliation import (
     compare_order_states,
     compare_positions,
 )
-from src.state_store import StateStore
+from src.state_store import OrderIntentRow, StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +161,7 @@ class RuntimeReconciler:
 
             alpaca_orders = broker_state["orders"]
             alpaca_positions = broker_state["positions"]
-            sqlite_orders = self.state_store.get_all_order_intents()
+            sqlite_orders: List[OrderIntentRow] = self.state_store.get_all_order_intents()
 
             # Reset broker health to healthy
             self.state_store.set_state("broker_health", "healthy")
@@ -408,8 +408,13 @@ class RuntimeReconciler:
             conn = sqlite3.connect(self.state_store.db_path)
             cursor = conn.cursor()
 
-            discrepancies_json = json.dumps(report.get("discrepancies", []))
-            repairs_json = json.dumps(report.get("repairs", []))
+            discrepancies = report.get("discrepancies", [])
+            repairs = report.get("repairs", [])
+            discrepancies_json = json.dumps(discrepancies)
+            repairs_json = json.dumps(repairs)
+
+            discrepancies_count = len(discrepancies) if isinstance(discrepancies, list) else 0
+            repairs_count = len(repairs) if isinstance(repairs, list) else 0
 
             cursor.execute(
                 """
@@ -422,8 +427,8 @@ class RuntimeReconciler:
                     report.get("timestamp_utc"),
                     report.get("check_type"),
                     report.get("duration_ms", 0),
-                    len(report.get("discrepancies", [])),
-                    len(report.get("repairs", [])),
+                    discrepancies_count,
+                    repairs_count,
                     report.get("status"),
                     discrepancies_json,
                     repairs_json,

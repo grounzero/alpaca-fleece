@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, cast
 
 from src.models.order_state import OrderState
-from src.state_store import StateStore
+from src.state_store import OrderIntentRow, StateStore
 from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
@@ -29,7 +29,7 @@ class ReconciliationError(Exception):
 
 
 def compare_order_states(
-    sqlite_orders: List[Dict[str, Any]], alpaca_orders: List[Dict[str, Any]]
+    sqlite_orders: List[OrderIntentRow], alpaca_orders: List[Dict[str, Any]]
 ) -> tuple[list[dict[str, object]], int]:
     """Compare SQLite vs Alpaca orders.
 
@@ -96,7 +96,7 @@ def compare_order_states(
 
 def apply_safe_order_updates(
     state_store: StateStore,
-    sqlite_orders: List[Dict[str, Any]],
+    sqlite_orders: List[OrderIntentRow],
     alpaca_orders: List[Dict[str, Any]],
 ) -> int:
     """Apply Rule 1 updates (Alpaca terminal → SQLite).
