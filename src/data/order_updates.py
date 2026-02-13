@@ -283,8 +283,24 @@ class OrderUpdatesHandler:
                 delta_qty = 0.0
 
         # Return augmented event with delta_qty, preserving all original fields/metadata
-        event.delta_qty = delta_qty if delta_qty > _QTY_EPSILON else 0.0
-        return event
+        final_delta = delta_qty if delta_qty > _QTY_EPSILON else 0.0
+
+        return OrderUpdateEvent(
+            order_id=event.order_id,
+            client_order_id=event.client_order_id,
+            symbol=event.symbol,
+            side=event.side,
+            status=event.status,
+            state=event.state,
+            filled_qty=event.filled_qty,
+            avg_fill_price=event.avg_fill_price,
+            timestamp=event.timestamp,
+            fill_id=event.fill_id,
+            delta_qty=final_delta,
+            last_fill_qty=event.last_fill_qty,
+            last_fill_price=event.last_fill_price,
+            position_snapshot=event.position_snapshot,
+        )
 
     def _extract_enum_value(self, attr: Any, default: str = "unknown") -> str:
         """Convert enum-or-string attributes to a lowercase string with a default.
