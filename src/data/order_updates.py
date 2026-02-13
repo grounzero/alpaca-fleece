@@ -76,10 +76,21 @@ class OrderUpdatesHandler:
                 delta_fill_price = event.last_fill_price
             elif event.cum_avg_fill_price is not None:
                 delta_fill_price = event.cum_avg_fill_price
-            else:
+
+            # Only warn about missing fill price when a positive delta fill
+            # needs to be applied to the PositionTracker and we therefore
+            # require a price for the position update.
+            if (
+                self.position_tracker is not None
+                and event.delta_qty is not None
+                and event.delta_qty > 0
+                and delta_fill_price is None
+            ):
                 logger.warning(
-                    "No fill price available for order %s (neither last_fill_price nor cum_avg_fill_price)",
+                    "No fill price available for order %s (neither last_fill_price nor cum_avg_fill_price) "
+                    "for positive delta_qty=%s; skipping position update.",
                     event.order_id,
+                    event.delta_qty,
                 )
 
             if (
