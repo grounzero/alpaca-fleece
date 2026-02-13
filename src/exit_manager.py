@@ -22,7 +22,8 @@ from typing import Any, Optional
 
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.data_handler import DataHandler
-from src.event_bus import EventBus, ExitSignalEvent
+from src.event_bus import EventBus, ExitSignalEvent, OrderUpdateEvent
+from src.models.order_state import OrderState
 from src.position_tracker import PositionData, PositionTracker
 from src.state_store import StateStore
 
@@ -183,6 +184,55 @@ class ExitManager:
 
         logger.info("Exit manager stopped")
 
+    async def handle_order_update(self, event: OrderUpdateEvent) -> None:
+        """Handle order update events for exit order lifecycle tracking.
+
+        Clears pending_exit flag when exit orders reach terminal non-filled states.
+
+        Args:
+            event: OrderUpdateEvent from broker
+        """
+        # Check if this is an exit order that reached a terminal state with failures
+        # Terminal non-filled states include:
+        # - CANCELLED (full cancel, 0 fills)
+        # - CANCELLED_PARTIAL (partial fills, then canceled)
+        # - EXPIRED (full expire, 0 fills)
+        # - EXPIRED_PARTIAL (partial fills, then expired)
+        # - REJECTED (full reject, 0 fills)
+        # - REJECTED_PARTIAL (partial fills, then rejected)
+        terminal_failure_states = {
+            OrderState.CANCELLED,
+            OrderState.CANCELLED_PARTIAL,
+            OrderState.EXPIRED,
+            OrderState.EXPIRED_PARTIAL,
+            OrderState.REJECTED,
+            OrderState.REJECTED_PARTIAL,
+        }
+
+        if event.state not in terminal_failure_states:
+            return
+
+        # Check if we're tracking this position
+        position = self.position_tracker.get_position(event.symbol)
+        if position is None:
+            return
+
+        # Only clear pending_exit if it was set (indicates this was an exit order)
+        if not position.pending_exit:
+            return
+
+        # Clear pending_exit flag to allow retry
+        position.pending_exit = False
+        self.position_tracker.upsert_position(position)
+
+        logger.warning(
+            "Exit order terminal failure: symbol=%s state=%s filled_qty=%s order_id=%s - cleared pending_exit",
+            event.symbol,
+            event.state.value,
+            event.cum_filled_qty or 0.0,
+            event.order_id,
+        )
+
     async def _monitor_loop(self) -> None:
         """Main monitoring loop."""
         logger.info("Exit monitor loop started")
@@ -241,6 +291,16 @@ class ExitManager:
                     logger.debug(f"Skipping {position.symbol} - exit signal pending")
                     continue
 
+                # Check retry backoff - skip if backoff active
+                if not self.state_store.can_retry_exit(position.symbol):
+                    backoff_seconds = self.state_store.get_exit_backoff_seconds(position.symbol)
+                    logger.debug(
+                        "Exit retry backoff active for %s (backoff=%ds)",
+                        position.symbol,
+                        backoff_seconds,
+                    )
+                    continue
+
                 # Get current price
                 snapshot = self.data_handler.get_snapshot(position.symbol)
                 if not snapshot:
@@ -267,6 +327,10 @@ class ExitManager:
                         logger.error(f"Failed to publish exit signal for {position.symbol}: {e}")
                         # Do not mark pending_exit so the position can be retried
                         continue
+
+                    # Record exit attempt for backoff tracking
+                    self.state_store.record_exit_attempt(position.symbol, signal.reason)
+
                     # Mark position as having pending exit only after successful publish
                     position.pending_exit = True
                     # Use the public upsert API so ExitManager never reaches into

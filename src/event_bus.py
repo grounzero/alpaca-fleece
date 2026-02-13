@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from src.models.order_state import OrderState
+
 logger = logging.getLogger(__name__)
 
 
@@ -64,6 +66,10 @@ class OrderUpdateEvent:
     broker (not per-fill deltas). The cum_filled_qty / cum_avg_fill_price
     aliases make this explicit; the original names are kept for backwards
     compatibility but should be treated as cumulative everywhere.
+
+    Incremental fill fields (last_fill_qty, last_fill_price) represent the
+    per-fill quantities and prices from Alpaca. When present, these should be
+    used for position cost basis calculations instead of the cumulative average.
     """
 
     order_id: str
@@ -71,11 +77,15 @@ class OrderUpdateEvent:
     symbol: str
     side: str  # buy, sell
     status: str  # new, filled, partially_filled, canceled, rejected, expired
+    state: OrderState  # Canonical enum representation of status
     filled_qty: Optional[float]
     avg_fill_price: Optional[float]
     timestamp: datetime
     fill_id: Optional[str] = None
     delta_qty: Optional[float] = None
+    last_fill_qty: Optional[float] = None  # Incremental fill quantity (from Alpaca)
+    last_fill_price: Optional[float] = None  # Incremental fill price (from Alpaca)
+    position_snapshot: Optional[object] = None  # PositionData snapshot when position closes
 
     @property
     def cum_filled_qty(self) -> Optional[float]:

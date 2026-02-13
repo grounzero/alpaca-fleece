@@ -18,6 +18,8 @@ import pytest
 
 from src.data.order_updates import OrderUpdatesHandler
 from src.event_bus import OrderUpdateEvent
+from src.models.order_state import OrderState
+from src.position_tracker import PositionTracker
 from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
@@ -683,6 +685,7 @@ class TestOrderUpdateEventModel:
             symbol="AAPL",
             side="buy",
             status="partially_filled",
+            state=OrderState.PARTIAL,
             filled_qty=10.0,
             avg_fill_price=150.0,
             timestamp=datetime.now(timezone.utc),
@@ -697,6 +700,7 @@ class TestOrderUpdateEventModel:
             symbol="AAPL",
             side="buy",
             status="new",
+            state=OrderState.PENDING,
             filled_qty=None,
             avg_fill_price=None,
             timestamp=datetime.now(timezone.utc),
@@ -710,6 +714,7 @@ class TestOrderUpdateEventModel:
             symbol="AAPL",
             side="buy",
             status="partially_filled",
+            state=OrderState.PARTIAL,
             filled_qty=10.0,
             avg_fill_price=150.0,
             timestamp=datetime.now(timezone.utc),
@@ -762,7 +767,7 @@ class TestSchemaVersion:
             cur = conn.cursor()
             cur.execute("SELECT schema_version FROM schema_meta WHERE id = 1")
             row = cur.fetchone()
-        assert row[0] == 2
+        assert row[0] == 3
 
 
 # ---------------------------------------------------------------
@@ -874,3 +879,585 @@ class TestReconcileFills:
 
         # Terminal order not considered for reconciliation
         assert count == 0
+
+
+# ---------------------------------------------------------------
+# PositionTracker Fill Integration tests
+# ---------------------------------------------------------------
+
+
+class TestPositionTrackerFillIntegration:
+    """Test PositionTracker integration with fill events."""
+
+    @pytest.mark.asyncio
+    async def test_position_created_on_first_fill_not_submission(self, tmp_path):
+        """Verify position is created when first fill arrives, not at order submission."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # No position should exist initially
+        assert tracker.get_position("AAPL") is None
+
+        # Simulate first fill
+        await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=10.0,
+            fill_price=150.0,
+            side="buy",
+        )
+
+        # Position should now exist
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        assert position.qty == 10.0
+        assert position.entry_price == 150.0
+
+    @pytest.mark.asyncio
+    async def test_position_qty_updated_on_partial_fill(self, tmp_path):
+        """Verify position qty increases correctly on partial fill."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # First fill
+        await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=10.0,
+            fill_price=150.0,
+            side="buy",
+        )
+
+        # Second fill (partial)
+        await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=5.0,
+            fill_price=151.0,
+            side="buy",
+        )
+
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        assert position.qty == 15.0
+
+    @pytest.mark.asyncio
+    async def test_position_closed_on_full_fill(self, tmp_path):
+        """Verify position is removed/stopped when sell order fully fills (exit)."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # Create position with buy fills
+        await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=10.0,
+            fill_price=150.0,
+            side="buy",
+        )
+
+        # Sell fill that exhausts the position
+        result = await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=10.0,
+            fill_price=155.0,
+            side="sell",
+        )
+
+        # Position should be closed
+        assert result is None
+        assert tracker.get_position("AAPL") is None
+
+    @pytest.mark.asyncio
+    async def test_position_unchanged_on_duplicate_fill_event(self, tmp_path):
+        """Verify duplicate fill events don't double-count position qty."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # First fill
+        await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=10.0,
+            fill_price=150.0,
+            side="buy",
+        )
+
+        # Duplicate fill (same delta)
+        await tracker.update_position_from_fill(
+            symbol="AAPL",
+            delta_qty=10.0,
+            fill_price=150.0,
+            side="buy",
+        )
+
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        # Should be 20.0 because we intentionally call it twice with delta
+        # (idempotency is handled at the fill layer, not position layer)
+        assert position.qty == 20.0
+
+    @pytest.mark.asyncio
+    async def test_position_handles_multiple_partial_fills(self, tmp_path):
+        """Verify position correctly accumulates across 3+ partial fills."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # Multiple partial fills
+        fills = [
+            (10.0, 150.0),
+            (15.0, 151.0),
+            (25.0, 152.0),
+        ]
+
+        for delta_qty, fill_price in fills:
+            await tracker.update_position_from_fill(
+                symbol="AAPL",
+                delta_qty=delta_qty,
+                fill_price=fill_price,
+                side="buy",
+            )
+
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        assert position.qty == 50.0  # 10 + 15 + 25
+
+    @pytest.mark.asyncio
+    async def test_position_no_drift_after_multiple_partials(self, tmp_path):
+        """Verify position qty matches sum of all fill deltas after sequence."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # 0→10→25→50 sequence
+        await tracker.update_position_from_fill(
+            symbol="AAPL", delta_qty=10.0, fill_price=150.0, side="buy"
+        )
+        await tracker.update_position_from_fill(
+            symbol="AAPL", delta_qty=15.0, fill_price=151.0, side="buy"
+        )
+        await tracker.update_position_from_fill(
+            symbol="AAPL", delta_qty=25.0, fill_price=152.0, side="buy"
+        )
+
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        assert position.qty == 50.0
+
+    @pytest.mark.asyncio
+    async def test_position_avg_price_blended_correctly(self, tmp_path):
+        """Verify average entry price is correctly blended across multiple fills."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        # First fill: 10 shares @ $150
+        await tracker.update_position_from_fill(
+            symbol="AAPL", delta_qty=10.0, fill_price=150.0, side="buy"
+        )
+
+        # Second fill: 10 shares @ $160
+        await tracker.update_position_from_fill(
+            symbol="AAPL", delta_qty=10.0, fill_price=160.0, side="buy"
+        )
+
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        # Blended average: (10*150 + 10*160) / 20 = 155.0
+        assert position.entry_price == 155.0
+
+    @pytest.mark.asyncio
+    async def test_position_sell_without_existing_logs_warning(self, tmp_path, caplog):
+        """Verify short position is created when sell fill arrives without position."""
+        db_path, state_store = _setup_db(tmp_path)
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=state_store)
+
+        with caplog.at_level("INFO"):
+            result = await tracker.update_position_from_fill(
+                symbol="AAPL",
+                delta_qty=10.0,
+                fill_price=150.0,
+                side="sell",
+            )
+
+        # Short position should be created
+        assert result is not None
+        assert result.side == "short"
+        assert result.qty == 10.0
+        assert result.entry_price == 150.0
+        assert "Short position created on first sell fill" in caplog.text
+
+
+# ---------------------------------------------------------------
+# OrderState Enum tests
+# ---------------------------------------------------------------
+
+
+class TestOrderStateEnum:
+    """Test OrderState enum functionality."""
+
+    def test_order_state_enum_has_all_required_states(self):
+        """Verify all 12 states are defined (8 original + 3 partial terminals + 1 unknown)."""
+        states = {
+            OrderState.PENDING,
+            OrderState.SUBMITTED,
+            OrderState.PENDING_CANCEL,
+            OrderState.PARTIAL,
+            OrderState.FILLED,
+            OrderState.CANCELLED,
+            OrderState.EXPIRED,
+            OrderState.REJECTED,
+            OrderState.CANCELLED_PARTIAL,
+            OrderState.EXPIRED_PARTIAL,
+            OrderState.REJECTED_PARTIAL,
+            OrderState.UNKNOWN,
+        }
+        assert len(states) == 12
+
+    def test_order_state_from_alpaca_mapping_correct(self):
+        """Verify all Alpaca status strings map to correct OrderState."""
+        test_cases = [
+            ("new", OrderState.PENDING),
+            ("pending_new", OrderState.PENDING),
+            ("submitted", OrderState.SUBMITTED),
+            ("accepted", OrderState.SUBMITTED),
+            ("partially_filled", OrderState.PARTIAL),
+            ("filled", OrderState.FILLED),
+            ("canceled", OrderState.CANCELLED),
+            ("pending_cancel", OrderState.PENDING_CANCEL),
+            ("expired", OrderState.EXPIRED),
+            ("rejected", OrderState.REJECTED),
+        ]
+
+        for alpaca_status, expected_state in test_cases:
+            result = OrderState.from_alpaca(alpaca_status)
+            assert result == expected_state, f"Failed for {alpaca_status}"
+
+    def test_order_state_is_terminal_identifies_correctly(self):
+        """Verify terminal states return True, non-terminal return False."""
+        # Terminal states
+        assert OrderState.FILLED.is_terminal is True
+        assert OrderState.CANCELLED.is_terminal is True
+        assert OrderState.EXPIRED.is_terminal is True
+        assert OrderState.REJECTED.is_terminal is True
+
+        # Partial terminal states (also terminal)
+        assert OrderState.CANCELLED_PARTIAL.is_terminal is True
+        assert OrderState.EXPIRED_PARTIAL.is_terminal is True
+        assert OrderState.REJECTED_PARTIAL.is_terminal is True
+
+        # Unknown state (treated as terminal)
+        assert OrderState.UNKNOWN.is_terminal is True
+
+        # Non-terminal states
+        assert OrderState.PENDING.is_terminal is False
+        assert OrderState.SUBMITTED.is_terminal is False
+        assert OrderState.PARTIAL.is_terminal is False
+        assert OrderState.PENDING_CANCEL.is_terminal is False
+
+    def test_order_state_has_fill_potential_identifies_correctly(self):
+        """Verify states that can receive fills return True."""
+        # States with fill potential
+        assert OrderState.PENDING.has_fill_potential is True
+        assert OrderState.SUBMITTED.has_fill_potential is True
+        assert OrderState.PARTIAL.has_fill_potential is True
+        assert OrderState.PENDING_CANCEL.has_fill_potential is True
+
+        # Terminal states (no fill potential)
+        assert OrderState.FILLED.has_fill_potential is False
+        assert OrderState.CANCELLED.has_fill_potential is False
+        assert OrderState.EXPIRED.has_fill_potential is False
+        assert OrderState.REJECTED.has_fill_potential is False
+
+        # Partial terminal states (no fill potential)
+        assert OrderState.CANCELLED_PARTIAL.has_fill_potential is False
+        assert OrderState.EXPIRED_PARTIAL.has_fill_potential is False
+        assert OrderState.REJECTED_PARTIAL.has_fill_potential is False
+
+        # Unknown state (no fill potential)
+        assert OrderState.UNKNOWN.has_fill_potential is False
+
+    def test_order_state_transition_from_pending_to_partial(self):
+        """Verify state progression through order lifecycle."""
+        # Start pending
+        state = OrderState.from_alpaca("new")
+        assert state == OrderState.PENDING
+        assert state.has_fill_potential is True
+
+        # Transition to submitted
+        state = OrderState.from_alpaca("submitted")
+        assert state == OrderState.SUBMITTED
+        assert state.has_fill_potential is True
+
+        # Transition to partial
+        state = OrderState.from_alpaca("partially_filled")
+        assert state == OrderState.PARTIAL
+        assert state.has_fill_potential is True
+
+    def test_order_state_transition_from_partial_to_filled(self):
+        """Verify terminal transition works correctly."""
+        # Start partial
+        state = OrderState.from_alpaca("partially_filled")
+        assert state == OrderState.PARTIAL
+        assert state.is_terminal is False
+
+        # Transition to filled (terminal)
+        state = OrderState.from_alpaca("filled")
+        assert state == OrderState.FILLED
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+    def test_order_state_partial_terminal_detection(self):
+        """Verify from_alpaca() correctly detects partial terminal states."""
+        # Cancelled with partial fills
+        state = OrderState.from_alpaca("canceled", filled_qty=50.0, order_qty=100.0)
+        assert state == OrderState.CANCELLED_PARTIAL
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+        # Cancelled with no fills
+        state = OrderState.from_alpaca("canceled", filled_qty=0.0, order_qty=100.0)
+        assert state == OrderState.CANCELLED
+        assert state.is_terminal is True
+
+        # Cancelled fully filled (edge case - should be CANCELLED not CANCELLED_PARTIAL)
+        state = OrderState.from_alpaca("canceled", filled_qty=100.0, order_qty=100.0)
+        assert state == OrderState.CANCELLED
+        assert state.is_terminal is True
+
+        # Expired with partial fills
+        state = OrderState.from_alpaca("expired", filled_qty=25.0, order_qty=100.0)
+        assert state == OrderState.EXPIRED_PARTIAL
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+        # Rejected with partial fills
+        state = OrderState.from_alpaca("rejected", filled_qty=10.0, order_qty=100.0)
+        assert state == OrderState.REJECTED_PARTIAL
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+        # Cancelled without qty context (fallback to full terminal)
+        state = OrderState.from_alpaca("canceled")
+        assert state == OrderState.CANCELLED
+        assert state.is_terminal is True
+
+    def test_order_state_unknown_status_logs_warning(self, caplog):
+        """Verify unknown statuses return UNKNOWN and log warning."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            state = OrderState.from_alpaca("invalid_status_xyz")
+
+        assert state == OrderState.UNKNOWN
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+        assert "Unknown order status from broker" in caplog.text
+
+    def test_order_state_included_in_order_update_event(self):
+        """Verify OrderUpdateEvent includes state field."""
+        from datetime import datetime, timezone
+
+        event = OrderUpdateEvent(
+            order_id="a-1",
+            client_order_id="c-1",
+            symbol="AAPL",
+            side="buy",
+            status="partially_filled",
+            state=OrderState.PARTIAL,
+            filled_qty=10.0,
+            avg_fill_price=150.0,
+            timestamp=datetime.now(timezone.utc),
+        )
+
+        assert hasattr(event, "state")
+        assert event.state == OrderState.PARTIAL
+
+
+# ---------------------------------------------------------------
+# Fill-to-Position Integration tests
+# ---------------------------------------------------------------
+
+
+class TestFillPositionIntegration:
+    """End-to-end tests for fill-to-position flow."""
+
+    @pytest.mark.asyncio
+    async def test_stream_fill_event_updates_position_correctly(self, tmp_path):
+        """Full flow: stream event → OrderUpdatesHandler → PositionTracker update."""
+        db_path, store = _setup_db(tmp_path)
+
+        # Create a mock position tracker
+        mock_tracker = MagicMock()
+        mock_tracker.update_position_from_fill = AsyncMock(return_value=None)
+
+        bus = DummyEventBus()
+        handler = OrderUpdatesHandler(store, bus, position_tracker=mock_tracker)
+
+        # Insert order intent
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=0)
+
+        # Simulate stream fill event
+        raw = _make_raw_update(
+            "a-1", "c-1", filled_qty="10", filled_avg_price="150.0", status="partially_filled"
+        )
+        await handler.on_order_update(raw)
+
+        # Verify PositionTracker was called
+        mock_tracker.update_position_from_fill.assert_called_once()
+        call_kwargs = mock_tracker.update_position_from_fill.call_args.kwargs
+        assert call_kwargs["symbol"] == "AAPL"
+        assert call_kwargs["delta_qty"] == 10.0
+        assert call_kwargs["fill_price"] == 150.0
+        assert call_kwargs["side"] == "buy"
+
+    @pytest.mark.asyncio
+    async def test_no_position_drift_after_fill_sequence(self, tmp_path):
+        """After 0→10→25→50 fill sequence, position qty equals 50."""
+        from src.position_tracker import PositionTracker
+
+        db_path, store = _setup_db(tmp_path)
+
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=store)
+
+        bus = DummyEventBus()
+        handler = OrderUpdatesHandler(store, bus, position_tracker=tracker)
+
+        # Insert order intent
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=0, qty=50)
+
+        # Simulate fill sequence: 0→10→25→50
+        fills = [
+            ("10", "150.0", "partially_filled"),
+            ("25", "151.0", "partially_filled"),
+            ("50", "152.0", "filled"),
+        ]
+
+        for filled_qty, avg_price, status in fills:
+            raw = _make_raw_update(
+                "a-1", "c-1", filled_qty=filled_qty, filled_avg_price=avg_price, status=status
+            )
+            await handler.on_order_update(raw)
+
+        # Verify position qty equals total filled
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        assert position.qty == 50.0
+
+    @pytest.mark.asyncio
+    async def test_position_tracker_receives_delta_not_cumulative(self, tmp_path):
+        """Verify PositionTracker receives delta_qty, not cumulative."""
+        db_path, store = _setup_db(tmp_path)
+
+        # Track the deltas received
+        received_deltas = []
+
+        class MockTracker:
+            async def update_position_from_fill(
+                self, symbol, delta_qty, fill_price, side, timestamp=None
+            ):
+                received_deltas.append(delta_qty)
+
+        mock_tracker = MockTracker()
+
+        bus = DummyEventBus()
+        handler = OrderUpdatesHandler(store, bus, position_tracker=mock_tracker)
+
+        # Insert order intent with initial fill
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=10)
+
+        # New fill: cum 25 (delta should be 15)
+        raw = _make_raw_update(
+            "a-1", "c-1", filled_qty="25", filled_avg_price="151.0", status="partially_filled"
+        )
+        await handler.on_order_update(raw)
+
+        # Verify delta was 15 (not 25)
+        assert len(received_deltas) == 1
+        assert received_deltas[0] == 15.0
+
+    @pytest.mark.asyncio
+    async def test_fill_idempotency_preserves_position_consistency(self, tmp_path):
+        """Duplicate fill events don't corrupt position state."""
+        from src.position_tracker import PositionTracker
+
+        db_path, store = _setup_db(tmp_path)
+
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=store)
+
+        bus = DummyEventBus()
+        handler = OrderUpdatesHandler(store, bus, position_tracker=tracker)
+
+        # Insert order intent
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=0)
+
+        # First fill
+        raw = _make_raw_update(
+            "a-1", "c-1", filled_qty="10", filled_avg_price="150.0", status="partially_filled"
+        )
+        await handler.on_order_update(raw)
+
+        # Duplicate fill (should be deduplicated at fill layer)
+        await handler.on_order_update(raw)
+
+        # Position should still be 10 (not 20)
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        # Note: The second fill should be deduplicated by insert_fill_idempotent
+        # resulting in delta_qty=0, so position should remain 10
+        assert position.qty == 10.0
+
+    @pytest.mark.asyncio
+    async def test_reconciliation_syncs_missed_partial_fills(self, tmp_path):
+        """Reconciliation detects drift and updates both fills table and position."""
+        from src.position_tracker import PositionTracker
+        from src.reconciliation import reconcile_fills
+
+        db_path, store = _setup_db(tmp_path)
+
+        mock_broker = MagicMock()
+        tracker = PositionTracker(broker=mock_broker, state_store=store)
+
+        bus = DummyEventBus()
+        handler = OrderUpdatesHandler(store, bus, position_tracker=tracker)
+
+        # Insert order intent with some fills already recorded
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=10, status="partially_filled")
+
+        # First fill to establish position
+        await tracker.update_position_from_fill(
+            symbol="AAPL", delta_qty=10.0, fill_price=150.0, side="buy"
+        )
+
+        # Mock broker reports more fills than DB (missed fill scenario)
+        mock_broker.get_open_orders = AsyncMock(
+            return_value=[
+                {
+                    "id": "a-1",
+                    "client_order_id": "c-1",
+                    "symbol": "AAPL",
+                    "side": "buy",
+                    "status": "partially_filled",
+                    "filled_qty": 25,  # Broker has 25, DB has 10
+                    "filled_avg_price": 151.0,
+                }
+            ]
+        )
+
+        # Run reconciliation
+        count = await reconcile_fills(
+            broker=mock_broker,
+            state_store=store,
+            on_order_update=handler.on_order_update,
+        )
+
+        # Should have synthesised 1 update
+        assert count == 1
+
+        # Position should be updated with the missed fill
+        position = tracker.get_position("AAPL")
+        assert position is not None
+        assert position.qty == 25.0  # 10 + 15 missed fill

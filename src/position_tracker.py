@@ -66,6 +66,12 @@ class PositionTracker:
         self._last_updates: Dict[str, datetime] = {}
         # Global last update for full-tracker operations
         self._last_update: Optional[datetime] = None
+        # Store last closed position snapshots keyed by symbol so callers
+        # can retrieve closed-position info immediately after a close
+        # operation without changing the outward return semantics of
+        # `update_position_from_fill` (which historically returned None
+        # for closed positions).
+        self._last_closed_snapshots: Dict[str, PositionData] = {}
 
     def start_tracking(
         self,
@@ -100,6 +106,230 @@ class PositionTracker:
         self._persist_position(position)
         return position
 
+    async def update_position_from_fill(
+        self,
+        symbol: str,
+        delta_qty: float,
+        fill_price: float,
+        side: str,  # "buy" or "sell"
+        timestamp: Optional[datetime] = None,
+    ) -> Optional[PositionData]:
+        """Update position based on a fill event.
+
+        - Creates new position on first fill (not at order submission)
+        - Updates existing position qty and blended avg price on subsequent fills
+        - Closes position when qty reaches zero (full exit)
+
+        Args:
+            symbol: Trading symbol
+            delta_qty: Incremental fill quantity (always positive)
+            fill_price: Fill price for this incremental quantity
+            side: "buy" (increases position) or "sell" (decreases position)
+            timestamp: Optional timestamp for the fill
+
+        Returns:
+            Updated PositionData or None if position closed
+        """
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc)
+
+        # Skip zero-quantity fills
+        if delta_qty <= 0:
+            return self.get_position(symbol)
+
+        position = self._positions.get(symbol)
+
+        if side == "buy":
+            if position is None:
+                # First fill - create new long position
+                position = PositionData(
+                    symbol=symbol,
+                    side="long",
+                    qty=delta_qty,
+                    entry_price=fill_price,
+                    entry_time=timestamp,
+                    extreme_price=fill_price,
+                    last_updated=timestamp,
+                )
+                self._positions[symbol] = position
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Long position created on first fill: %s qty=%.4f @ %.2f",
+                    symbol,
+                    delta_qty,
+                    fill_price,
+                )
+            elif position.side == "short":
+                # Closing/reducing short position
+                current_qty = position.qty
+                new_qty = current_qty - delta_qty
+
+                if new_qty <= 0:
+                    # Short position fully closed
+                    closed_snapshot = PositionData(
+                        symbol=position.symbol,
+                        side=position.side,
+                        qty=0.0,
+                        entry_price=position.entry_price,
+                        entry_time=position.entry_time,
+                        extreme_price=position.extreme_price,
+                        atr=position.atr,
+                        trailing_stop_price=position.trailing_stop_price,
+                        trailing_stop_activated=position.trailing_stop_activated,
+                        pending_exit=position.pending_exit,
+                        last_updated=timestamp,
+                    )
+
+                    # Store snapshot for immediate retrieval by callers
+                    self._last_closed_snapshots[symbol] = closed_snapshot
+
+                    # Remove in-memory and persisted state
+                    self.stop_tracking(symbol)
+                    logger.info(
+                        "Short position closed on buy fill: %s qty=%.4f→0",
+                        symbol,
+                        current_qty,
+                    )
+                    return None
+                else:
+                    # Partial close - reduce short position
+                    position.qty = new_qty
+                    position.last_updated = timestamp
+                    self._last_updates[symbol] = timestamp
+                    self._last_update = timestamp
+                    self._persist_position(position, timestamp)
+                    logger.info(
+                        "Short position decreased: %s qty=%.4f→%.4f",
+                        symbol,
+                        current_qty,
+                        new_qty,
+                    )
+            else:
+                # Increasing long position - blend average price
+                current_qty = position.qty
+                current_avg = position.entry_price
+                new_qty = current_qty + delta_qty
+                total_cost = (current_qty * current_avg) + (delta_qty * fill_price)
+                new_avg = total_cost / new_qty
+
+                position.qty = new_qty
+                position.entry_price = new_avg
+                position.last_updated = timestamp
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Long position increased: %s qty=%.4f→%.4f avg=%.2f→%.2f",
+                    symbol,
+                    current_qty,
+                    new_qty,
+                    current_avg,
+                    new_avg,
+                )
+
+        elif side == "sell":
+            if position is None:
+                # First sell fill with no existing position: treat as opening a short
+                position = PositionData(
+                    symbol=symbol,
+                    side="short",
+                    qty=delta_qty,
+                    entry_price=fill_price,
+                    entry_time=timestamp,
+                    extreme_price=fill_price,
+                    last_updated=timestamp,
+                )
+                self._positions[symbol] = position
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Short position created on first sell fill: %s qty=%.4f @ %.2f",
+                    symbol,
+                    delta_qty,
+                    fill_price,
+                )
+                return position
+
+            # Decrease long position or increase short position
+            if position.side == "short":
+                # Increasing short position - weighted average entry price
+                current_qty = position.qty
+                current_entry = position.entry_price
+                total_qty = current_qty + delta_qty
+
+                # Weighted average: (qty1*price1 + qty2*price2) / (qty1 + qty2)
+                new_entry_price = (
+                    (current_qty * current_entry) + (delta_qty * fill_price)
+                ) / total_qty
+
+                position.qty = total_qty
+                position.entry_price = new_entry_price
+                position.last_updated = timestamp
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Short position increased: %s qty=%.4f→%.4f entry=%.2f→%.2f",
+                    symbol,
+                    current_qty,
+                    total_qty,
+                    current_entry,
+                    new_entry_price,
+                )
+                return position
+
+            # Decrease long position - avg price unchanged
+            current_qty = position.qty
+            new_qty = current_qty - delta_qty
+
+            if new_qty <= 0:
+                # Position fully closed. Capture a snapshot of the position
+                # before removing it so callers can access entry/exit info.
+                closed_snapshot = PositionData(
+                    symbol=position.symbol,
+                    side=position.side,
+                    qty=0.0,
+                    entry_price=position.entry_price,
+                    entry_time=position.entry_time,
+                    extreme_price=position.extreme_price,
+                    atr=position.atr,
+                    trailing_stop_price=position.trailing_stop_price,
+                    trailing_stop_activated=position.trailing_stop_activated,
+                    pending_exit=position.pending_exit,
+                    last_updated=timestamp,
+                )
+
+                # Store snapshot for immediate retrieval by callers (non-persistent)
+                self._last_closed_snapshots[symbol] = closed_snapshot
+
+                # Remove in-memory and persisted state
+                self.stop_tracking(symbol)
+                logger.info(
+                    "Position closed on sell fill: %s qty=%.4f→0",
+                    symbol,
+                    current_qty,
+                )
+                # Preserve original API: return None to indicate the position
+                # is closed (as callers historically expected).
+                return None
+            else:
+                position.qty = new_qty
+                position.last_updated = timestamp
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Position decreased: %s qty=%.4f→%.4f",
+                    symbol,
+                    current_qty,
+                    new_qty,
+                )
+
+        return position
+
     def stop_tracking(self, symbol: str) -> None:
         if symbol in self._positions:
             del self._positions[symbol]
@@ -114,6 +344,14 @@ class PositionTracker:
     def get_position_qty(self, symbol: str) -> Optional[float]:
         p = self.get_position(symbol)
         return p.qty if p is not None else None
+
+    def pop_last_closed_snapshot(self, symbol: str) -> Optional[PositionData]:
+        """Return and remove the last closed position snapshot for `symbol`.
+
+        This provides a safe handoff for callers that need to access the
+        closed position's entry/exit info immediately after a close.
+        """
+        return self._last_closed_snapshots.pop(symbol, None)
 
     def update_current_price(self, symbol: str, current_price: float) -> Optional[PositionData]:
         position = self._positions.get(symbol)
