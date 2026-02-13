@@ -14,7 +14,16 @@ def _init_db(db_path: str) -> None:
     SchemaManager.ensure_schema(db_path)
 
 
-def _insert_order_intent(db_path: str, client_order_id: str, alpaca_order_id: str, status: str, filled_qty: float = 0.0, symbol: str = "AAPL", side: str = "buy", qty: float = 100.0) -> None:
+def _insert_order_intent(
+    db_path: str,
+    client_order_id: str,
+    alpaca_order_id: str,
+    status: str,
+    filled_qty: float = 0.0,
+    symbol: str = "AAPL",
+    side: str = "buy",
+    qty: float = 100.0,
+) -> None:
     now = datetime.now(timezone.utc).isoformat()
     with sqlite3.connect(db_path) as conn:
         cur = conn.cursor()
@@ -52,7 +61,9 @@ async def test_reconcile_fills_synthesises_on_broker_drift(tmp_path):
 
     on_order_update = AsyncMock()
 
-    count = await reconcile_fills(broker=mock_broker, state_store=store, on_order_update=on_order_update)
+    count = await reconcile_fills(
+        broker=mock_broker, state_store=store, on_order_update=on_order_update
+    )
 
     assert count == 1
     assert on_order_update.await_count == 1
@@ -71,7 +82,9 @@ async def test_reconcile_fills_handles_broker_api_failure(tmp_path):
 
     on_order_update = AsyncMock()
 
-    count = await reconcile_fills(broker=mock_broker, state_store=store, on_order_update=on_order_update)
+    count = await reconcile_fills(
+        broker=mock_broker, state_store=store, on_order_update=on_order_update
+    )
 
     assert count == 0
     assert on_order_update.await_count == 0
@@ -89,19 +102,23 @@ async def test_reconcile_fills_fetches_individual_order_if_missing_from_open(tmp
     # No open orders returned
     mock_broker.get_open_orders = AsyncMock(return_value=[])
     # But broker.get_order returns the authoritative order with higher filled_qty
-    mock_broker.get_order = AsyncMock(return_value={
-        "id": "a-2",
-        "client_order_id": "c-2",
-        "symbol": "AAPL",
-        "side": "buy",
-        "status": "partially_filled",
-        "filled_qty": 15,
-        "filled_avg_price": 150.0,
-    })
+    mock_broker.get_order = AsyncMock(
+        return_value={
+            "id": "a-2",
+            "client_order_id": "c-2",
+            "symbol": "AAPL",
+            "side": "buy",
+            "status": "partially_filled",
+            "filled_qty": 15,
+            "filled_avg_price": 150.0,
+        }
+    )
 
     on_order_update = AsyncMock()
 
-    count = await reconcile_fills(broker=mock_broker, state_store=store, on_order_update=on_order_update)
+    count = await reconcile_fills(
+        broker=mock_broker, state_store=store, on_order_update=on_order_update
+    )
 
     assert count == 1
     assert on_order_update.await_count == 1
@@ -121,7 +138,9 @@ async def test_reconcile_fills_skips_terminal_or_missing_orders(tmp_path):
 
     on_order_update = AsyncMock()
 
-    count = await reconcile_fills(broker=mock_broker, state_store=store, on_order_update=on_order_update)
+    count = await reconcile_fills(
+        broker=mock_broker, state_store=store, on_order_update=on_order_update
+    )
 
     assert count == 0
     assert on_order_update.await_count == 0
