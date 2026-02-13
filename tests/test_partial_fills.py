@@ -1098,13 +1098,14 @@ class TestOrderStateEnum:
         states = {
             OrderState.PENDING,
             OrderState.SUBMITTED,
+            OrderState.PENDING_CANCEL,
             OrderState.PARTIAL,
             OrderState.FILLED,
             OrderState.CANCELLED,
             OrderState.EXPIRED,
             OrderState.REJECTED,
         }
-        assert len(states) == 7
+        assert len(states) == 8
 
     def test_order_state_from_alpaca_mapping_correct(self):
         """Verify all Alpaca status strings map to correct OrderState."""
@@ -1116,7 +1117,7 @@ class TestOrderStateEnum:
             ("partially_filled", OrderState.PARTIAL),
             ("filled", OrderState.FILLED),
             ("canceled", OrderState.CANCELLED),
-            ("pending_cancel", OrderState.CANCELLED),
+            ("pending_cancel", OrderState.PENDING_CANCEL),
             ("expired", OrderState.EXPIRED),
             ("rejected", OrderState.REJECTED),
         ]

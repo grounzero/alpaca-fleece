@@ -10,6 +10,7 @@ class OrderState(Enum):
     # Non-terminal states (order is still open)
     PENDING = "pending"  # Alpaca: new, pending_new
     SUBMITTED = "submitted"  # Alpaca: submitted, accepted
+    PENDING_CANCEL = "pending_cancel"  # Alpaca: pending_cancel (cancellation requested)
     PARTIAL = "partial"  # Alpaca: partially_filled
 
     # Terminal states (order is complete/cancelled)
@@ -29,7 +30,11 @@ class OrderState(Enum):
             "partially_filled": cls.PARTIAL,
             "filled": cls.FILLED,
             "canceled": cls.CANCELLED,
-            "pending_cancel": cls.CANCELLED,
+            # "pending_cancel" indicates a cancellation request has been
+            # submitted but the order may still receive fills until the
+            # exchange acknowledges the cancel. Treat it as a non-terminal
+            # state with fill potential.
+            "pending_cancel": cls.PENDING_CANCEL,
             "expired": cls.EXPIRED,
             "rejected": cls.REJECTED,
         }
@@ -51,5 +56,6 @@ class OrderState(Enum):
         return self in {
             OrderState.PENDING,
             OrderState.SUBMITTED,
+            OrderState.PENDING_CANCEL,
             OrderState.PARTIAL,
         }
