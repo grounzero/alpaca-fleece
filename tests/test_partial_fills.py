@@ -968,8 +968,13 @@ class TestPositionTrackerFillIntegration:
         assert tracker.get_position("AAPL") is None
 
     @pytest.mark.asyncio
-    async def test_position_unchanged_on_duplicate_fill_event(self, tmp_path):
-        """Verify duplicate fill events don't double-count position qty."""
+    async def test_position_processes_each_delta_not_idempotent(self, tmp_path):
+        """Verify PositionTracker processes each delta (idempotency handled upstream).
+
+        PositionTracker is deliberately NOT idempotent - it applies every delta
+        it receives. Idempotency is enforced upstream in OrderUpdatesHandler via
+        insert_fill_idempotent() which prevents duplicate deltas from reaching here.
+        """
         db_path, state_store = _setup_db(tmp_path)
         mock_broker = MagicMock()
         tracker = PositionTracker(broker=mock_broker, state_store=state_store)
@@ -982,7 +987,7 @@ class TestPositionTrackerFillIntegration:
             side="buy",
         )
 
-        # Duplicate fill (same delta)
+        # Second fill (same delta - would be prevented upstream in real system)
         await tracker.update_position_from_fill(
             symbol="AAPL",
             delta_qty=10.0,
@@ -992,8 +997,8 @@ class TestPositionTrackerFillIntegration:
 
         position = tracker.get_position("AAPL")
         assert position is not None
-        # Should be 20.0 because we intentionally call it twice with delta
-        # (idempotency is handled at the fill layer, not position layer)
+        # Both deltas are processed: 10 + 10 = 20
+        # (In production, OrderUpdatesHandler prevents duplicate deltas)
         assert position.qty == 20.0
 
     @pytest.mark.asyncio
