@@ -696,7 +696,7 @@ class StateStore:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
-                "SELECT last_attempt_ts_utc FROM exit_attempts WHERE symbol = ?",
+                "SELECT attempt_count, last_attempt_ts_utc FROM exit_attempts WHERE symbol = ?",
                 (symbol,),
             )
             row = cursor.fetchone()
@@ -704,7 +704,8 @@ class StateStore:
                 # No attempts recorded - allowed
                 return True
 
-            last_attempt_ts_str = row[0]
+            attempt_count = int(row[0])
+            last_attempt_ts_str = row[1]
             try:
                 last_attempt_ts = datetime.fromisoformat(last_attempt_ts_str).astimezone(
                     timezone.utc
@@ -715,5 +716,10 @@ class StateStore:
             now_utc = datetime.now(timezone.utc)
             elapsed_seconds = (now_utc - last_attempt_ts).total_seconds()
 
-            backoff = self.get_exit_backoff_seconds(symbol)
+            # Reset after 1 hour
+            if elapsed_seconds > 3600:
+                return True
+
+            # Compute exponential backoff inline (same logic as get_exit_backoff_seconds)
+            backoff = int(min(30 * (2 ** (attempt_count - 1)), 600))
             return elapsed_seconds >= backoff

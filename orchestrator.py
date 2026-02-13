@@ -747,8 +747,18 @@ class Orchestrator:
                             metrics.record_order_rejected()
 
                     elif isinstance(event, OrderUpdateEvent):
+                        # Notify exit_manager to track exit order lifecycle
+                        if self.exit_manager:
+                            await self.exit_manager.handle_order_update(event)
+
                         # Handle order fill events for P&L tracking
-                        if event.state == OrderState.FILLED:
+                        # Include partial terminals to record P&L for fills that occurred
+                        if event.state in {
+                            OrderState.FILLED,
+                            OrderState.CANCELLED_PARTIAL,
+                            OrderState.EXPIRED_PARTIAL,
+                            OrderState.REJECTED_PARTIAL,
+                        }:
                             await self._handle_order_fill(event)
 
                 except Exception as e:

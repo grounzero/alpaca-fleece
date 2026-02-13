@@ -1142,10 +1142,19 @@ class TestOrderStateEnum:
         assert OrderState.EXPIRED.is_terminal is True
         assert OrderState.REJECTED.is_terminal is True
 
+        # Partial terminal states (also terminal)
+        assert OrderState.CANCELLED_PARTIAL.is_terminal is True
+        assert OrderState.EXPIRED_PARTIAL.is_terminal is True
+        assert OrderState.REJECTED_PARTIAL.is_terminal is True
+
+        # Unknown state (treated as terminal)
+        assert OrderState.UNKNOWN.is_terminal is True
+
         # Non-terminal states
         assert OrderState.PENDING.is_terminal is False
         assert OrderState.SUBMITTED.is_terminal is False
         assert OrderState.PARTIAL.is_terminal is False
+        assert OrderState.PENDING_CANCEL.is_terminal is False
 
     def test_order_state_has_fill_potential_identifies_correctly(self):
         """Verify states that can receive fills return True."""
@@ -1153,12 +1162,21 @@ class TestOrderStateEnum:
         assert OrderState.PENDING.has_fill_potential is True
         assert OrderState.SUBMITTED.has_fill_potential is True
         assert OrderState.PARTIAL.has_fill_potential is True
+        assert OrderState.PENDING_CANCEL.has_fill_potential is True
 
         # Terminal states (no fill potential)
         assert OrderState.FILLED.has_fill_potential is False
         assert OrderState.CANCELLED.has_fill_potential is False
         assert OrderState.EXPIRED.has_fill_potential is False
         assert OrderState.REJECTED.has_fill_potential is False
+
+        # Partial terminal states (no fill potential)
+        assert OrderState.CANCELLED_PARTIAL.has_fill_potential is False
+        assert OrderState.EXPIRED_PARTIAL.has_fill_potential is False
+        assert OrderState.REJECTED_PARTIAL.has_fill_potential is False
+
+        # Unknown state (no fill potential)
+        assert OrderState.UNKNOWN.has_fill_potential is False
 
     def test_order_state_transition_from_pending_to_partial(self):
         """Verify state progression through order lifecycle."""
@@ -1189,6 +1207,53 @@ class TestOrderStateEnum:
         assert state == OrderState.FILLED
         assert state.is_terminal is True
         assert state.has_fill_potential is False
+
+    def test_order_state_partial_terminal_detection(self):
+        """Verify from_alpaca() correctly detects partial terminal states."""
+        # Cancelled with partial fills
+        state = OrderState.from_alpaca("canceled", filled_qty=50.0, order_qty=100.0)
+        assert state == OrderState.CANCELLED_PARTIAL
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+        # Cancelled with no fills
+        state = OrderState.from_alpaca("canceled", filled_qty=0.0, order_qty=100.0)
+        assert state == OrderState.CANCELLED
+        assert state.is_terminal is True
+
+        # Cancelled fully filled (edge case - should be CANCELLED not CANCELLED_PARTIAL)
+        state = OrderState.from_alpaca("canceled", filled_qty=100.0, order_qty=100.0)
+        assert state == OrderState.CANCELLED
+        assert state.is_terminal is True
+
+        # Expired with partial fills
+        state = OrderState.from_alpaca("expired", filled_qty=25.0, order_qty=100.0)
+        assert state == OrderState.EXPIRED_PARTIAL
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+        # Rejected with partial fills
+        state = OrderState.from_alpaca("rejected", filled_qty=10.0, order_qty=100.0)
+        assert state == OrderState.REJECTED_PARTIAL
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+
+        # Cancelled without qty context (fallback to full terminal)
+        state = OrderState.from_alpaca("canceled")
+        assert state == OrderState.CANCELLED
+        assert state.is_terminal is True
+
+    def test_order_state_unknown_status_logs_warning(self, caplog):
+        """Verify unknown statuses return UNKNOWN and log warning."""
+        import logging
+
+        with caplog.at_level(logging.WARNING):
+            state = OrderState.from_alpaca("invalid_status_xyz")
+
+        assert state == OrderState.UNKNOWN
+        assert state.is_terminal is True
+        assert state.has_fill_potential is False
+        assert "Unknown order status from broker" in caplog.text
 
     def test_order_state_included_in_order_update_event(self):
         """Verify OrderUpdateEvent includes state field."""

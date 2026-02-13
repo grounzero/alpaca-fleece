@@ -140,7 +140,6 @@ class ExitManager:
 
         self._running = False
         self._monitor_task: Optional[asyncio.Task[Any]] = None
-        self._order_listener_task: Optional[asyncio.Task[Any]] = None
 
     async def start(self) -> None:
         """Start the exit manager monitoring loop."""
@@ -166,7 +165,6 @@ class ExitManager:
 
         self._running = True
         self._monitor_task = asyncio.create_task(self._monitor_loop())
-        self._order_listener_task = asyncio.create_task(self._order_update_listener())
         logger.info(f"Exit manager started (checking every {self.check_interval_seconds}s)")
 
     async def stop(self) -> None:
@@ -184,34 +182,9 @@ class ExitManager:
             except asyncio.CancelledError:
                 pass
 
-        if self._order_listener_task:
-            self._order_listener_task.cancel()
-            try:
-                await self._order_listener_task
-            except asyncio.CancelledError:
-                pass
-
         logger.info("Exit manager stopped")
 
-    async def _order_update_listener(self) -> None:
-        """Listen for order updates and clear pending_exit on terminal failures."""
-        logger.info("Exit order update listener started")
-
-        while self._running:
-            try:
-                event = await self.event_bus.subscribe()
-                if event is None:
-                    continue
-
-                if isinstance(event, OrderUpdateEvent):
-                    await self._on_order_update_for_exit_tracking(event)
-
-            except Exception as e:
-                logger.error(f"Error in exit order update listener: {e}", exc_info=True)
-
-        logger.info("Exit order update listener ended")
-
-    async def _on_order_update_for_exit_tracking(self, event: OrderUpdateEvent) -> None:
+    async def handle_order_update(self, event: OrderUpdateEvent) -> None:
         """Handle order update events for exit order lifecycle tracking.
 
         Clears pending_exit flag when exit orders reach terminal non-filled states.
