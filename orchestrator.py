@@ -27,6 +27,7 @@ from src.exit_manager import ExitManager
 from src.housekeeping import Housekeeping
 from src.logger import setup_logger
 from src.metrics import metrics, write_metrics_to_file
+from src.models.order_state import OrderState
 from src.notifier import AlertNotifier
 from src.order_manager import OrderManager
 from src.position_sizer import calculate_position_size
@@ -37,7 +38,6 @@ from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 from src.strategy.sma_crossover import SMACrossover
 from src.stream_polling import StreamPolling  # Consistent with main.py - HTTP polling
-from src.utils import parse_optional_float
 
 logger = logging.getLogger("alpaca_bot")
 
@@ -361,11 +361,26 @@ class Orchestrator:
                 secret_key=self.env["ALPACA_SECRET_KEY"],
             )
 
+            # Initialise position tracker early so it can receive fill events
+            logger.info("Initialising position tracker...")
+            exits_config = self.trading_config.get("exits", {})
+            self.position_tracker = PositionTracker(
+                broker=self.broker,
+                state_store=self.state_store,
+                trailing_stop_enabled=exits_config.get("trailing_stop_enabled", False),
+                trailing_stop_activation_pct=exits_config.get("trailing_stop_activation_pct", 0.01),
+                trailing_stop_trail_pct=exits_config.get("trailing_stop_trail_pct", 0.005),
+            )
+            # Load any persisted positions
+            self.position_tracker.load_persisted_positions()
+            logger.info("   Position tracker ready")
+
             logger.info("Starting data handler...")
             self.data_handler = DataHandler(
                 state_store=self.state_store,
                 event_bus=self.event_bus,
                 market_data_client=self.market_data_client,
+                position_tracker=self.position_tracker,
             )
             logger.info("   Data handler ready")
 
@@ -448,30 +463,11 @@ class Orchestrator:
             self.housekeeping = Housekeeping(self.broker, self.state_store)
             logger.info("   Housekeeping ready")
 
-            # (Removed duplicate initialization block.)
-            # The position tracker must be initialised, loaded from persistence,
-            # and reconciled with the broker exactly once before constructing
-            # the `OrderManager`. A previous version attempted to sync a
-            # non-existent tracker earlier in this method which would raise,
-            # and then immediately re-initialised the tracker, discarding the
-            # earlier state. The code below performs the init/load/sync once
-            # and is the authoritative startup sequence.
-
-            # Initialise position tracker
-            logger.info("Initialising position tracker...")
-            exits_config = self.trading_config.get("exits", {})
-            self.position_tracker = PositionTracker(
-                broker=self.broker,
-                state_store=self.state_store,
-                trailing_stop_enabled=exits_config.get("trailing_stop_enabled", False),
-                trailing_stop_activation_pct=exits_config.get("trailing_stop_activation_pct", 0.01),
-                trailing_stop_trail_pct=exits_config.get("trailing_stop_trail_pct", 0.005),
-            )
-            # Load any persisted positions first
-            self.position_tracker.load_persisted_positions()
-            # Reconcile/sync with broker to ensure tracker reflects live state
+            # Position tracker was initialised in Phase 2 to receive fill events.
+            # Sync with broker here to ensure tracker reflects live state before trading.
+            logger.info("Syncing position tracker with broker...")
             await self.position_tracker.sync_with_broker()
-            logger.info("   Position tracker ready")
+            logger.info("   Position tracker synced")
 
             # Ensure orchestrator enforces that OrderManager receives a tracker
             # during runtime startup so position-aware gating cannot run with
@@ -752,7 +748,7 @@ class Orchestrator:
 
                     elif isinstance(event, OrderUpdateEvent):
                         # Handle order fill events for P&L tracking
-                        if event.status == "filled":
+                        if event.state == OrderState.FILLED:
                             await self._handle_order_fill(event)
 
                 except Exception as e:
@@ -763,7 +759,11 @@ class Orchestrator:
             raise
 
     async def _handle_order_fill(self, event: OrderUpdateEvent) -> None:
-        """Handle order fill events for P&L tracking and position management.
+        """Handle order fill events for P&L tracking and metrics.
+
+        Position creation/updates are handled by OrderUpdatesHandler via
+        PositionTracker.update_position_from_fill(). This method handles
+        P&L calculation for sell fills and updates metrics.
 
         Args:
             event: OrderUpdateEvent with fill details
@@ -778,33 +778,21 @@ class Orchestrator:
         fill_price = event.avg_fill_price
 
         if side == "buy":
-            # Start tracking position with actual fill price
-            atr_raw = order_intent.get("atr") if order_intent else None
-            atr_value = parse_optional_float(atr_raw)
-
-            self.position_tracker.start_tracking(
-                symbol=event.symbol,
-                fill_price=fill_price,
-                qty=event.filled_qty,
-                side="long",
-                atr=atr_value,
-            )
+            # Position was already created/updated by OrderUpdatesHandler
             logger.info(
                 f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} qty={event.filled_qty}"
             )
         elif side == "sell":
-            # Calculate realized P&L
+            # Calculate realized P&L (position already updated by OrderUpdatesHandler)
             position = self.position_tracker.get_position(event.symbol)
             if position:
+                # Use the position's entry price for P&L calc
                 realized_pnl = (fill_price - position.entry_price) * event.filled_qty
 
                 # Update daily P&L
                 current_daily_pnl = self.state_store.get_daily_pnl()
                 new_daily_pnl = current_daily_pnl + realized_pnl
                 self.state_store.save_daily_pnl(new_daily_pnl)
-
-                # Update position tracker
-                self.position_tracker.stop_tracking(event.symbol)
 
                 # Increment daily trade count
                 count = self.state_store.get_daily_trade_count()

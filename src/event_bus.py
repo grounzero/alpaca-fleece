@@ -10,6 +10,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Optional
 
+from src.models.order_state import OrderState
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,6 +73,7 @@ class OrderUpdateEvent:
     symbol: str
     side: str  # buy, sell
     status: str  # new, filled, partially_filled, canceled, rejected, expired
+    state: OrderState  # Canonical enum representation of status
     filled_qty: Optional[float]
     avg_fill_price: Optional[float]
     timestamp: datetime

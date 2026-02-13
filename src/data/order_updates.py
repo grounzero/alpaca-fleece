@@ -14,6 +14,8 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.event_bus import EventBus, OrderUpdateEvent
+from src.models.order_state import OrderState
+from src.position_tracker import PositionTracker
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -26,15 +28,22 @@ _QTY_EPSILON = 1e-9
 class OrderUpdatesHandler:
     """Order updates handler with partial-fill support."""
 
-    def __init__(self, state_store: StateStore, event_bus: EventBus) -> None:
+    def __init__(
+        self,
+        state_store: StateStore,
+        event_bus: EventBus,
+        position_tracker: Optional[PositionTracker] = None,
+    ) -> None:
         """Initialise order updates handler.
 
         Args:
             state_store: SQLite state store
             event_bus: Event bus for publishing
+            position_tracker: Optional PositionTracker for fill-to-position wiring
         """
         self.state_store = state_store
         self.event_bus = event_bus
+        self.position_tracker = position_tracker
 
     async def on_order_update(self, raw_update: Any) -> None:
         """Process raw order update from stream.
@@ -53,8 +62,23 @@ class OrderUpdatesHandler:
             event = self._process_fill_delta(event)
 
             # Terminal trade recording (idempotent)
-            if event.status == "filled":
+            if event.state == OrderState.FILLED:
                 self._record_trade(event)
+
+            # Update PositionTracker on fill delta (if tracker available)
+            if (
+                self.position_tracker is not None
+                and event.delta_qty is not None
+                and event.delta_qty > 0
+                and event.cum_avg_fill_price is not None
+            ):
+                await self.position_tracker.update_position_from_fill(
+                    symbol=event.symbol,
+                    delta_qty=event.delta_qty,
+                    fill_price=event.cum_avg_fill_price,
+                    side=event.side,
+                    timestamp=event.timestamp,
+                )
 
             # Publish to EventBus
             await self.event_bus.publish(event)
@@ -101,6 +125,7 @@ class OrderUpdatesHandler:
                 symbol=event.symbol,
                 side=event.side,
                 status=event.status,
+                state=event.state,
                 filled_qty=event.filled_qty,
                 avg_fill_price=event.avg_fill_price,
                 fill_id=event.fill_id,
@@ -140,6 +165,7 @@ class OrderUpdatesHandler:
                 symbol=event.symbol,
                 side=event.side,
                 status=event.status,
+                state=event.state,
                 filled_qty=event.filled_qty,
                 avg_fill_price=event.avg_fill_price,
                 fill_id=event.fill_id,
@@ -197,6 +223,7 @@ class OrderUpdatesHandler:
             symbol=event.symbol,
             side=event.side,
             status=event.status,
+            state=event.state,
             filled_qty=event.filled_qty,
             avg_fill_price=event.avg_fill_price,
             fill_id=event.fill_id,
@@ -275,12 +302,16 @@ class OrderUpdatesHandler:
         if raw_fill_id is not None:
             fill_id_value = str(raw_fill_id)
 
+        # Convert status to OrderState enum
+        order_state = OrderState.from_alpaca(status_value)
+
         return OrderUpdateEvent(
             order_id=order_id,
             client_order_id=client_order_id,
             symbol=symbol,
             side=side_value,
             status=status_value,
+            state=order_state,
             filled_qty=parsed_filled_qty,
             avg_fill_price=parsed_filled_avg_price,
             fill_id=fill_id_value,

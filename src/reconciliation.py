@@ -15,6 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, cast
 
+from src.models.order_state import OrderState
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -25,18 +26,6 @@ class ReconciliationError(Exception):
     """Raised when reconciliation finds discrepancies."""
 
     pass
-
-
-TERMINAL_STATUSES = {"filled", "canceled", "expired", "rejected"}
-NON_TERMINAL_STATUSES = {
-    "new",
-    "submitted",
-    "accepted",
-    "partially_filled",
-    "pending_new",
-    "pending_cancel",
-    "pending_replace",
-}
 
 
 async def reconcile(broker: Any, state_store: StateStore) -> None:
@@ -74,8 +63,10 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
         if client_id in {o["client_order_id"] for o in sqlite_orders}:
             sqlite_order: Any = next(o for o in sqlite_orders if o["client_order_id"] == client_id)
             sqlite_status = str(sqlite_order.get("status") or "unknown")
+            sqlite_state = OrderState.from_alpaca(sqlite_status)
+            alpaca_state = OrderState.from_alpaca(alpaca_status)
 
-            if alpaca_status in TERMINAL_STATUSES and sqlite_status in NON_TERMINAL_STATUSES:
+            if alpaca_state.is_terminal and sqlite_state.has_fill_potential:
                 # Update SQLite to match Alpaca (Alpaca is authoritative for terminal states)
                 logger.info(f"Updating {client_id}: {sqlite_status} → {alpaca_status}")
                 state_store.update_order_intent(
@@ -89,14 +80,16 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
     for sqlite_order_item in sqlite_orders:
         client_id = str(sqlite_order_item["client_order_id"])
         sqlite_status_check: str = str(sqlite_order_item.get("status") or "")
+        sqlite_state_check = OrderState.from_alpaca(sqlite_status_check)
 
-        if sqlite_status_check in TERMINAL_STATUSES:
+        if sqlite_state_check.is_terminal:
             if client_id not in alpaca_order_ids:
                 # Order is terminal locally, not in Alpaca (possible timeout/already cleared)
                 continue
 
             alpaca_status_from_ids: str = alpaca_order_ids[client_id].get("status") or ""
-            if alpaca_status_from_ids in NON_TERMINAL_STATUSES:
+            alpaca_state_from_ids = OrderState.from_alpaca(alpaca_status_from_ids)
+            if alpaca_state_from_ids.has_fill_potential:
                 discrepancies.append(
                     {
                         "type": "order_status_mismatch",
@@ -231,7 +224,7 @@ async def reconcile_fills(
         non_terminal = [
             o
             for o in all_intents
-            if str(o.get("status", "")).lower() in NON_TERMINAL_STATUSES
+            if OrderState.from_alpaca(str(o.get("status", ""))).has_fill_potential
             and o.get("alpaca_order_id")
         ]
 

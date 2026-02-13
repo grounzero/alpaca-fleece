@@ -100,6 +100,122 @@ class PositionTracker:
         self._persist_position(position)
         return position
 
+    async def update_position_from_fill(
+        self,
+        symbol: str,
+        delta_qty: float,
+        fill_price: float,
+        side: str,  # "buy" or "sell"
+        timestamp: Optional[datetime] = None,
+    ) -> Optional[PositionData]:
+        """Update position based on a fill event.
+
+        - Creates new position on first fill (not at order submission)
+        - Updates existing position qty and blended avg price on subsequent fills
+        - Closes position when qty reaches zero (full exit)
+
+        Args:
+            symbol: Trading symbol
+            delta_qty: Incremental fill quantity (always positive)
+            fill_price: Fill price for this incremental quantity
+            side: "buy" (increases position) or "sell" (decreases position)
+            timestamp: Optional timestamp for the fill
+
+        Returns:
+            Updated PositionData or None if position closed
+        """
+        if timestamp is None:
+            timestamp = datetime.now(timezone.utc)
+
+        # Skip zero-quantity fills
+        if delta_qty <= 0:
+            return self.get_position(symbol)
+
+        position = self._positions.get(symbol)
+
+        if side == "buy":
+            if position is None:
+                # First fill - create new position
+                position = PositionData(
+                    symbol=symbol,
+                    side="long",
+                    qty=delta_qty,
+                    entry_price=fill_price,
+                    entry_time=timestamp,
+                    extreme_price=fill_price,
+                    last_updated=timestamp,
+                )
+                self._positions[symbol] = position
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Position created on first fill: %s qty=%.4f @ %.2f",
+                    symbol,
+                    delta_qty,
+                    fill_price,
+                )
+            else:
+                # Additional fill - blend average price
+                current_qty = position.qty
+                current_avg = position.entry_price
+                new_qty = current_qty + delta_qty
+                total_cost = (current_qty * current_avg) + (delta_qty * fill_price)
+                new_avg = total_cost / new_qty
+
+                position.qty = new_qty
+                position.entry_price = new_avg
+                position.last_updated = timestamp
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Position increased: %s qty=%.4f→%.4f avg=%.2f→%.2f",
+                    symbol,
+                    current_qty,
+                    new_qty,
+                    current_avg,
+                    new_avg,
+                )
+
+        elif side == "sell":
+            if position is None:
+                # Attempting to sell without existing position
+                logger.warning(
+                    "Sell fill without existing position: %s qty=%.4f",
+                    symbol,
+                    delta_qty,
+                )
+                return None
+
+            # Decrease position - avg price unchanged
+            current_qty = position.qty
+            new_qty = current_qty - delta_qty
+
+            if new_qty <= 0:
+                # Position fully closed
+                self.stop_tracking(symbol)
+                logger.info(
+                    "Position closed on sell fill: %s qty=%.4f→0",
+                    symbol,
+                    current_qty,
+                )
+                return None
+            else:
+                position.qty = new_qty
+                position.last_updated = timestamp
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Position decreased: %s qty=%.4f→%.4f",
+                    symbol,
+                    current_qty,
+                    new_qty,
+                )
+
+        return position
+
     def stop_tracking(self, symbol: str) -> None:
         if symbol in self._positions:
             del self._positions[symbol]
