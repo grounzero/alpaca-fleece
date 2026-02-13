@@ -529,12 +529,16 @@ class StateStore:
         timestamp_utc: str,
         fill_id: Optional[str] = None,
         price_is_estimate: bool = True,
+        delta_fill_price: Optional[float] = None,
     ) -> bool:
         """Insert a fill row idempotently. Returns True if inserted, False if duplicate.
 
         Uses a computed fill_dedupe_key for the unique constraint:
         - If fill_id is present: uses the fill_id
         - If fill_id is absent: uses 'CUM:<cum_qty>' as the key
+
+        Args:
+            delta_fill_price: Incremental fill price (preferred over cumulative avg)
         """
         dedupe_key = fill_id if fill_id else f"CUM:{cum_qty}"
         with sqlite3.connect(self.db_path) as conn:
@@ -544,8 +548,8 @@ class StateStore:
                     """INSERT INTO fills
                        (alpaca_order_id, client_order_id, symbol, side,
                         delta_qty, cum_qty, cum_avg_price, timestamp_utc,
-                        fill_id, price_is_estimate, fill_dedupe_key)
-                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                        fill_id, price_is_estimate, fill_dedupe_key, delta_fill_price)
+                       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
                     (
                         alpaca_order_id,
                         client_order_id,
@@ -558,6 +562,7 @@ class StateStore:
                         fill_id,
                         1 if price_is_estimate else 0,
                         dedupe_key,
+                        delta_fill_price,
                     ),
                 )
                 conn.commit()
@@ -607,3 +612,108 @@ class StateStore:
                 ),
             )
             conn.commit()
+
+    # ------------------------------------------------------------------
+    # Exit retry backoff tracking
+    # ------------------------------------------------------------------
+
+    def record_exit_attempt(self, symbol: str, reason: str) -> None:
+        """Record an exit attempt for a symbol (upsert to exit_attempts table).
+
+        Increments attempt_count and updates last_attempt_ts_utc.
+
+        Args:
+            symbol: Stock symbol
+            reason: Exit reason (e.g., "stop_loss", "profit_target")
+        """
+        now_utc = datetime.now(timezone.utc).isoformat()
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                """INSERT INTO exit_attempts (symbol, attempt_count, last_attempt_ts_utc, reason)
+                   VALUES (?, 1, ?, ?)
+                   ON CONFLICT(symbol) DO UPDATE SET
+                       attempt_count = attempt_count + 1,
+                       last_attempt_ts_utc = excluded.last_attempt_ts_utc,
+                       reason = excluded.reason""",
+                (symbol, now_utc, reason),
+            )
+            conn.commit()
+
+    def get_exit_backoff_seconds(self, symbol: str) -> int:
+        """Compute exponential backoff for exit retries.
+
+        Returns backoff seconds based on attempt count:
+        - Progression: 30s, 60s, 120s, 240s, 480s, 600s (max)
+        - Reset after 1 hour of no attempts
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            Backoff seconds (0 if no backoff or reset)
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT attempt_count, last_attempt_ts_utc FROM exit_attempts WHERE symbol = ?",
+                (symbol,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                return 0
+
+            attempt_count = int(row[0])
+            last_attempt_ts_str = row[1]
+
+            try:
+                last_attempt_ts = datetime.fromisoformat(last_attempt_ts_str).astimezone(
+                    timezone.utc
+                )
+            except (ValueError, TypeError):
+                return 0
+
+            now_utc = datetime.now(timezone.utc)
+            elapsed_seconds = (now_utc - last_attempt_ts).total_seconds()
+
+            # Reset after 1 hour
+            if elapsed_seconds > 3600:
+                return 0
+
+            # Exponential backoff: 30s * 2^(attempt-1), capped at 600s
+            backoff = int(min(30 * (2 ** (attempt_count - 1)), 600))
+            return backoff
+
+    def can_retry_exit(self, symbol: str) -> bool:
+        """Check if exit retry backoff period has elapsed.
+
+        Args:
+            symbol: Stock symbol
+
+        Returns:
+            True if retry is allowed, False if backoff active
+        """
+        with sqlite3.connect(self.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT last_attempt_ts_utc FROM exit_attempts WHERE symbol = ?",
+                (symbol,),
+            )
+            row = cursor.fetchone()
+            if not row:
+                # No attempts recorded - allowed
+                return True
+
+            last_attempt_ts_str = row[0]
+            try:
+                last_attempt_ts = datetime.fromisoformat(last_attempt_ts_str).astimezone(
+                    timezone.utc
+                )
+            except (ValueError, TypeError):
+                return True
+
+            now_utc = datetime.now(timezone.utc)
+            elapsed_seconds = (now_utc - last_attempt_ts).total_seconds()
+
+            backoff = self.get_exit_backoff_seconds(symbol)
+            return elapsed_seconds >= backoff

@@ -66,11 +66,21 @@ class OrderUpdatesHandler:
                 self._record_trade(event)
 
             # Update PositionTracker on fill delta (if tracker available)
-            # Use the per-delta fill price if available; fall back to cumulative
-            # average fill price for backward compatibility.
-            delta_fill_price = getattr(event, "delta_fill_price", None)
-            if delta_fill_price is None:
+            # Priority cascade for fill price:
+            # 1. last_fill_price (incremental, most accurate)
+            # 2. cum_avg_fill_price (cumulative average, fallback)
+            # 3. None (skip position update)
+            delta_fill_price: Optional[float] = None
+
+            if event.last_fill_price is not None:
+                delta_fill_price = event.last_fill_price
+            elif event.cum_avg_fill_price is not None:
                 delta_fill_price = event.cum_avg_fill_price
+            else:
+                logger.warning(
+                    "No fill price available for order %s (neither last_fill_price nor cum_avg_fill_price)",
+                    event.order_id,
+                )
 
             if (
                 self.position_tracker is not None
@@ -207,6 +217,17 @@ class OrderUpdatesHandler:
 
         fill_inserted = False
         if delta_qty > _QTY_EPSILON and alpaca_order_id and self.state_store is not None:
+            # Compute delta_fill_price with priority cascade (same logic as in on_order_update)
+            delta_fill_price_for_db: Optional[float] = None
+            price_is_estimate_flag = True
+
+            if event.last_fill_price is not None:
+                delta_fill_price_for_db = event.last_fill_price
+                price_is_estimate_flag = False
+            elif event.cum_avg_fill_price is not None:
+                delta_fill_price_for_db = event.cum_avg_fill_price
+                price_is_estimate_flag = True
+
             fill_inserted = self.state_store.insert_fill_idempotent(
                 alpaca_order_id=alpaca_order_id,
                 client_order_id=client_order_id,
@@ -217,7 +238,8 @@ class OrderUpdatesHandler:
                 cum_avg_price=event.cum_avg_fill_price,
                 timestamp_utc=timestamp_utc,
                 fill_id=event.fill_id,
-                price_is_estimate=True,
+                price_is_estimate=price_is_estimate_flag,
+                delta_fill_price=delta_fill_price_for_db,
             )
 
             if fill_inserted:
@@ -302,6 +324,17 @@ class OrderUpdatesHandler:
         parsed_filled_qty: Optional[float] = parse_optional_float(raw_filled_qty)
         parsed_filled_avg_price: Optional[float] = parse_optional_float(raw_filled_avg_price)
 
+        # Extract incremental fill fields (Alpaca: lastFillQty, lastFillPrice)
+        raw_last_fill_qty = _get_raw("lastfill_qty") or _get_raw("last_fill_qty")
+        raw_last_fill_price = _get_raw("lastfill_price") or _get_raw("last_fill_price")
+
+        parsed_last_fill_qty: Optional[float] = parse_optional_float(raw_last_fill_qty)
+        parsed_last_fill_price: Optional[float] = parse_optional_float(raw_last_fill_price)
+
+        # Extract order_qty for partial terminal detection
+        raw_order_qty = _get_raw("qty")
+        parsed_order_qty: Optional[float] = parse_optional_float(raw_order_qty)
+
         # Attempt to extract a fill id if provided by the broker payload.
         # Some brokers include a `fill_id` or a `fills` list with ids.
         raw_fill_id = _get_raw("fill_id")
@@ -322,8 +355,10 @@ class OrderUpdatesHandler:
         if raw_fill_id is not None:
             fill_id_value = str(raw_fill_id)
 
-        # Convert status to OrderState enum
-        order_state = OrderState.from_alpaca(status_value)
+        # Convert status to OrderState enum with partial terminal detection
+        order_state = OrderState.from_alpaca(
+            status_value, filled_qty=parsed_filled_qty, order_qty=parsed_order_qty
+        )
 
         return OrderUpdateEvent(
             order_id=order_id,
@@ -336,6 +371,8 @@ class OrderUpdatesHandler:
             avg_fill_price=parsed_filled_avg_price,
             fill_id=fill_id_value,
             timestamp=getattr(raw_update, "at", None) or datetime.now(timezone.utc),
+            last_fill_qty=parsed_last_fill_qty,
+            last_fill_price=parsed_last_fill_price,
         )
 
     def _record_trade(self, event: OrderUpdateEvent) -> None:
