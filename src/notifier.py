@@ -3,6 +3,7 @@
 import asyncio
 import logging
 import random
+import time
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -133,8 +134,6 @@ class AlertNotifier:
 
             if attempt < self.retries - 1:
                 try:
-                    import time
-
                     delay = self.backoff * (2**attempt)
                     # jitter
                     delay = delay * (0.5 + random.random() * 0.5)
