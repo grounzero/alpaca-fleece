@@ -151,7 +151,7 @@ class AlertNotifier:
     def _send_whatsapp_alert(self, title: str, message: str, severity: str) -> bool:
         """Send alert via WhatsApp (Tier 1).
 
-        Uses OpenClaw message tool (future integration).
+        Uses message tool (future integration).
         """
         # Format message
         emoji = "🚨" if severity == "CRITICAL" else "⚠️" if severity == "WARNING" else "❌"
