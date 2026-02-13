@@ -84,10 +84,19 @@ def get_trading_status():
             }
         )
 
-    # Get open orders
-    orders = client.get_orders()
+    # Get open orders (filter out terminal statuses)
+    all_orders = client.get_orders()
+    terminal_statuses = ["filled", "canceled", "expired", "rejected"]
+    open_orders = [
+        o
+        for o in all_orders
+        if o.status
+        and (o.status.value if hasattr(o.status, "value") else str(o.status))
+        not in terminal_statuses
+    ]
+
     order_list = []
-    for order in orders:
+    for order in open_orders:
         order_list.append(
             {
                 "id": str(order.id),
