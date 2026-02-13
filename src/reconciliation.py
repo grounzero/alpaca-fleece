@@ -266,6 +266,28 @@ async def reconcile_fills(
                 # Look up broker order
                 broker_order = broker_order_map.get(client_id) or broker_order_map.get(alpaca_id)
                 if not broker_order:
+                    # Order may have transitioned to terminal status and dropped from
+                    # open orders. Try to fetch individual order if broker supports it.
+                    fetch_id = alpaca_id if alpaca_id else client_id
+                    if (
+                        fetch_id
+                        and hasattr(broker, "get_order")
+                        and callable(getattr(broker, "get_order"))
+                    ):
+                        try:
+                            broker_order = cast(Dict[str, Any], await broker.get_order(fetch_id))
+                        except Exception as fetch_err:
+                            logger.debug(
+                                "Fill reconciliation: failed to fetch order %s from broker: %s",
+                                fetch_id,
+                                fetch_err,
+                            )
+
+                if not broker_order:
+                    logger.debug(
+                        "Fill reconciliation: order %s not found in open orders; skipping",
+                        client_id,
+                    )
                     continue
 
                 broker_filled_qty = parse_optional_float(broker_order.get("filled_qty")) or 0.0

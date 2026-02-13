@@ -81,10 +81,32 @@ class OrderUpdatesHandler:
         """Compute delta fill, persist fill row, and update order_intents.
 
         Returns a new OrderUpdateEvent with delta_qty set.
+
+        Requires alpaca_order_id to be non-null for fill processing. If missing,
+        returns event with delta_qty=0 and logs a warning.
         """
         alpaca_order_id = event.order_id
         client_order_id = event.client_order_id
         timestamp_utc = event.timestamp.isoformat()
+
+        # Guard: alpaca_order_id is required for all fill operations
+        if not alpaca_order_id:
+            logger.warning(
+                "Cannot process fills: missing alpaca_order_id for order %s",
+                client_order_id,
+            )
+            return OrderUpdateEvent(
+                order_id=event.order_id,
+                client_order_id=event.client_order_id,
+                symbol=event.symbol,
+                side=event.side,
+                status=event.status,
+                filled_qty=event.filled_qty,
+                avg_fill_price=event.avg_fill_price,
+                fill_id=event.fill_id,
+                timestamp=event.timestamp,
+                delta_qty=0.0,
+            )
 
         # Resolve the order intent to get prev_cum_qty
         prev_cum_qty = 0.0
@@ -129,7 +151,7 @@ class OrderUpdatesHandler:
         delta_qty = max(0.0, new_cum_qty - prev_cum_qty)
 
         # Persist cumulative update to order_intents (monotonic)
-        if alpaca_order_id and self.state_store is not None:
+        if self.state_store is not None:
             self.state_store.update_order_intent_cumulative(
                 alpaca_order_id=alpaca_order_id,
                 status=event.status,
@@ -137,16 +159,6 @@ class OrderUpdatesHandler:
                 new_cum_avg_price=event.cum_avg_fill_price,
                 timestamp_utc=timestamp_utc,
             )
-
-            # Also update via client_order_id path for backwards compat
-            if client_order_id:
-                self.state_store.update_order_intent(
-                    client_order_id=client_order_id,
-                    status=event.status,
-                    filled_qty=new_cum_qty if new_cum_qty > 0 else None,
-                    alpaca_order_id=alpaca_order_id,
-                    filled_avg_price=event.cum_avg_fill_price,
-                )
 
         fill_inserted = False
         if delta_qty > _QTY_EPSILON and alpaca_order_id and self.state_store is not None:
@@ -311,8 +323,6 @@ class OrderUpdatesHandler:
                 INSERT INTO trades (timestamp_utc, symbol, side, qty, price, order_id, client_order_id, fill_id)
                 VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(order_id, client_order_id) DO UPDATE SET
-                  qty = excluded.qty,
-                  price = excluded.price,
                   fill_id = COALESCE(trades.fill_id, excluded.fill_id)
                 """
 

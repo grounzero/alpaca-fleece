@@ -509,7 +509,13 @@ class StreamPolling:
                 status_changed = current_status != order["status"]
 
                 # Compare cumulative fill qty to detect incremental fills
-                stored_filled_qty = order.get("filled_qty") or 0.0
+                # Use parse_optional_float for type safety (DB may store as string/Decimal)
+                from src.utils import parse_optional_float as parse_float
+
+                stored_filled_qty_raw = order.get("filled_qty")
+                stored_filled_qty = (
+                    parse_float(stored_filled_qty_raw) if stored_filled_qty_raw is not None else 0.0
+                )
                 polled_filled_qty = parsed_filled_qty if parsed_filled_qty is not None else 0.0
                 fill_qty_increased = polled_filled_qty > stored_filled_qty + 1e-9
 

@@ -370,34 +370,43 @@ class TestIdempotentInsert:
         assert _count_fills(db_path, "a-1") == 1
 
     @pytest.mark.asyncio
-    async def test_different_fill_ids_produce_separate_rows(self, tmp_path):
-        """Different fill_ids for same cum_qty should produce separate rows."""
+    async def test_different_fill_ids_can_reach_same_cum_qty(self, tmp_path):
+        """Different fill_ids CAN reach the same cum_qty (e.g., Alpaca splits fills).
+
+        This is valid: execution fill 1 brings cum_qty to 10, then a second execution
+        with a different fill_id arrives later and also reaches cum_qty=10 (partial
+        duplicate or late-arriving update).
+        """
         db_path, store = _setup_db(tmp_path)
 
-        # Insert two fills with different fill_ids but same cum_qty
+        # First fill_id reaches cum_qty=10
         inserted1 = store.insert_fill_idempotent(
             alpaca_order_id="a-1",
             client_order_id="c-1",
             symbol="AAPL",
             side="buy",
-            delta_qty=5,
+            delta_qty=10,
             cum_qty=10,
             cum_avg_price=150.0,
             timestamp_utc="2024-01-01T00:00:00Z",
             fill_id="fill-1",
         )
+        assert inserted1
+
+        # Different fill_id but same cum_qty also succeeds
+        # (Each fill_id is a different dedupe key)
         inserted2 = store.insert_fill_idempotent(
             alpaca_order_id="a-1",
             client_order_id="c-1",
             symbol="AAPL",
             side="buy",
-            delta_qty=5,
+            delta_qty=0,  # No additional fill
             cum_qty=10,
             cum_avg_price=150.0,
             timestamp_utc="2024-01-01T00:00:01Z",
             fill_id="fill-2",
         )
-        assert inserted1
+        # Second insert succeeds because fill_id is different
         assert inserted2
         assert _count_fills(db_path, "a-1") == 2
 
@@ -754,3 +763,114 @@ class TestSchemaVersion:
             cur.execute("SELECT schema_version FROM schema_meta WHERE id = 1")
             row = cur.fetchone()
         assert row[0] == 2
+
+
+# ---------------------------------------------------------------
+# Reconciliation tests
+# ---------------------------------------------------------------
+
+
+class TestReconcileFills:
+    @pytest.mark.asyncio
+    async def test_reconcile_fills_detects_drift(self, tmp_path):
+        """reconcile_fills should detect when broker has more fills than DB."""
+        from src.reconciliation import reconcile_fills
+
+        db_path, store = _setup_db(tmp_path)
+        bus = DummyEventBus()
+        handler = OrderUpdatesHandler(store, bus)
+
+        # Insert order intent with filled_qty=10 in DB
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=10)
+
+        # Mock broker returning filled_qty=25
+        mock_broker = MagicMock()
+        mock_broker.get_open_orders = AsyncMock(
+            return_value=[
+                {
+                    "id": "a-1",
+                    "client_order_id": "c-1",
+                    "symbol": "AAPL",
+                    "side": "buy",
+                    "status": "partially_filled",
+                    "filled_qty": 25,
+                    "filled_avg_price": 150.0,
+                }
+            ]
+        )
+
+        # Run reconciliation
+        count = await reconcile_fills(
+            broker=mock_broker,
+            state_store=store,
+            on_order_update=handler.on_order_update,
+        )
+
+        # Should have synthesised 1 update
+        assert count == 1
+        # Should have inserted a fill (15 delta from 10→25)
+        assert _count_fills(db_path, "a-1") == 1
+
+    @pytest.mark.asyncio
+    async def test_reconcile_fills_skips_no_drift(self, tmp_path):
+        """reconcile_fills should skip orders with no drift."""
+        from src.reconciliation import reconcile_fills
+
+        db_path, store = _setup_db(tmp_path)
+
+        # Insert order intent with filled_qty=25 in DB
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=25)
+
+        # Mock broker also returning filled_qty=25
+        mock_broker = MagicMock()
+        mock_broker.get_open_orders = AsyncMock(
+            return_value=[
+                {
+                    "id": "a-1",
+                    "client_order_id": "c-1",
+                    "symbol": "AAPL",
+                    "side": "buy",
+                    "status": "partially_filled",
+                    "filled_qty": 25,
+                    "filled_avg_price": 150.0,
+                }
+            ]
+        )
+
+        count = await reconcile_fills(broker=mock_broker, state_store=store)
+
+        # No drift, no updates synthesised
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_reconcile_fills_handles_broker_api_failure(self, tmp_path):
+        """reconcile_fills should handle broker API failures gracefully."""
+        from src.reconciliation import reconcile_fills
+
+        _, store = _setup_db(tmp_path)
+
+        # Mock broker that raises
+        mock_broker = MagicMock()
+        mock_broker.get_open_orders = AsyncMock(side_effect=Exception("Broker API error"))
+
+        # Should not raise, returns 0
+        count = await reconcile_fills(broker=mock_broker, state_store=store)
+        assert count == 0
+
+    @pytest.mark.asyncio
+    async def test_reconcile_fills_skips_terminal_orders(self, tmp_path):
+        """reconcile_fills should skip orders already in terminal status."""
+        from src.reconciliation import reconcile_fills
+
+        db_path, store = _setup_db(tmp_path)
+
+        # Insert terminal order (filled)
+        _insert_order_intent(db_path, "c-1", "a-1", filled_qty=10, status="filled")
+
+        mock_broker = MagicMock()
+        mock_broker.get_open_orders = AsyncMock(return_value=[])
+
+        count = await reconcile_fills(broker=mock_broker, state_store=store)
+
+        # Terminal order not considered for reconciliation
+        assert count == 0
