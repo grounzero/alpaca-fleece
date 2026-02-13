@@ -346,7 +346,11 @@ class OrderManager:
                     maybe = self.broker.invalidate_cache("get_positions", "get_open_orders")
                     if inspect.isawaitable(maybe):
                         await maybe
-            except Exception:
+            except Exception as e:
+                # Re-raise common developer exceptions so they surface in test runs
+                # while still logging transient failures.
+                if isinstance(e, (TypeError, AttributeError, NameError)):
+                    raise
                 logger.exception("Failed to invalidate broker cache after submit")
 
             # Publish order intent event
