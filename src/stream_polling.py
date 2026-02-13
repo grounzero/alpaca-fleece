@@ -18,7 +18,7 @@ from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 
 from src.state_store import StateStore
-from src.utils import batch_iter
+from src.utils import batch_iter, parse_optional_float
 
 logger = logging.getLogger(__name__)
 
@@ -510,14 +510,12 @@ class StreamPolling:
 
                 # Compare cumulative fill qty to detect incremental fills
                 # Use parse_optional_float for type safety (DB may store as string/Decimal)
-                from src.utils import parse_optional_float as parse_float
-
                 stored_filled_qty_raw = order.get("filled_qty")
                 # Ensure stored_filled_qty is a concrete float (coerce None -> 0.0)
                 if stored_filled_qty_raw is None:
                     stored_filled_qty = 0.0
                 else:
-                    parsed_stored = parse_float(stored_filled_qty_raw)
+                    parsed_stored = parse_optional_float(stored_filled_qty_raw)
                     stored_filled_qty = parsed_stored if parsed_stored is not None else 0.0
 
                 polled_filled_qty = parsed_filled_qty if parsed_filled_qty is not None else 0.0

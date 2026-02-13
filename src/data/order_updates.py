@@ -61,7 +61,7 @@ class OrderUpdatesHandler:
 
             if event.delta_qty and event.delta_qty > 0:
                 logger.info(
-                    "Fill delta: order=%s symbol=%s delta_qty=%.4f " "cum_qty=%s status=%s",
+                    "Fill delta: order=%s symbol=%s delta_qty=%.4f cum_qty=%.4f status=%s",
                     event.client_order_id,
                     event.symbol,
                     event.delta_qty,
@@ -117,7 +117,6 @@ class OrderUpdatesHandler:
         new_cum_qty = event.cum_filled_qty if event.cum_filled_qty is not None else prev_cum_qty
 
         # Monotonic regression guard
-        delta_qty = 0.0
         if new_cum_qty < prev_cum_qty - _QTY_EPSILON:
             logger.warning(
                 "Out-of-order cum fill regression: order=%s prev=%.4f new=%.4f — "
