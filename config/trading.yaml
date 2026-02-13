@@ -92,6 +92,18 @@ exits:
   exit_on_circuit_breaker: true # Close all positions on circuit breaker
 
 # =============================================================================
+# RUNTIME RECONCILIATION
+# Continuous truth repair loop to keep SQLite/in-memory state synchronized
+# with broker reality (positions, orders, fills).
+# =============================================================================
+runtime_reconciliation:
+  enabled: true
+  check_interval_seconds: 120  # Check every 2 minutes (range: 30-300)
+  repair_stuck_exits: true     # Auto-clear stuck pending_exit flags
+  halt_on_discrepancy: true    # Set trading_halted=True on discrepancies
+  broker_timeout_seconds: 30   # Timeout for broker API calls
+
+# =============================================================================
 # SHUTDOWN
 # =============================================================================
 shutdown:

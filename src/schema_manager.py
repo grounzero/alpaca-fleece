@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Schema version — bump when adding tables, columns, or indexes
 # ---------------------------------------------------------------------------
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # ---------------------------------------------------------------------------
 # Canonical table definitions (CREATE TABLE IF NOT EXISTS)
@@ -151,6 +151,20 @@ TABLES: dict[str, str] = {
             reason TEXT
         )
     """,
+    "reconciliation_reports": """
+        CREATE TABLE IF NOT EXISTS reconciliation_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp_utc TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            discrepancies_count INTEGER NOT NULL DEFAULT 0,
+            repaired_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            discrepancies_json TEXT,
+            repairs_json TEXT,
+            error_message TEXT
+        )
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -216,6 +230,14 @@ INDEXES: dict[str, str] = {
     "idx_position_tracking_pending_exit": (
         "CREATE INDEX IF NOT EXISTS idx_position_tracking_pending_exit "
         "ON position_tracking(pending_exit)"
+    ),
+    "idx_reconciliation_reports_timestamp": (
+        "CREATE INDEX IF NOT EXISTS idx_reconciliation_reports_timestamp "
+        "ON reconciliation_reports(timestamp_utc)"
+    ),
+    "idx_reconciliation_reports_status": (
+        "CREATE INDEX IF NOT EXISTS idx_reconciliation_reports_status "
+        "ON reconciliation_reports(status)"
     ),
 }
 

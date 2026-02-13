@@ -767,7 +767,7 @@ class TestSchemaVersion:
             cur = conn.cursor()
             cur.execute("SELECT schema_version FROM schema_meta WHERE id = 1")
             row = cur.fetchone()
-        assert row[0] == 3
+        assert row[0] == 4
 
 
 # ---------------------------------------------------------------
