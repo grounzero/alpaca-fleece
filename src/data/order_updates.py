@@ -66,16 +66,22 @@ class OrderUpdatesHandler:
                 self._record_trade(event)
 
             # Update PositionTracker on fill delta (if tracker available)
+            # Use the per-delta fill price if available; fall back to cumulative
+            # average fill price for backward compatibility.
+            delta_fill_price = getattr(event, "delta_fill_price", None)
+            if delta_fill_price is None:
+                delta_fill_price = event.cum_avg_fill_price
+
             if (
                 self.position_tracker is not None
                 and event.delta_qty is not None
                 and event.delta_qty > 0
-                and event.cum_avg_fill_price is not None
+                and delta_fill_price is not None
             ):
                 await self.position_tracker.update_position_from_fill(
                     symbol=event.symbol,
                     delta_qty=event.delta_qty,
-                    fill_price=event.cum_avg_fill_price,
+                    fill_price=delta_fill_price,
                     side=event.side,
                     timestamp=event.timestamp,
                 )
