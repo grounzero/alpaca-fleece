@@ -288,7 +288,24 @@ async def reconcile_fills(
                         "Fill reconciliation: order %s not found in open orders; skipping",
                         client_id,
                     )
-                    continue
+                    # Order may have transitioned to a terminal state and dropped from open orders.
+                    # If the broker supports fetching individual orders, try that before giving up.
+                    fetch_id = alpaca_id or client_id
+                    if fetch_id and hasattr(broker, "get_order"):
+                        try:
+                            broker_order = cast(Dict[str, Any], await broker.get_order(fetch_id))
+                        except Exception as fetch_err:
+                            logger.warning(
+                                "Fill reconciliation: failed to fetch order %s from broker: %s",
+                                fetch_id,
+                                fetch_err,
+                            )
+                    if not broker_order:
+                        logger.debug(
+                            "Fill reconciliation: order %s not found among open or directly fetched orders; skipping",
+                            client_id,
+                        )
+                        continue
 
                 broker_filled_qty = parse_optional_float(broker_order.get("filled_qty")) or 0.0
                 broker_avg_price = parse_optional_float(broker_order.get("filled_avg_price"))
