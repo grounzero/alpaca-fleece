@@ -27,21 +27,21 @@ REPO_DIR = os.path.dirname(SCRIPT_DIR)
 sys.path.insert(0, str(REPO_DIR))
 
 from alpaca.trading.client import TradingClient  # noqa: E402
+from dotenv import load_dotenv  # noqa: E402 - repo path added to sys.path above
 
 
 def load_env_file():
-    """Load environment variables from .env file if present."""
+    """Load environment variables from .env using python-dotenv.
+
+    Use the same `load_dotenv()` behaviour as the rest of the codebase
+    (see `src/config.py`) which handles common edge-cases like quoted
+    values, escaped characters and multiline values. This replaces the
+    ad-hoc parser which could mis-handle complex .env files.
+    """
     env_path = Path(REPO_DIR) / ".env"
     if env_path.exists():
-        with open(env_path) as f:
-            for line in f:
-                line = line.strip()
-                if line and not line.startswith("#") and "=" in line:
-                    key, value = line.split("=", 1)
-                    # Remove quotes if present
-                    value = value.strip().strip('"').strip("'")
-                    if key not in os.environ:
-                        os.environ[key] = value
+        # load_dotenv is best-effort and will not overwrite existing env vars
+        load_dotenv(dotenv_path=str(env_path))
 
 
 def get_trading_status():
