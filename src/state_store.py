@@ -587,11 +587,11 @@ class StateStore:
                 """UPDATE order_intents
                    SET status = ?,
                        filled_qty = CASE
-                           WHEN COALESCE(filled_qty, 0) <= ? THEN ?
+                           WHEN COALESCE(filled_qty, 0) < ? THEN ?
                            ELSE filled_qty
                        END,
                        filled_avg_price = CASE
-                           WHEN COALESCE(filled_qty, 0) <= ? THEN COALESCE(?, filled_avg_price)
+                           WHEN COALESCE(filled_qty, 0) < ? THEN COALESCE(?, filled_avg_price)
                            ELSE filled_avg_price
                        END,
                        updated_at_utc = ?
