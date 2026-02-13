@@ -299,14 +299,13 @@ class RuntimeReconciler:
         stuck: List[Dict[str, Any]] = []
 
         # Query positions with pending_exit=True
-        conn = sqlite3.connect(self.state_store.db_path)
-        cursor = conn.cursor()
-        cursor.execute("""
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
             SELECT symbol, side FROM position_tracking
             WHERE pending_exit = 1
         """)
-        pending_exits = cursor.fetchall()
-        conn.close()
+            pending_exits = cursor.fetchall()
 
         if not pending_exits:
             return stuck
