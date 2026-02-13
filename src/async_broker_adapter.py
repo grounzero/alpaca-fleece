@@ -194,13 +194,23 @@ class AsyncBrokerAdapter(AsyncBrokerInterface):
                 except Exception:
                     logger.exception("Failed to shutdown underlying Broker executor")
             finally:
+                # Prefer a simple, safe reset to None instead of deleting the
+                # attribute. Deleting attributes can raise in odd cases
+                # (properties, slots, proxies). Setting to `None` satisfies
+                # type-checkers and avoids fragile nested exception logic.
                 try:
-                    delattr(self._broker, "_executor")
+                    if hasattr(self._broker, "_executor"):
+                        try:
+                            setattr(self._broker, "_executor", None)
+                        except Exception:
+                            # Fallback to deletion only if setting failed.
+                            try:
+                                delattr(self._broker, "_executor")
+                            except Exception:
+                                pass
                 except Exception:
-                    try:
-                        del self._broker._executor
-                    except Exception:
-                        pass
+                    # Best-effort only; don't raise from close()
+                    pass
 
     async def __aenter__(self) -> "AsyncBrokerAdapter":
         return self
