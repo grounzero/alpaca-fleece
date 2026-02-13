@@ -513,9 +513,13 @@ class StreamPolling:
                 from src.utils import parse_optional_float as parse_float
 
                 stored_filled_qty_raw = order.get("filled_qty")
-                stored_filled_qty = (
-                    parse_float(stored_filled_qty_raw) if stored_filled_qty_raw is not None else 0.0
-                )
+                # Ensure stored_filled_qty is a concrete float (coerce None -> 0.0)
+                if stored_filled_qty_raw is None:
+                    stored_filled_qty = 0.0
+                else:
+                    parsed_stored = parse_float(stored_filled_qty_raw)
+                    stored_filled_qty = parsed_stored if parsed_stored is not None else 0.0
+
                 polled_filled_qty = parsed_filled_qty if parsed_filled_qty is not None else 0.0
                 fill_qty_increased = polled_filled_qty > stored_filled_qty + 1e-9
 
