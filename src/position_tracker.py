@@ -66,6 +66,12 @@ class PositionTracker:
         self._last_updates: Dict[str, datetime] = {}
         # Global last update for full-tracker operations
         self._last_update: Optional[datetime] = None
+        # Store last closed position snapshots keyed by symbol so callers
+        # can retrieve closed-position info immediately after a close
+        # operation without changing the outward return semantics of
+        # `update_position_from_fill` (which historically returned None
+        # for closed positions).
+        self._last_closed_snapshots: Dict[str, PositionData] = {}
 
     def start_tracking(
         self,
@@ -193,13 +199,34 @@ class PositionTracker:
             new_qty = current_qty - delta_qty
 
             if new_qty <= 0:
-                # Position fully closed
+                # Position fully closed. Capture a snapshot of the position
+                # before removing it so callers can access entry/exit info.
+                closed_snapshot = PositionData(
+                    symbol=position.symbol,
+                    side=position.side,
+                    qty=0.0,
+                    entry_price=position.entry_price,
+                    entry_time=position.entry_time,
+                    extreme_price=position.extreme_price,
+                    atr=position.atr,
+                    trailing_stop_price=position.trailing_stop_price,
+                    trailing_stop_activated=position.trailing_stop_activated,
+                    pending_exit=position.pending_exit,
+                    last_updated=timestamp,
+                )
+
+                # Store snapshot for immediate retrieval by callers (non-persistent)
+                self._last_closed_snapshots[symbol] = closed_snapshot
+
+                # Remove in-memory and persisted state
                 self.stop_tracking(symbol)
                 logger.info(
                     "Position closed on sell fill: %s qty=%.4f→0",
                     symbol,
                     current_qty,
                 )
+                # Preserve original API: return None to indicate the position
+                # is closed (as callers historically expected).
                 return None
             else:
                 position.qty = new_qty
@@ -230,6 +257,14 @@ class PositionTracker:
     def get_position_qty(self, symbol: str) -> Optional[float]:
         p = self.get_position(symbol)
         return p.qty if p is not None else None
+
+    def pop_last_closed_snapshot(self, symbol: str) -> Optional[PositionData]:
+        """Return and remove the last closed position snapshot for `symbol`.
+
+        This provides a safe handoff for callers that need to access the
+        closed position's entry/exit info immediately after a close.
+        """
+        return self._last_closed_snapshots.pop(symbol, None)
 
     def update_current_price(self, symbol: str, current_price: float) -> Optional[PositionData]:
         position = self._positions.get(symbol)

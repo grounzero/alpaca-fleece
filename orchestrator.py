@@ -783,11 +783,22 @@ class Orchestrator:
                 f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} qty={event.filled_qty}"
             )
         elif side == "sell":
-            # Calculate realized P&L (position already updated by OrderUpdatesHandler)
+            # Calculate realised P&L. PositionTracker may have removed the
+            # in-memory position on a full exit before this handler runs.
+            # If that happens, OrderUpdatesHandler attaches a `_position_snapshot`
+            # attribute to the event containing the closed position snapshot
+            # (including `entry_price`) so we can still compute P&L.
             position = self.position_tracker.get_position(event.symbol)
+            snapshot = getattr(event, "_position_snapshot", None)
             if position:
-                # Use the position's entry price for P&L calc
-                realized_pnl = (fill_price - position.entry_price) * event.filled_qty
+                entry_price = position.entry_price
+            elif snapshot is not None:
+                entry_price = snapshot.entry_price
+            else:
+                entry_price = None
+
+            if entry_price is not None:
+                realized_pnl = (fill_price - entry_price) * event.filled_qty
 
                 # Update daily P&L
                 current_daily_pnl = self.state_store.get_daily_pnl()
