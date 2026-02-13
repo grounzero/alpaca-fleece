@@ -15,9 +15,9 @@ class OrderState(Enum):
 
     # Terminal states (order is complete/cancelled)
     FILLED = "filled"  # Alpaca: filled
-    CANCELLED = "cancelled"  # Alpaca: canceled (0 fills)
-    EXPIRED = "expired"  # Alpaca: expired (0 fills)
-    REJECTED = "rejected"  # Alpaca: rejected (0 fills)
+    CANCELLED = "cancelled"  # Alpaca: canceled (no fills)
+    EXPIRED = "expired"  # Alpaca: expired (no fills)
+    REJECTED = "rejected"  # Alpaca: rejected (no fills)
 
     # Partial terminal states (order terminal but with partial fills)
     CANCELLED_PARTIAL = "cancelled_partial"  # Alpaca: canceled after partial fills

@@ -1094,7 +1094,7 @@ class TestOrderStateEnum:
     """Test OrderState enum functionality."""
 
     def test_order_state_enum_has_all_required_states(self):
-        """Verify all 7 states are defined."""
+        """Verify all 11 states are defined (8 original + 3 partial terminals)."""
         states = {
             OrderState.PENDING,
             OrderState.SUBMITTED,
@@ -1104,8 +1104,11 @@ class TestOrderStateEnum:
             OrderState.CANCELLED,
             OrderState.EXPIRED,
             OrderState.REJECTED,
+            OrderState.CANCELLED_PARTIAL,
+            OrderState.EXPIRED_PARTIAL,
+            OrderState.REJECTED_PARTIAL,
         }
-        assert len(states) == 8
+        assert len(states) == 11
 
     def test_order_state_from_alpaca_mapping_correct(self):
         """Verify all Alpaca status strings map to correct OrderState."""

@@ -88,17 +88,16 @@ class OrderUpdatesHandler:
                 and event.delta_qty > 0
                 and delta_fill_price is not None
             ):
-                # Update the position tracker and capture any snapshot returned
-                # (e.g., when a sell fully closes a position the tracker will
-                # return a PositionData snapshot for P&L calculation).
-                _returned = await self.position_tracker.update_position_from_fill(
+                # Update the position tracker
+                await self.position_tracker.update_position_from_fill(
                     symbol=event.symbol,
                     delta_qty=event.delta_qty,
                     fill_price=delta_fill_price,
                     side=event.side,
                     timestamp=event.timestamp,
                 )
-                # Retrieve any closed-position snapshot recorded by the tracker.
+                # Retrieve any closed-position snapshot recorded by the tracker
+                # (e.g., when a sell fully closes a position for P&L calculation).
                 snapshot = None
                 try:
                     snapshot = self.position_tracker.pop_last_closed_snapshot(event.symbol)
