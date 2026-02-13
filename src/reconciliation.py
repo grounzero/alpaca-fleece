@@ -195,16 +195,15 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
 
     # Rule 4: Position mismatch → DISCREPANCY
     # Get last recorded positions from positions_snapshot table
-    conn = sqlite3.connect(state_store.db_path)
-    cursor = conn.cursor()
+    with sqlite3.connect(state_store.db_path) as conn:
+        cursor = conn.cursor()
 
-    # Get latest positions snapshot
-    cursor.execute("""
-        SELECT symbol, qty, avg_entry_price FROM positions_snapshot
-        WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
-    """)
-    sqlite_positions_rows = cursor.fetchall()
-    conn.close()
+        # Get latest positions snapshot
+        cursor.execute("""
+            SELECT symbol, qty, avg_entry_price FROM positions_snapshot
+            WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
+        """)
+        sqlite_positions_rows = cursor.fetchall()
 
     sqlite_positions = {
         row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
