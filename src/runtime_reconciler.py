@@ -403,39 +403,38 @@ class RuntimeReconciler:
             report: Report dict with status, discrepancies, repairs
         """
         try:
-            conn = sqlite3.connect(self.state_store.db_path)
-            cursor = conn.cursor()
+            with sqlite3.connect(self.state_store.db_path) as conn:
+                cursor = conn.cursor()
 
-            discrepancies = report.get("discrepancies", [])
-            repairs = report.get("repairs", [])
-            discrepancies_json = json.dumps(discrepancies)
-            repairs_json = json.dumps(repairs)
+                discrepancies = report.get("discrepancies", [])
+                repairs = report.get("repairs", [])
+                discrepancies_json = json.dumps(discrepancies)
+                repairs_json = json.dumps(repairs)
 
-            discrepancies_count = len(discrepancies) if isinstance(discrepancies, list) else 0
-            repairs_count = len(repairs) if isinstance(repairs, list) else 0
+                discrepancies_count = len(discrepancies) if isinstance(discrepancies, list) else 0
+                repairs_count = len(repairs) if isinstance(repairs, list) else 0
 
-            cursor.execute(
-                """
-                INSERT INTO reconciliation_reports
-                (timestamp_utc, check_type, duration_ms, discrepancies_count, repaired_count,
-                 status, discrepancies_json, repairs_json, error_message)
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    report.get("timestamp_utc"),
-                    report.get("check_type"),
-                    report.get("duration_ms", 0),
-                    discrepancies_count,
-                    repairs_count,
-                    report.get("status"),
-                    discrepancies_json,
-                    repairs_json,
-                    report.get("error_message"),
-                ),
-            )
+                cursor.execute(
+                    """
+                    INSERT INTO reconciliation_reports
+                    (timestamp_utc, check_type, duration_ms, discrepancies_count, repaired_count,
+                     status, discrepancies_json, repairs_json, error_message)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        report.get("timestamp_utc"),
+                        report.get("check_type"),
+                        report.get("duration_ms", 0),
+                        discrepancies_count,
+                        repairs_count,
+                        report.get("status"),
+                        discrepancies_json,
+                        repairs_json,
+                        report.get("error_message"),
+                    ),
+                )
 
-            conn.commit()
-            conn.close()
+                conn.commit()
 
         except Exception as e:
             logger.error("Failed to persist reconciliation report: %s", e)
