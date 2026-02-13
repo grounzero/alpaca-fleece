@@ -174,15 +174,13 @@ class RuntimeReconciler:
 
             # Check for position discrepancies (Rule 4)
             # Get latest positions from positions_snapshot
-            conn = sqlite3.connect(self.state_store.db_path)
-            cursor = conn.cursor()
-            cursor.execute("""
-                SELECT symbol, qty, avg_entry_price FROM positions_snapshot
-                WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
-            """)
-            sqlite_positions_rows = cursor.fetchall()
-            conn.close()
-
+            with sqlite3.connect(self.state_store.db_path) as conn:
+                cursor = conn.cursor()
+                cursor.execute("""
+                    SELECT symbol, qty, avg_entry_price FROM positions_snapshot
+                    WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
+                """)
+                sqlite_positions_rows = cursor.fetchall()
             sqlite_positions = {
                 row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
             }
