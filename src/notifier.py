@@ -1,6 +1,9 @@
 """Alert notifier - send critical alerts via messaging (Tier 1)."""
 
+import asyncio
 import logging
+import random
+import time
 from typing import Optional
 
 logger = logging.getLogger(__name__)
@@ -23,7 +26,7 @@ class AlertNotifier:
         self.retries = 3
         self.backoff = 1.0
 
-    def send_alert(self, title: str, message: str, severity: str = "ERROR") -> bool:
+    def _send_alert_sync(self, title: str, message: str, severity: str = "ERROR") -> bool:
         """Send alert to configured channel (Tier 1).
 
         Args:
@@ -39,36 +42,52 @@ class AlertNotifier:
             logger.warning(f"[{severity}] {title}: {message}")
             return False
 
-        # Attempt send with retries/backoff for transient errors. If the
-        # channel-specific method returns False or raises, we will retry up
-        # to `self.retries` attempts, sleeping between attempts.
-        last_exc = None
+        # Single synchronous send attempt. Any retry/backoff is handled
+        # by the async wrapper so this function stays fast and blocking-only.
+        try:
+            if self.alert_channel == "whatsapp":
+                return self._send_whatsapp_alert(title, message, severity)
+            elif self.alert_channel == "slack":
+                return self._send_slack_alert(title, message, severity)
+            elif self.alert_channel == "email":
+                return self._send_email_alert(title, message, severity)
+            else:
+                logger.warning(f"Unknown alert channel: {self.alert_channel}")
+                return False
+        except Exception as e:
+            logger.warning("Exception during sync alert send: %s", e)
+            return False
+
+    async def send_alert_async(self, title: str, message: str, severity: str = "ERROR") -> bool:
+        """Async wrapper that performs retries with non-blocking backoff.
+
+        The synchronous `_send_alert_sync` performs a single blocking send
+        attempt; this async wrapper orchestrates retries and uses
+        `asyncio.sleep` between attempts so the event loop is not blocked.
+        """
+        loop = asyncio.get_running_loop()
+
+        last_exc: Exception | None = None
         for attempt in range(self.retries):
             try:
-                if self.alert_channel == "whatsapp":
-                    ok = self._send_whatsapp_alert(title, message, severity)
-                elif self.alert_channel == "slack":
-                    ok = self._send_slack_alert(title, message, severity)
-                elif self.alert_channel == "email":
-                    ok = self._send_email_alert(title, message, severity)
-                else:
-                    logger.warning(f"Unknown alert channel: {self.alert_channel}")
-                    return False
-
+                ok = await loop.run_in_executor(
+                    None, self._send_alert_sync, title, message, severity
+                )
                 if ok:
                     return True
-                # Treat a False return as a transient failure to retry
                 logger.warning(
                     "Alert send returned False (attempt %d/%d) for %s",
                     attempt + 1,
                     self.retries,
                     self.alert_channel,
                 )
-
+            except asyncio.CancelledError:
+                # Allow cancellation to propagate
+                raise
             except Exception as e:
                 last_exc = e
                 logger.warning(
-                    "Exception sending alert (attempt %d/%d): %s",
+                    "Exception sending alert async (attempt %d/%d): %s",
                     attempt + 1,
                     self.retries,
                     e,
@@ -76,52 +95,26 @@ class AlertNotifier:
 
             # Backoff before next attempt unless this was the last attempt
             if attempt < self.retries - 1:
+                delay = self.backoff * (2**attempt)
+                # Add jitter
+                delay = delay * (0.5 + random.random() * 0.5)
                 try:
-                    import time
+                    await asyncio.sleep(delay)
+                except asyncio.CancelledError:
+                    raise
 
-                    delay = self.backoff * (2**attempt)
-                    time.sleep(delay)
-                except Exception:
-                    # Sleep failures shouldn't crash notifier
-                    logger.debug("Sleep interrupted during alert backoff")
-
-        # If we get here, all attempts failed
         if last_exc:
             logger.error(f"Failed to send alert after {self.retries} attempts: {last_exc}")
         else:
             logger.error(f"Failed to send alert after {self.retries} attempts (no exception)")
         return False
 
-    async def send_alert_async(self, title: str, message: str, severity: str = "ERROR") -> bool:
-        """Async wrapper for `send_alert` that performs blocking sends in a threadpool and uses non-blocking backoff.
-
-        This preserves the existing synchronous API while providing a non-blocking implementation
-        for callers running in an asyncio event loop.
-        """
-        import asyncio
-
-        loop = asyncio.get_running_loop()
-
-        last_exc = None
+    def send_alert(self, title: str, message: str, severity: str = "ERROR") -> bool:
+        """Backward-compatible synchronous API expected by tests and callers."""
+        last_exc: Exception | None = None
         for attempt in range(self.retries):
             try:
-                # Run the blocking channel send in a threadpool
-                if self.alert_channel == "whatsapp":
-                    ok = await loop.run_in_executor(
-                        None, self._send_whatsapp_alert, title, message, severity
-                    )
-                elif self.alert_channel == "slack":
-                    ok = await loop.run_in_executor(
-                        None, self._send_slack_alert, title, message, severity
-                    )
-                elif self.alert_channel == "email":
-                    ok = await loop.run_in_executor(
-                        None, self._send_email_alert, title, message, severity
-                    )
-                else:
-                    logger.warning(f"Unknown alert channel: {self.alert_channel}")
-                    return False
-
+                ok = self._send_alert_sync(title, message, severity)
                 if ok:
                     return True
                 logger.warning(
@@ -130,7 +123,6 @@ class AlertNotifier:
                     self.retries,
                     self.alert_channel,
                 )
-
             except Exception as e:
                 last_exc = e
                 logger.warning(
@@ -140,13 +132,14 @@ class AlertNotifier:
                     e,
                 )
 
-            # Non-blocking backoff using asyncio.sleep
             if attempt < self.retries - 1:
                 try:
                     delay = self.backoff * (2**attempt)
-                    await asyncio.sleep(delay)
+                    # jitter
+                    delay = delay * (0.5 + random.random() * 0.5)
+                    time.sleep(delay)
                 except Exception:
-                    logger.debug("Async sleep interrupted during alert backoff")
+                    logger.debug("Sleep interrupted during alert backoff")
 
         if last_exc:
             logger.error(f"Failed to send alert after {self.retries} attempts: {last_exc}")
@@ -157,7 +150,7 @@ class AlertNotifier:
     def _send_whatsapp_alert(self, title: str, message: str, severity: str) -> bool:
         """Send alert via WhatsApp (Tier 1).
 
-        Uses OpenClaw message tool (future integration).
+        Uses message tool (future integration).
         """
         # Format message
         emoji = "🚨" if severity == "CRITICAL" else "⚠️" if severity == "WARNING" else "❌"
@@ -166,7 +159,7 @@ class AlertNotifier:
         logger.info(f"WhatsApp alert to {self.alert_target}: {title}")
         logger.info(f"  Message: {formatted}")
 
-        # TODO: Integrate with OpenClaw message tool
+        # TODO: Integrate with message tool
         # from message import send_alert
         # return send_alert(to=self.alert_target, message=formatted, channel="whatsapp")
 

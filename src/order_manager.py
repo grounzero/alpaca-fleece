@@ -11,11 +11,12 @@ Uses float at module boundaries for API compatibility.
 
 import asyncio
 import hashlib
+import inspect
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from src.broker import Broker
+from src.async_broker_adapter import AsyncBrokerInterface
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
 from src.position_tracker import PositionTracker
 from src.state_store import StateStore
@@ -35,7 +36,7 @@ class OrderManager:
 
     def __init__(
         self,
-        broker: Broker,
+        broker: AsyncBrokerInterface,
         state_store: StateStore,
         event_bus: EventBus,
         config: dict[str, Any],
@@ -137,7 +138,7 @@ class OrderManager:
 
         async def _fetch_positions_from_broker() -> float | None:
             try:
-                positions = await asyncio.to_thread(self.broker.get_positions)
+                positions = await self.broker.get_positions()
                 for p in positions:
                     if p.get("symbol") == symbol:
                         return float(p.get("qty", 0) or 0)
@@ -318,7 +319,7 @@ class OrderManager:
 
         # Submit order
         try:
-            order = self.broker.submit_order(
+            maybe: Any = self.broker.submit_order(
                 symbol=symbol,
                 side=side,
                 qty=float(qty),  # Convert Decimal to float for API
@@ -326,6 +327,7 @@ class OrderManager:
                 order_type=self.order_type,
                 time_in_force=self.time_in_force,
             )
+            order = await maybe if inspect.isawaitable(maybe) else maybe
 
             # Update with Alpaca order ID. Do not overwrite filled fields; pass
             # None so StateStore's COALESCE preserves existing values when
@@ -336,6 +338,20 @@ class OrderManager:
                 filled_qty=None,
                 alpaca_order_id=order.get("id"),
             )
+
+            # Invalidate adapter cache for write consistency so subsequent
+            # reads (positions / open orders) observe the change sooner.
+            try:
+                if hasattr(self.broker, "invalidate_cache"):
+                    maybe = self.broker.invalidate_cache("get_positions", "get_open_orders")
+                    if inspect.isawaitable(maybe):
+                        await maybe
+            except Exception as e:
+                # Re-raise common developer exceptions so they surface in test runs
+                # while still logging transient failures.
+                if isinstance(e, (TypeError, AttributeError, NameError)):
+                    raise
+                logger.exception("Failed to invalidate broker cache after submit")
 
             # Publish order intent event
             await self.event_bus.publish(

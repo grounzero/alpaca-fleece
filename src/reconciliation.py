@@ -13,9 +13,8 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List, cast
 
-from src.broker import Broker
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -40,7 +39,7 @@ NON_TERMINAL_STATUSES = {
 }
 
 
-def reconcile(broker: Broker, state_store: StateStore) -> None:
+async def reconcile(broker: Any, state_store: StateStore) -> None:
     """Reconcile state with Alpaca on startup.
 
     Args:
@@ -52,10 +51,10 @@ def reconcile(broker: Broker, state_store: StateStore) -> None:
     """
     discrepancies: list[dict[str, object]] = []
 
-    # Get state from both sources
+    # Get state from both sources (await async broker methods)
     try:
-        alpaca_orders = broker.get_open_orders()
-        alpaca_positions = broker.get_positions()
+        alpaca_orders = cast(List[Dict[str, Any]], await broker.get_open_orders())
+        alpaca_positions = cast(List[Dict[str, Any]], await broker.get_positions())
         sqlite_orders = state_store.get_all_order_intents()
 
         logger.info(

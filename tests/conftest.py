@@ -45,11 +45,17 @@ def event_bus():
 
 @pytest.fixture
 def mock_broker():
-    """Mock broker client."""
-    broker = MagicMock(spec=Broker)
+    """Mock broker client. Returns an async-compatible shim wrapping a sync MagicMock.
+
+    Runtime modules expect an async broker interface; tests historically used a
+    sync `Broker` MagicMock. Provide a lightweight shim with `async def` methods
+    delegating to the sync mock to maintain existing test semantics while
+    satisfying the async adapter contract.
+    """
+    broker_sync = MagicMock(spec=Broker)
 
     # Mock account
-    broker.get_account.return_value = {
+    broker_sync.get_account.return_value = {
         "equity": 10000.0,
         "buying_power": 5000.0,
         "cash": 2000.0,
@@ -57,20 +63,65 @@ def mock_broker():
     }
 
     # Mock positions
-    broker.get_positions.return_value = []
+    broker_sync.get_positions.return_value = []
 
     # Mock open orders
-    broker.get_open_orders.return_value = []
+    broker_sync.get_open_orders.return_value = []
 
     # Mock clock (market open)
-    broker.get_clock.return_value = {
+    broker_sync.get_clock.return_value = {
         "is_open": True,
         "next_open": None,
         "next_close": None,
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 
-    return broker
+    class AsyncBrokerShim:
+        def __init__(self, sync):
+            self._sync = sync
+            # Expose awaitable wrappers that proxy to the underlying MagicMock methods
+            self.get_account = self._AwaitableMockMethod(self._sync.get_account)
+            self.get_positions = self._AwaitableMockMethod(self._sync.get_positions)
+            self.get_open_orders = self._AwaitableMockMethod(self._sync.get_open_orders)
+            self.get_clock = self._AwaitableMockMethod(self._sync.get_clock)
+            self.submit_order = self._AwaitableMockMethod(self._sync.submit_order)
+            self.cancel_order = self._AwaitableMockMethod(self._sync.cancel_order)
+
+            # Provide no-op awaitable methods for adapter lifecycle and cache
+            # to satisfy the AsyncBrokerInterface used in runtime.
+            async def _noop_invalidate(*keys: str) -> None:  # type: ignore[unused-def]
+                return None
+
+            async def _noop_close() -> None:  # type: ignore[unused-def]
+                return None
+
+            self.invalidate_cache = _noop_invalidate
+            self.close = _noop_close
+
+        class _AwaitableMockMethod:
+            def __init__(self, sync_method):
+                self._sync = sync_method
+
+            @property
+            def return_value(self):
+                return self._sync.return_value
+
+            @return_value.setter
+            def return_value(self, v):
+                self._sync.return_value = v
+
+            @property
+            def side_effect(self):
+                return self._sync.side_effect
+
+            @side_effect.setter
+            def side_effect(self, v):
+                self._sync.side_effect = v
+
+            async def __call__(self, *args, **kwargs):
+                return self._sync(*args, **kwargs)
+
+    return AsyncBrokerShim(broker_sync)
 
 
 @pytest.fixture

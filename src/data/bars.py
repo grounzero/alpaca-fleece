@@ -7,6 +7,7 @@ Publishes to EventBus.
 Manages historical data loading on stream reconnection.
 """
 
+import asyncio
 import logging
 from collections import deque
 from typing import Any, Optional
@@ -60,7 +61,7 @@ class BarsHandler:
             event = self._to_canonical_bar(raw_bar)
 
             # Persist to SQLite
-            self._persist_bar(event)
+            await asyncio.to_thread(self._persist_bar, event)
 
             # Update rolling window
             symbol = event.symbol
@@ -207,7 +208,7 @@ class BarsHandler:
                 if symbol not in self.bars_deque:
                     self.bars_deque[symbol] = deque(maxlen=self.history_size)
                 self.bars_deque[symbol].append(event)
-                self._persist_bar(event)
+                await asyncio.to_thread(self._persist_bar, event)
 
             logger.info(f"Backfilled {len(df)} bars for {symbol}")
         except (ConnectionError, TimeoutError) as e:

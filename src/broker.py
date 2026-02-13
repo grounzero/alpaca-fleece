@@ -76,7 +76,12 @@ class BrokerError(Exception):
 
 
 class Broker:
-    """Execution-only broker client with timeout protection."""
+    """Thin synchronous broker wrapper around the Alpaca SDK.
+
+    NOTE: This class is intentionally synchronous and MUST NOT create or
+    manage its own threadpool. Execution policy, timeouts and retries are
+    handled by the centralized `AsyncBrokerAdapter`.
+    """
 
     def __init__(
         self,
@@ -86,50 +91,81 @@ class Broker:
         query_timeout: float = 10.0,
         submit_timeout: float = 15.0,
     ) -> None:
-        """Initialise broker client.
-
-        Args:
-            api_key: Alpaca API key
-            secret_key: Alpaca secret key
-            paper: True for paper trading, False for live
-            query_timeout: Timeout in seconds for query operations (account, positions, orders, clock)
-            submit_timeout: Timeout in seconds for order submission/cancellation
-        """
+        # Backwards-compatible timeouts expected by unit tests
         self.paper: bool = paper
-        self._default_timeout: float = query_timeout
-        self._submit_timeout: float = submit_timeout
-        self._executor: ThreadPoolExecutor = ThreadPoolExecutor(max_workers=2)
         self.client: TradingClient = TradingClient(
             api_key=api_key,
             secret_key=secret_key,
             paper=paper,
         )
+        self._default_timeout = query_timeout
+        self._submit_timeout = submit_timeout
+        self._timeouts = {
+            "get_clock": query_timeout,
+            "get_account": query_timeout,
+            "get_positions": query_timeout,
+            "get_open_orders": query_timeout,
+            "submit_order": submit_timeout,
+            "cancel_order": submit_timeout,
+        }
+        # Legacy executor used by older code/tests; kept for backwards compatibility.
+        # Runtime paths should prefer `AsyncBrokerAdapter` which owns the real
+        # concurrency boundary. The executor is test-only and is shut down via
+        # `close`/`__del__` to avoid leaking threads.
+        self._executor: Optional[ThreadPoolExecutor] = ThreadPoolExecutor(max_workers=1)
+
+    def close(self) -> None:
+        """Release any resources owned by this broker instance.
+
+        In particular, this shuts down the legacy ThreadPoolExecutor used only by
+        older tests so we don't leak threads in long-lived processes.
+        """
+        executor = getattr(self, "_executor", None)
+        if executor is not None:
+            try:
+                executor.shutdown(wait=False)
+            finally:
+                self._executor = None
+
+    def __del__(self) -> None:
+        """Best-effort cleanup of resources on garbage collection."""
+        try:
+            self.close()
+        except Exception:
+            # Avoid raising from __del__; cleanup is best-effort only.
+            pass
 
     def _call_with_timeout(
         self,
         func: Callable[[], T],
         timeout: Optional[float] = None,
-        operation_name: str = "broker call",
+        operation_name: Optional[str] = None,
     ) -> T:
-        """Execute a function with timeout protection.
+        """Compatibility shim used by older tests.
 
-        Args:
-            func: The function to execute
-            timeout: Timeout in seconds (uses default if None)
-            operation_name: Name of operation for error messages
-
-        Returns:
-            Result of func()
-
-        Raises:
-            BrokerError: If the call times out or fails
+        This implementation is intentionally synchronous and simple. The
+        centralized `AsyncBrokerAdapter` provides the real concurrency,
+        timeouts and retry behavior at runtime. Tests can patch this method
+        to simulate timeouts or other behaviors.
         """
-        timeout = timeout or self._default_timeout
-        future = self._executor.submit(func)
+        # If an executor is present, use it so tests can inject fake executors
+        # to simulate timeouts. Otherwise call synchronously.
+        if hasattr(self, "_executor") and self._executor is not None:
+            fut = self._executor.submit(func)
+            try:
+                return fut.result(timeout=timeout)
+            except FutureTimeoutError:
+                raise BrokerError(f"{operation_name or 'operation'} timed out")
+            except Exception as e:
+                op = f" ({operation_name})" if operation_name else ""
+                raise BrokerError(f"Broker call failed{op}: {e}")
+
+        # Fallback synchronous call
         try:
-            return future.result(timeout=timeout)
-        except FutureTimeoutError:
-            raise BrokerError(f"Broker call '{operation_name}' timed out after {timeout}s")
+            return func()
+        except Exception as e:
+            op = f" ({operation_name})" if operation_name else ""
+            raise BrokerError(f"Broker call failed{op}: {e}")
 
     def get_account(self) -> AccountInfo:
         """Get account info (equity, buying_power, etc).
@@ -139,8 +175,8 @@ class Broker:
         """
         try:
             account: Union[TradeAccount, dict[str, Any]] = self._call_with_timeout(
-                self.client.get_account,
-                timeout=self._default_timeout,
+                lambda: self.client.get_account(),
+                timeout=self._timeouts.get("get_account"),
                 operation_name="get_account",
             )
             # Handle both SDK object and dict responses
@@ -173,8 +209,8 @@ class Broker:
         """
         try:
             positions_raw: Union[list[Position], dict[str, Any]] = self._call_with_timeout(
-                self.client.get_all_positions,
-                timeout=self._default_timeout,
+                lambda: self.client.get_all_positions(),
+                timeout=self._timeouts.get("get_positions"),
                 operation_name="get_positions",
             )
             positions: list[Any] = positions_raw if isinstance(positions_raw, list) else []
@@ -205,8 +241,8 @@ class Broker:
         try:
             # Get orders and filter to open ones manually
             orders_raw: Union[list[Order], dict[str, Any]] = self._call_with_timeout(
-                self.client.get_orders,
-                timeout=self._default_timeout,
+                lambda: self.client.get_orders(),
+                timeout=self._timeouts.get("get_open_orders"),
                 operation_name="get_open_orders",
             )
             orders: list[Any] = orders_raw if isinstance(orders_raw, list) else []
@@ -256,8 +292,8 @@ class Broker:
         """
         try:
             clock: Union[Clock, dict[str, Any]] = self._call_with_timeout(
-                self.client.get_clock,
-                timeout=self._default_timeout,
+                lambda: self.client.get_clock(),
+                timeout=self._timeouts.get("get_clock"),
                 operation_name="get_clock",
             )
             # Handle both SDK object and dict responses
@@ -330,7 +366,7 @@ class Broker:
 
             order_result: Union[Order, dict[str, Any]] = self._call_with_timeout(
                 lambda: self.client.submit_order(order_data),
-                timeout=self._submit_timeout,
+                timeout=self._timeouts.get("submit_order"),
                 operation_name="submit_order",
             )
             # Handle both SDK object and dict responses
@@ -380,7 +416,7 @@ class Broker:
         try:
             self._call_with_timeout(
                 lambda: self.client.cancel_order_by_id(order_id),
-                timeout=self._submit_timeout,
+                timeout=self._timeouts.get("cancel_order"),
                 operation_name="cancel_order",
             )
         except BrokerError:

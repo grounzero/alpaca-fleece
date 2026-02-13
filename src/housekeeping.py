@@ -7,13 +7,14 @@ Responsibilities:
 """
 
 import asyncio
+import inspect
 import logging
 import sqlite3
 from datetime import datetime, timezone
 
 import pytz
 
-from src.broker import Broker
+from src.async_broker_adapter import AsyncBrokerInterface
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -24,14 +25,14 @@ ET = pytz.timezone("America/New_York")
 class Housekeeping:
     """Periodic maintenance."""
 
-    def __init__(self, broker: Broker, state_store: StateStore) -> None:
+    def __init__(self, broker: AsyncBrokerInterface, state_store: StateStore) -> None:
         """Initialise housekeeping.
 
         Args:
             broker: Broker client
             state_store: State store
         """
-        self.broker = broker
+        self.broker = broker  # type: AsyncBrokerInterface
         self.state_store = state_store
         self.running = False
 
@@ -84,11 +85,24 @@ class Housekeeping:
             # Step 1: Cancel all open orders
             logger.info("Cancelling open orders...")
             try:
-                orders = self.broker.get_open_orders()
+                maybe_orders = self.broker.get_open_orders()
+                orders = await maybe_orders if asyncio.iscoroutine(maybe_orders) else maybe_orders
                 for order in orders:
                     order_id = order.get("id")
                     if order_id:
-                        self.broker.cancel_order(order_id)
+                        maybe_cancel = self.broker.cancel_order(order_id)
+                        if inspect.isawaitable(maybe_cancel):
+                            await maybe_cancel
+                        # Invalidate relevant caches after cancelling an order
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_inv = self.broker.invalidate_cache(
+                                    "get_positions", "get_open_orders"
+                                )
+                                if inspect.isawaitable(maybe_inv):
+                                    await maybe_inv
+                            except Exception:
+                                logger.debug("invalidate_cache failed after cancel", exc_info=True)
                         logger.info(f"Cancelled order: {order_id}")
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to cancel orders: {e}")
@@ -96,7 +110,12 @@ class Housekeeping:
             # Step 2: Close all open positions
             logger.info("Closing open positions...")
             try:
-                positions = self.broker.get_positions()
+                maybe_positions = self.broker.get_positions()
+                positions = (
+                    await maybe_positions
+                    if asyncio.iscoroutine(maybe_positions)
+                    else maybe_positions
+                )
                 for position in positions:
                     symbol = position["symbol"]
                     qty = float(position["qty"])
@@ -105,20 +124,33 @@ class Housekeeping:
                     client_order_id = f"close_{symbol}_{datetime.now(timezone.utc).isoformat()}"
 
                     logger.info(f"Closing position: {symbol} ({abs_qty} shares via {side})")
-                    self.broker.submit_order(
+                    maybe_submit = self.broker.submit_order(
                         symbol=symbol,
                         side=side,
                         qty=abs_qty,
                         client_order_id=client_order_id,
                         order_type="market",
                     )
+                    if inspect.isawaitable(maybe_submit):
+                        await maybe_submit
+                    # Invalidate caches after submitting a close order
+                    if hasattr(self.broker, "invalidate_cache"):
+                        try:
+                            maybe_inv2 = self.broker.invalidate_cache(
+                                "get_positions", "get_open_orders"
+                            )
+                            if inspect.isawaitable(maybe_inv2):
+                                await maybe_inv2
+                        except Exception:
+                            logger.debug("invalidate_cache failed after submit", exc_info=True)
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to close positions: {e}")
 
             # Step 3: Take final equity snapshot
             logger.info("Recording final state...")
             try:
-                account = self.broker.get_account()
+                maybe_acc = self.broker.get_account()
+                account = await maybe_acc if asyncio.iscoroutine(maybe_acc) else maybe_acc
                 equity = account["equity"]
 
                 import sqlite3
@@ -152,7 +184,7 @@ class Housekeeping:
                 if iteration % 5 == 0:  # Log every 5 iterations (5 minutes)
                     logger.info(f"Equity snapshots: iteration {iteration}, running={self.running}")
                 try:
-                    account = self.broker.get_account()
+                    account = await self.broker.get_account()
                     equity = account["equity"]
                     daily_pnl = float(self.state_store.get_state("daily_pnl") or 0)
 

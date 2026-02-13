@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
-from src.broker import Broker
+from src.async_broker_adapter import AsyncBrokerInterface
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
@@ -48,7 +48,7 @@ class PositionTracker:
 
     def __init__(
         self,
-        broker: Broker,
+        broker: AsyncBrokerInterface,
         state_store: StateStore,
         trailing_stop_enabled: bool = False,
         trailing_stop_activation_pct: float = 0.01,
@@ -197,7 +197,8 @@ class PositionTracker:
 
     async def sync_with_broker(self) -> dict[str, object]:
         try:
-            broker_positions = await asyncio.to_thread(self.broker.get_positions)
+            maybe = self.broker.get_positions()
+            broker_positions = await maybe if asyncio.iscoroutine(maybe) else maybe
         except Exception as e:
             raise PositionTrackerError(f"Failed to fetch broker positions: {e}")
 

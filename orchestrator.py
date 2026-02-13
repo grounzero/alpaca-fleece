@@ -18,6 +18,7 @@ from typing import Optional
 from src import __version__ as version
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
+from src.async_broker_adapter import AsyncBrokerAdapter
 from src.broker import Broker
 from src.config import load_env, load_trading_config, validate_config
 from src.data_handler import DataHandler
@@ -156,12 +157,13 @@ class Orchestrator:
             logger.info("   Config valid")
 
             logger.info("Connecting to broker...")
-            self.broker = Broker(
+            # Create the synchronous Broker for startup tasks (allowed in Orchestrator)
+            b_sync = Broker(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
                 paper=self.env["ALPACA_PAPER"],
             )
-            account = self.broker.get_account()
+            account = b_sync.get_account()
             logger.info("   Broker connected")
             logger.info(f"      Equity: ${account['equity']:,.2f}")
             logger.info(f"      Buying Power: ${account['buying_power']:,.2f}")
@@ -178,6 +180,10 @@ class Orchestrator:
             self.state_store = StateStore(self.env["DATABASE_PATH"])
             logger.info(f"   State store ready ({self.env['DATABASE_PATH']})")
 
+            # Wrap the sync broker in the AsyncBrokerAdapter and use that
+            self.broker = AsyncBrokerAdapter(b_sync)
+            logger.info("   Async broker adapter ready")
+
             # Tier 1 alerts
             logger.info("Starting alert notifier...")
             alert_config = self.trading_config.get("alerts", {})
@@ -193,7 +199,7 @@ class Orchestrator:
             # Run reconciliation
             logger.info("Running reconciliation...")
             try:
-                reconcile(self.broker, self.state_store)
+                await reconcile(self.broker, self.state_store)
                 logger.info("   Account synced (no discrepancies)")
                 reconciliation_status = "clean"
                 discrepancies = []
@@ -243,7 +249,7 @@ class Orchestrator:
 
                     # Re-check reconciliation
                     try:
-                        reconcile(self.broker, self.state_store)
+                        await reconcile(self.broker, self.state_store)
                         logger.info("   Reconciliation passed after auto-sync")
                         reconciliation_status = "clean"
                         discrepancies = []
@@ -665,7 +671,7 @@ class Orchestrator:
                                 )
 
                                 # Get account equity
-                                account = self.broker.get_account()
+                                account = await self.broker.get_account()
                                 account_equity = float(account.get("equity", 0))
 
                                 # Get risk config with defaults
@@ -952,10 +958,29 @@ class Orchestrator:
             if self.broker:
                 logger.info("Cancelling open orders...")
                 try:
-                    orders = self.broker.get_open_orders()
+                    # Support both sync Broker and AsyncBrokerAdapter (await if needed)
+                    maybe_orders = self.broker.get_open_orders()
+                    if inspect.isawaitable(maybe_orders):
+                        orders = await maybe_orders
+                    else:
+                        orders = maybe_orders
+
                     for order in orders:
-                        self.broker.cancel_order(order["id"])
+                        maybe_cancel = self.broker.cancel_order(order["id"])
+                        if inspect.isawaitable(maybe_cancel):
+                            await maybe_cancel
+                        # Invalidate caches after cancel
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_inv = self.broker.invalidate_cache(
+                                    "get_positions", "get_open_orders"
+                                )
+                                if inspect.isawaitable(maybe_inv):
+                                    await maybe_inv
+                            except Exception:
+                                logger.debug("invalidate_cache failed after cancel", exc_info=True)
                         logger.info(f"  Cancelled: {order['id']} ({order['symbol']})")
+
                     if not orders:
                         logger.info("  No open orders to cancel")
                 except Exception as e:
@@ -964,14 +989,31 @@ class Orchestrator:
                 # Close positions
                 logger.info("Closing open positions...")
                 try:
-                    positions = self.broker.get_positions()
+                    # Support both sync and async broker methods
+                    maybe_positions = self.broker.get_positions()
+                    if inspect.isawaitable(maybe_positions):
+                        positions = await maybe_positions
+                    else:
+                        positions = maybe_positions
+
                     for position in positions:
                         symbol = position["symbol"]
                         qty = position["qty"]
                         side = "sell" if qty > 0 else "buy"
                         abs_qty = abs(qty)
                         logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
-                        self.broker.submit_order(symbol, abs_qty, side, "market")
+                        maybe_submit = self.broker.submit_order(symbol, abs_qty, side, "market")
+                        if inspect.isawaitable(maybe_submit):
+                            await maybe_submit
+                        # Invalidate caches after submitting close order
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_invp = self.broker.invalidate_cache("get_positions")
+                                if inspect.isawaitable(maybe_invp):
+                                    await maybe_invp
+                            except Exception:
+                                logger.debug("invalidate_cache failed after submit", exc_info=True)
+
                     if not positions:
                         logger.info("  No open positions to close")
                 except Exception as e:
@@ -981,6 +1023,16 @@ class Orchestrator:
             if self.event_bus:
                 logger.info("Stopping event bus...")
                 await self.event_bus.stop()
+
+            # Close/cleanup broker adapter if it exposes async close
+            if self.broker and hasattr(self.broker, "close"):
+                try:
+                    maybe_close = self.broker.close()
+                    if inspect.isawaitable(maybe_close):
+                        await maybe_close
+                    logger.info("Broker adapter closed")
+                except Exception as e:
+                    logger.error(f"Failed to close broker adapter: {e}")
 
             logger.info("=" * 60)
             logger.info("Shutdown complete")
@@ -1033,9 +1085,21 @@ async def main():
     logger.info("=" * 60)
 
     orchestrator = Orchestrator()
-    success = await orchestrator.run()
-
-    return 0 if success else 1
+    try:
+        success = await orchestrator.run()
+        return 0 if success else 1
+    finally:
+        # Ensure adapter executor is cleanly shutdown to avoid dangling threads
+        if getattr(orchestrator, "broker", None) is not None and hasattr(
+            orchestrator.broker, "close"
+        ):
+            try:
+                maybe_close = orchestrator.broker.close()
+                if inspect.isawaitable(maybe_close):
+                    await maybe_close
+                logger.info("Broker adapter closed in main()")
+            except Exception:
+                logger.exception("Failed to close broker adapter in main()")
 
 
 if __name__ == "__main__":

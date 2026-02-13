@@ -20,7 +20,7 @@ import math
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from src.broker import Broker
+from src.async_broker_adapter import AsyncBrokerInterface
 from src.data_handler import DataHandler
 from src.event_bus import EventBus, ExitSignalEvent
 from src.position_tracker import PositionData, PositionTracker
@@ -88,7 +88,7 @@ class ExitManager:
 
     def __init__(
         self,
-        broker: Broker,
+        broker: AsyncBrokerInterface,
         position_tracker: PositionTracker,
         event_bus: EventBus,
         state_store: StateStore,
@@ -225,7 +225,8 @@ class ExitManager:
 
         # Check if market is open first (fresh clock call)
         try:
-            clock = self.broker.get_clock()
+            maybe = self.broker.get_clock()
+            clock = await maybe if asyncio.iscoroutine(maybe) else maybe
             if not clock["is_open"]:
                 logger.debug("Market closed - skipping position checks")
                 return signals
