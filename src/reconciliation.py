@@ -221,10 +221,13 @@ async def reconcile_fills(
     try:
         all_intents = state_store.get_all_order_intents()
         # Only reconcile orders that could have fills we missed
+        # Filter out empty/unknown statuses to avoid unnecessary broker API calls
         non_terminal = [
             o
             for o in all_intents
-            if OrderState.from_alpaca(str(o.get("status", ""))).has_fill_potential
+            if (status := str(o.get("status") or "").strip().lower())
+            and status != "unknown"
+            and OrderState.from_alpaca(status).has_fill_potential
             and o.get("alpaca_order_id")
         ]
 

@@ -141,7 +141,7 @@ class PositionTracker:
 
         if side == "buy":
             if position is None:
-                # First fill - create new position
+                # First fill - create new long position
                 position = PositionData(
                     symbol=symbol,
                     side="long",
@@ -156,13 +156,58 @@ class PositionTracker:
                 self._last_update = timestamp
                 self._persist_position(position, timestamp)
                 logger.info(
-                    "Position created on first fill: %s qty=%.4f @ %.2f",
+                    "Long position created on first fill: %s qty=%.4f @ %.2f",
                     symbol,
                     delta_qty,
                     fill_price,
                 )
+            elif position.side == "short":
+                # Closing/reducing short position
+                current_qty = position.qty
+                new_qty = current_qty - delta_qty
+
+                if new_qty <= 0:
+                    # Short position fully closed
+                    closed_snapshot = PositionData(
+                        symbol=position.symbol,
+                        side=position.side,
+                        qty=0.0,
+                        entry_price=position.entry_price,
+                        entry_time=position.entry_time,
+                        extreme_price=position.extreme_price,
+                        atr=position.atr,
+                        trailing_stop_price=position.trailing_stop_price,
+                        trailing_stop_activated=position.trailing_stop_activated,
+                        pending_exit=position.pending_exit,
+                        last_updated=timestamp,
+                    )
+
+                    # Store snapshot for immediate retrieval by callers
+                    self._last_closed_snapshots[symbol] = closed_snapshot
+
+                    # Remove in-memory and persisted state
+                    self.stop_tracking(symbol)
+                    logger.info(
+                        "Short position closed on buy fill: %s qty=%.4f→0",
+                        symbol,
+                        current_qty,
+                    )
+                    return None
+                else:
+                    # Partial close - reduce short position
+                    position.qty = new_qty
+                    position.last_updated = timestamp
+                    self._last_updates[symbol] = timestamp
+                    self._last_update = timestamp
+                    self._persist_position(position, timestamp)
+                    logger.info(
+                        "Short position decreased: %s qty=%.4f→%.4f",
+                        symbol,
+                        current_qty,
+                        new_qty,
+                    )
             else:
-                # Additional fill - blend average price
+                # Increasing long position - blend average price
                 current_qty = position.qty
                 current_avg = position.entry_price
                 new_qty = current_qty + delta_qty
@@ -176,7 +221,7 @@ class PositionTracker:
                 self._last_update = timestamp
                 self._persist_position(position, timestamp)
                 logger.info(
-                    "Position increased: %s qty=%.4f→%.4f avg=%.2f→%.2f",
+                    "Long position increased: %s qty=%.4f→%.4f avg=%.2f→%.2f",
                     symbol,
                     current_qty,
                     new_qty,
@@ -186,15 +231,57 @@ class PositionTracker:
 
         elif side == "sell":
             if position is None:
-                # Attempting to sell without existing position
-                logger.warning(
-                    "Sell fill without existing position: %s qty=%.4f",
+                # First sell fill with no existing position: treat as opening a short
+                position = PositionData(
+                    symbol=symbol,
+                    side="short",
+                    qty=delta_qty,
+                    entry_price=fill_price,
+                    entry_time=timestamp,
+                    extreme_price=fill_price,
+                    last_updated=timestamp,
+                )
+                self._positions[symbol] = position
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Short position created on first sell fill: %s qty=%.4f @ %.2f",
                     symbol,
                     delta_qty,
+                    fill_price,
                 )
-                return None
+                return position
 
-            # Decrease position - avg price unchanged
+            # Decrease long position or increase short position
+            if position.side == "short":
+                # Increasing short position - weighted average entry price
+                current_qty = position.qty
+                current_entry = position.entry_price
+                total_qty = current_qty + delta_qty
+
+                # Weighted average: (qty1*price1 + qty2*price2) / (qty1 + qty2)
+                new_entry_price = (
+                    (current_qty * current_entry) + (delta_qty * fill_price)
+                ) / total_qty
+
+                position.qty = total_qty
+                position.entry_price = new_entry_price
+                position.last_updated = timestamp
+                self._last_updates[symbol] = timestamp
+                self._last_update = timestamp
+                self._persist_position(position, timestamp)
+                logger.info(
+                    "Short position increased: %s qty=%.4f→%.4f entry=%.2f→%.2f",
+                    symbol,
+                    current_qty,
+                    total_qty,
+                    current_entry,
+                    new_entry_price,
+                )
+                return position
+
+            # Decrease long position - avg price unchanged
             current_qty = position.qty
             new_qty = current_qty - delta_qty
 

@@ -1068,12 +1068,12 @@ class TestPositionTrackerFillIntegration:
 
     @pytest.mark.asyncio
     async def test_position_sell_without_existing_logs_warning(self, tmp_path, caplog):
-        """Verify warning is logged when sell fill arrives without position."""
+        """Verify short position is created when sell fill arrives without position."""
         db_path, state_store = _setup_db(tmp_path)
         mock_broker = MagicMock()
         tracker = PositionTracker(broker=mock_broker, state_store=state_store)
 
-        with caplog.at_level("WARNING"):
+        with caplog.at_level("INFO"):
             result = await tracker.update_position_from_fill(
                 symbol="AAPL",
                 delta_qty=10.0,
@@ -1081,8 +1081,12 @@ class TestPositionTrackerFillIntegration:
                 side="sell",
             )
 
-        assert result is None
-        assert "Sell fill without existing position" in caplog.text
+        # Short position should be created
+        assert result is not None
+        assert result.side == "short"
+        assert result.qty == 10.0
+        assert result.entry_price == 150.0
+        assert "Short position created on first sell fill" in caplog.text
 
 
 # ---------------------------------------------------------------
@@ -1094,7 +1098,7 @@ class TestOrderStateEnum:
     """Test OrderState enum functionality."""
 
     def test_order_state_enum_has_all_required_states(self):
-        """Verify all 11 states are defined (8 original + 3 partial terminals)."""
+        """Verify all 12 states are defined (8 original + 3 partial terminals + 1 unknown)."""
         states = {
             OrderState.PENDING,
             OrderState.SUBMITTED,
@@ -1107,8 +1111,9 @@ class TestOrderStateEnum:
             OrderState.CANCELLED_PARTIAL,
             OrderState.EXPIRED_PARTIAL,
             OrderState.REJECTED_PARTIAL,
+            OrderState.UNKNOWN,
         }
-        assert len(states) == 11
+        assert len(states) == 12
 
     def test_order_state_from_alpaca_mapping_correct(self):
         """Verify all Alpaca status strings map to correct OrderState."""

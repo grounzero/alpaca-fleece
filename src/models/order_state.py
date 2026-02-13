@@ -1,4 +1,7 @@
+import logging
 from enum import Enum
+
+logger = logging.getLogger(__name__)
 
 
 class OrderState(Enum):
@@ -23,6 +26,9 @@ class OrderState(Enum):
     CANCELLED_PARTIAL = "cancelled_partial"  # Alpaca: canceled after partial fills
     EXPIRED_PARTIAL = "expired_partial"  # Alpaca: expired after partial fills
     REJECTED_PARTIAL = "rejected_partial"  # Alpaca: rejected after partial fills
+
+    # Unknown/invalid state
+    UNKNOWN = "unknown"  # Unmapped or invalid status from broker
 
     @classmethod
     def from_alpaca(
@@ -72,11 +78,24 @@ class OrderState(Enum):
             "expired": cls.EXPIRED,
             "rejected": cls.REJECTED,
         }
-        return mapping.get(status_lower, cls.PENDING)
+
+        # Log unknown statuses and return UNKNOWN instead of defaulting to PENDING
+        result = mapping.get(status_lower)
+        if result is None:
+            logger.warning(
+                "Unknown order status from broker: '%s' (mapped to UNKNOWN)",
+                alpaca_status,
+            )
+            return cls.UNKNOWN
+
+        return result
 
     @property
     def is_terminal(self) -> bool:
-        """Return True if order is in a terminal state (including partial terminals)."""
+        """Return True if order is in a terminal state (including partial terminals and unknown).
+
+        UNKNOWN is treated as terminal to prevent reconciliation loops.
+        """
         return self in {
             OrderState.FILLED,
             OrderState.CANCELLED,
@@ -85,14 +104,15 @@ class OrderState(Enum):
             OrderState.CANCELLED_PARTIAL,
             OrderState.EXPIRED_PARTIAL,
             OrderState.REJECTED_PARTIAL,
+            OrderState.UNKNOWN,
         }
 
     @property
     def has_fill_potential(self) -> bool:
         """Return True if order may still receive fills.
 
-        All terminal states (including partial terminals) return False as they
-        cannot receive additional fills once terminal.
+        All terminal states (including partial terminals and unknown) return False.
+        UNKNOWN orders are assumed to have no fill potential to avoid reconciliation issues.
         """
         return self in {
             OrderState.PENDING,

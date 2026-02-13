@@ -85,6 +85,7 @@ class OrderUpdateEvent:
     delta_qty: Optional[float] = None
     last_fill_qty: Optional[float] = None  # Incremental fill quantity (from Alpaca)
     last_fill_price: Optional[float] = None  # Incremental fill price (from Alpaca)
+    position_snapshot: Optional[object] = None  # PositionData snapshot when position closes
 
     @property
     def cum_filled_qty(self) -> Optional[float]:

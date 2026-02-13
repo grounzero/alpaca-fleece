@@ -776,20 +776,30 @@ class Orchestrator:
 
         side = order_intent.get("side", "")
         fill_price = event.avg_fill_price
+        filled_qty = event.filled_qty
+
+        # Guard against missing fill price or quantity
+        if fill_price is None or filled_qty is None:
+            logger.warning(
+                "Fill missing price or qty data: symbol=%s order=%s fill_price=%s filled_qty=%s",
+                event.symbol,
+                event.client_order_id,
+                fill_price,
+                filled_qty,
+            )
+            return
 
         if side == "buy":
             # Position was already created/updated by OrderUpdatesHandler
-            logger.info(
-                f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} qty={event.filled_qty}"
-            )
+            logger.info(f"Buy fill captured: {event.symbol} @ ${fill_price:.2f} qty={filled_qty}")
         elif side == "sell":
             # Calculate realised P&L. PositionTracker may have removed the
             # in-memory position on a full exit before this handler runs.
-            # If that happens, OrderUpdatesHandler attaches a `_position_snapshot`
-            # attribute to the event containing the closed position snapshot
+            # If that happens, OrderUpdatesHandler attaches a `position_snapshot`
+            # field to the event containing the closed position snapshot
             # (including `entry_price`) so we can still compute P&L.
             position = self.position_tracker.get_position(event.symbol)
-            snapshot = getattr(event, "_position_snapshot", None)
+            snapshot = event.position_snapshot
             if position:
                 entry_price = position.entry_price
             elif snapshot is not None:
@@ -798,7 +808,7 @@ class Orchestrator:
                 entry_price = None
 
             if entry_price is not None:
-                realized_pnl = (fill_price - entry_price) * event.filled_qty
+                realized_pnl = (fill_price - entry_price) * filled_qty
 
                 # Update daily P&L
                 current_daily_pnl = self.state_store.get_daily_pnl()
@@ -811,7 +821,7 @@ class Orchestrator:
 
                 logger.info(
                     f"Sell fill captured: {event.symbol} @ ${fill_price:.2f} "
-                    f"qty={event.filled_qty} realized_pnl=${realized_pnl:.2f} "
+                    f"qty={filled_qty} realized_pnl=${realized_pnl:.2f} "
                     f"daily_pnl=${new_daily_pnl:.2f}"
                 )
             else:
