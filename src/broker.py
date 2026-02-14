@@ -40,15 +40,7 @@ class AccountInfo:
         return getattr(self, key)
 
 
-@dataclass
-class PositionInfo:
-    symbol: str = ""
-    qty: float = 0.0
-    avg_entry_price: Optional[float] = None
-    current_price: Optional[float] = None
-
-    def __getitem__(self, key: str) -> Any:
-        return getattr(self, key)
+from src.models.persistence import PositionInfo
 
 
 @dataclass

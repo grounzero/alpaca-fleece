@@ -20,18 +20,18 @@ def _get(row: Any, idx: int, key: str) -> Any:
     if isinstance(row, (list, tuple)):
         try:
             return row[idx]
-        except Exception:
+        except IndexError:
             return None
 
     # sqlite3.Row supports mapping by key
     if isinstance(row, sqlite3.Row):
         try:
             return row[key]
-        except Exception:
+        except KeyError:
             # fallback to index access
             try:
                 return row[idx]
-            except Exception:
+            except IndexError:
                 return None
 
     # dict-like
@@ -40,11 +40,15 @@ def _get(row: Any, idx: int, key: str) -> Any:
 
     # arbitrary object: try attribute, then index
     if hasattr(row, key):
-        return getattr(row, key)
+        try:
+            return getattr(row, key)
+        except Exception:
+            # Attribute access raised unexpectedly — allow caller to see the error
+            raise
 
     try:
         return row[idx]
-    except Exception:
+    except IndexError:
         return None
 
 

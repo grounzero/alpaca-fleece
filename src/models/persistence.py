@@ -5,16 +5,16 @@ from typing import Any, Optional
 
 @dataclass
 class OrderIntent:
-    client_order_id: str
-    strategy: Optional[str]
-    symbol: str
-    side: str
-    qty: float
-    atr: Optional[float]
-    status: str
-    filled_qty: Optional[float]
-    filled_avg_price: Optional[float]
-    alpaca_order_id: Optional[str]
+    client_order_id: str = ""
+    strategy: Optional[str] = None
+    symbol: str = ""
+    side: str = ""
+    qty: float = 0.0
+    atr: Optional[float] = None
+    status: str = ""
+    filled_qty: Optional[float] = None
+    filled_avg_price: Optional[float] = None
+    alpaca_order_id: Optional[str] = None
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -29,6 +29,9 @@ class OrderIntent:
             "filled_avg_price": self.filled_avg_price,
             "alpaca_order_id": self.alpaca_order_id,
         }
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
 
 
 @dataclass
@@ -98,3 +101,18 @@ class PositionSnapshot:
             "avg_entry_price": float(self.avg_entry_price),
             "timestamp_utc": self.timestamp_utc.isoformat() if self.timestamp_utc else None,
         }
+
+
+@dataclass
+class PositionInfo:
+    """Lightweight position summary used by broker adapters and APIs.
+
+    Kept in `models.persistence` so all persistence-facing dataclasses are colocated.
+    """
+    symbol: str = ""
+    qty: float = 0.0
+    avg_entry_price: Optional[float] = None
+    current_price: Optional[float] = None
+
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)

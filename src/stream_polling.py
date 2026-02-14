@@ -8,7 +8,7 @@ import logging
 import os
 import sqlite3
 import uuid
-from dataclasses import asdict, is_dataclass
+from dataclasses import is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, Optional
 
@@ -656,13 +656,15 @@ class StreamPolling:
                     logger.exception("Failed to map DB row to OrderIntent; skipping")
                     continue
 
-                # Tests and existing callers expect subscriptable dict-like
-                # results. Convert dataclass -> dict when necessary to remain
-                # backwards compatible while still using the mapper.
                 if is_dataclass(oi):
-                    orders.append(asdict(oi))
-                else:
                     orders.append(oi)
+                else:
+                    try:
+                        oi_mapped = order_intent_from_row(oi)
+                        orders.append(oi_mapped)
+                    except Exception:
+                        logger.exception("Failed to coerce mapped row into OrderIntent; skipping")
+                        continue
 
             return orders
         except sqlite3.Error as e:

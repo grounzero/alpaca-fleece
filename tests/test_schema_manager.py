@@ -4,13 +4,7 @@ import sqlite3
 
 import pytest
 
-from src.schema_manager import (
-    CURRENT_SCHEMA_VERSION,
-    INDEXES,
-    TABLES,
-    SchemaError,
-    SchemaManager,
-)
+from src.schema_manager import CURRENT_SCHEMA_VERSION, INDEXES, TABLES, SchemaError, SchemaManager
 
 
 class TestFreshDatabase:

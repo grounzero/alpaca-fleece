@@ -23,11 +23,7 @@ from src.event_bus import EventBus
 from src.models.order_state import OrderState
 from src.models.persistence import OrderIntent
 from src.position_tracker import PositionTracker
-from src.reconciliation import (
-    apply_safe_order_updates,
-    compare_order_states,
-    compare_positions,
-)
+from src.reconciliation import apply_safe_order_updates, compare_order_states, compare_positions
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)

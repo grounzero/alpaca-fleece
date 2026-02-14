@@ -1,11 +1,7 @@
 import sqlite3
 from datetime import datetime
 
-from src.adapters.persistence.mappers import (
-    fill_from_row,
-    order_intent_from_row,
-    position_from_row,
-)
+from src.adapters.persistence.mappers import fill_from_row, order_intent_from_row, position_from_row
 from src.models.persistence import Fill, OrderIntent, Position
 
 
