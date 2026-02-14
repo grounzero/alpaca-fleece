@@ -316,8 +316,8 @@ async def reconcile_fills(
         for intent in non_terminal:
             try:
                 client_id = str(intent.client_order_id)
-                alpaca_id = str(getattr(intent, "alpaca_order_id", None) or "")
-                db_filled_qty = float(getattr(intent, "filled_qty", 0) or 0)
+                alpaca_id = str(intent.alpaca_order_id or "")
+                db_filled_qty = float(intent.filled_qty or 0)
 
                 # Look up broker order
                 broker_order = broker_order_map.get(client_id) or broker_order_map.get(alpaca_id)
