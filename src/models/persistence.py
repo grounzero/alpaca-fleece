@@ -117,3 +117,6 @@ class PositionInfo:
 
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
+
+    def get(self, key: str, default: Any = None) -> Any:
+        return getattr(self, key, default)
