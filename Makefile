@@ -128,9 +128,7 @@ dev-setup:
 		. .venv/bin/activate && pip install -r requirements-dev.txt; \
 	fi
 	. .venv/bin/activate && pip install pre-commit || true
-	# Install pre-commit hooks and ensure repository hooks path is set to tracked .githooks
+	# Install pre-commit hooks into the default .git/hooks directory
 	. .venv/bin/activate && pre-commit install || true
 	. .venv/bin/activate && pre-commit install --hook-type pre-push || true
-	@git config core.hooksPath .githooks || true
-	@chmod +x .githooks/* || true
 	@echo "Done. Activate with: source .venv/bin/activate"
