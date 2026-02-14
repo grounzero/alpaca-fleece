@@ -365,7 +365,7 @@ async def reconcile_fills(
                             "id": alpaca_id,
                             "client_order_id": client_id,
                             "symbol": intent.symbol if getattr(intent, "symbol", None) else "",
-                            "side": intent.side if getattr(intent, "side", None) else "unknown",
+                            "side": intent.side,
                             "status": broker_status,
                             "filled_qty": broker_filled_qty,
                             "filled_avg_price": broker_avg_price,
