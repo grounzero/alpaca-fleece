@@ -340,7 +340,11 @@ class StateStore:
             status: Optional status filter (e.g., 'new', 'submitted', 'filled')
 
         Returns:
-            List of `OrderIntent` dataclass instances representing persisted order intents
+            List of `OrderIntent` dataclass instances representing persisted order intents.
+
+        Notes:
+            - Rows are converted to `OrderIntent` via `src.adapters.persistence.mappers.order_intent_from_row`.
+            - If callers expect mapping/dict shapes for backward compatibility, call `order_intent.to_dict()`.
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()

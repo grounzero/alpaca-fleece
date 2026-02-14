@@ -8,7 +8,6 @@ import logging
 import os
 import sqlite3
 import uuid
-from dataclasses import is_dataclass
 from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, Optional
 
