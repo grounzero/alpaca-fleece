@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import Any, Dict, List, cast
 
 from src.models.order_state import OrderState
-from src.state_store import OrderIntentRow, StateStore
+from src.models.persistence import OrderIntent
+from src.state_store import StateStore
 from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
@@ -29,7 +30,7 @@ class ReconciliationError(Exception):
 
 
 def compare_order_states(
-    sqlite_orders: List[OrderIntentRow], alpaca_orders: List[Dict[str, Any]]
+    sqlite_orders: List[OrderIntent], alpaca_orders: List[Dict[str, Any]]
 ) -> tuple[list[dict[str, object]], int]:
     """Compare SQLite vs Alpaca orders.
 
@@ -47,9 +48,9 @@ def compare_order_states(
         client_id = order["client_order_id"]
         alpaca_status = order["status"]
 
-        if client_id in {o["client_order_id"] for o in sqlite_orders}:
-            sqlite_order: Any = next(o for o in sqlite_orders if o["client_order_id"] == client_id)
-            sqlite_status = str(sqlite_order.get("status") or "unknown")
+        if client_id in {o.client_order_id for o in sqlite_orders}:
+            sqlite_order: Any = next(o for o in sqlite_orders if o.client_order_id == client_id)
+            sqlite_status = str(getattr(sqlite_order, "status", None) or "unknown")
             sqlite_state = OrderState.from_alpaca(sqlite_status)
             alpaca_state = OrderState.from_alpaca(alpaca_status)
 
@@ -58,8 +59,8 @@ def compare_order_states(
 
     # Rule 2: SQLite has order terminal, Alpaca reports non-terminal → DISCREPANCY
     for sqlite_order_item in sqlite_orders:
-        client_id = str(sqlite_order_item["client_order_id"])
-        sqlite_status_check: str = str(sqlite_order_item.get("status") or "")
+        client_id = str(sqlite_order_item.client_order_id)
+        sqlite_status_check: str = str(getattr(sqlite_order_item, "status", None) or "")
         sqlite_state_check = OrderState.from_alpaca(sqlite_status_check)
 
         if sqlite_state_check.is_terminal:
@@ -80,7 +81,7 @@ def compare_order_states(
                 )
 
     # Rule 3: Alpaca has open orders not in SQLite → DISCREPANCY
-    sqlite_client_ids = {o["client_order_id"] for o in sqlite_orders}
+    sqlite_client_ids = {o.client_order_id for o in sqlite_orders}
     for order in alpaca_orders:
         if order["client_order_id"] not in sqlite_client_ids:
             discrepancies.append(
@@ -96,7 +97,7 @@ def compare_order_states(
 
 def apply_safe_order_updates(
     state_store: StateStore,
-    sqlite_orders: List[OrderIntentRow],
+    sqlite_orders: List[OrderIntent],
     alpaca_orders: List[Dict[str, Any]],
 ) -> int:
     """Apply Rule 1 updates (Alpaca terminal → SQLite).
@@ -108,9 +109,9 @@ def apply_safe_order_updates(
         client_id = order["client_order_id"]
         alpaca_status = order["status"]
 
-        if client_id in {o["client_order_id"] for o in sqlite_orders}:
-            sqlite_order: Any = next(o for o in sqlite_orders if o["client_order_id"] == client_id)
-            sqlite_status = str(sqlite_order.get("status") or "unknown")
+        if client_id in {o.client_order_id for o in sqlite_orders}:
+            sqlite_order: Any = next(o for o in sqlite_orders if o.client_order_id == client_id)
+            sqlite_status = str(getattr(sqlite_order, "status", None) or "unknown")
             sqlite_state = OrderState.from_alpaca(sqlite_status)
             alpaca_state = OrderState.from_alpaca(alpaca_status)
 
@@ -219,7 +220,7 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "discrepancies": discrepancies,
             "alpaca_orders": alpaca_orders,
-            "sqlite_orders": sqlite_orders,
+            "sqlite_orders": [o.to_dict() for o in sqlite_orders],
         }
 
         report_path = Path("data/reconciliation_error.json")
@@ -283,10 +284,10 @@ async def reconcile_fills(
         non_terminal = [
             o
             for o in all_intents
-            if (status := str(o.get("status") or "").strip().lower())
+            if (status := str(getattr(o, "status", None) or "")).strip().lower()
             and status != "unknown"
             and OrderState.from_alpaca(status).has_fill_potential
-            and o.get("alpaca_order_id")
+            and getattr(o, "alpaca_order_id", None)
         ]
 
         if not non_terminal:
@@ -313,9 +314,9 @@ async def reconcile_fills(
 
         for intent in non_terminal:
             try:
-                client_id = str(intent["client_order_id"])
-                alpaca_id = str(intent.get("alpaca_order_id") or "")
-                db_filled_qty = float(intent.get("filled_qty") or 0)
+                client_id = str(intent.client_order_id)
+                alpaca_id = str(getattr(intent, "alpaca_order_id", None) or "")
+                db_filled_qty = float(getattr(intent, "filled_qty", 0) or 0)
 
                 # Look up broker order
                 broker_order = broker_order_map.get(client_id) or broker_order_map.get(alpaca_id)
@@ -362,8 +363,8 @@ async def reconcile_fills(
                         synth_order_data = {
                             "id": alpaca_id,
                             "client_order_id": client_id,
-                            "symbol": intent.get("symbol", ""),
-                            "side": intent.get("side", "unknown"),
+                            "symbol": intent.symbol if getattr(intent, "symbol", None) else "",
+                            "side": intent.side if getattr(intent, "side", None) else "unknown",
                             "status": broker_status,
                             "filled_qty": broker_filled_qty,
                             "filled_avg_price": broker_avg_price,
@@ -376,7 +377,7 @@ async def reconcile_fills(
             except Exception as e:
                 logger.error(
                     "Fill reconciliation error for order %s: %s",
-                    intent.get("client_order_id", "?"),
+                    getattr(intent, "client_order_id", "?"),
                     e,
                 )
 

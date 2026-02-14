@@ -19,6 +19,7 @@ from typing import Dict, List, Optional
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.state_store import StateStore
 from src.utils import parse_optional_float
+from src.adapters.persistence.mappers import position_from_row
 
 logger = logging.getLogger(__name__)
 
@@ -568,34 +569,25 @@ class PositionTracker:
                 """)
             rows = cursor.fetchall()
             for row in rows:
-                atr_val = parse_optional_float(row[4])
-                trailing_stop_val = parse_optional_float(row[7])
-                position = PositionData(
-                    symbol=row[0],
-                    side=row[1],
-                    qty=float(row[2]),
-                    entry_price=float(row[3]),
-                    atr=atr_val,
-                    entry_time=datetime.fromisoformat(row[5]),
-                    extreme_price=float(row[6]),
-                    trailing_stop_price=trailing_stop_val,
-                    trailing_stop_activated=bool(int(row[8] or 0)),
-                    pending_exit=bool(int(row[9] or 0)),
-                )
-                # Parse persisted updated_at if present and set per-symbol freshness
-                try:
-                    updated_at_raw = row[10]
-                    updated_dt = (
-                        datetime.fromisoformat(updated_at_raw).astimezone(timezone.utc)
-                        if updated_at_raw
-                        else None
-                    )
-                except Exception:
-                    updated_dt = None
+                # Map DB row to persistence Position dataclass then convert to PositionData
+                p = position_from_row(row)
 
-                position.last_updated = updated_dt
-                if updated_dt:
-                    self._last_updates[position.symbol] = updated_dt
+                position = PositionData(
+                    symbol=p.symbol,
+                    side=p.side,
+                    qty=p.qty,
+                    entry_price=p.entry_price,
+                    entry_time=p.entry_time or datetime.now(timezone.utc),
+                    extreme_price=p.extreme_price,
+                    atr=p.atr,
+                    trailing_stop_price=p.trailing_stop_price,
+                    trailing_stop_activated=bool(p.trailing_stop_activated),
+                    pending_exit=bool(p.pending_exit),
+                    last_updated=p.updated_at,
+                )
+
+                if p.updated_at:
+                    self._last_updates[position.symbol] = p.updated_at
 
                 self._positions[position.symbol] = position
                 positions.append(position)

@@ -156,9 +156,9 @@ class TestEndToEndTrade:
             order_manager._generate_client_order_id("AAPL", signal.timestamp, "buy")
         )
         assert order_intent is not None, "Order intent was not persisted"
-        assert order_intent["symbol"] == "AAPL"
-        assert order_intent["side"] == "buy"
-        assert order_intent["qty"] == 10.0
+        assert order_intent.symbol == "AAPL"
+        assert order_intent.side == "buy"
+        assert order_intent.qty == 10.0
 
         print("✅ END-TO-END TEST PASSED: Signal → Risk Check → Order Submission")
 

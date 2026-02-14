@@ -20,13 +20,14 @@ from typing import Any, Dict, List, Optional
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.event_bus import EventBus
 from src.models.order_state import OrderState
+from src.models.persistence import OrderIntent
 from src.position_tracker import PositionTracker
 from src.reconciliation import (
     apply_safe_order_updates,
     compare_order_states,
     compare_positions,
 )
-from src.state_store import OrderIntentRow, StateStore
+from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +162,7 @@ class RuntimeReconciler:
 
             alpaca_orders = broker_state["orders"]
             alpaca_positions = broker_state["positions"]
-            sqlite_orders: List[OrderIntentRow] = self.state_store.get_all_order_intents()
+            sqlite_orders: List[OrderIntent] = self.state_store.get_all_order_intents()
 
             # Reset broker health to healthy
             self.state_store.set_state("broker_health", "healthy")
