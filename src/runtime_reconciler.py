@@ -319,6 +319,28 @@ class RuntimeReconciler:
                 alpaca_order_map[symbol] = []
             alpaca_order_map[symbol].append(order)
 
+        # Batch-query SQLite for exit orders for all pending symbols to avoid
+        # opening a new DB connection per symbol (performance/scalability).
+        symbols = [s for s, _ in pending_exits]
+        sqlite_orders_by_symbol: Dict[str, List[tuple]] = {}
+        if symbols:
+            placeholders = ",".join("?" for _ in symbols)
+            with sqlite3.connect(self.state_store.db_path) as conn_check:
+                cursor_check = conn_check.cursor()
+                cursor_check.execute(
+                    f"""
+                    SELECT symbol, side, status FROM order_intents
+                    WHERE symbol IN ({placeholders})
+                      AND status IN ('new', 'submitted', 'accepted', 'partially_filled', 'pending_new')
+                    """,
+                    tuple(symbols),
+                )
+                rows = cursor_check.fetchall()
+
+            for row in rows:
+                sym = row[0]
+                sqlite_orders_by_symbol.setdefault(sym, []).append(row)
+
         for symbol, side in pending_exits:
             # Check if position still exists in broker
             if symbol not in alpaca_position_symbols:
@@ -332,20 +354,15 @@ class RuntimeReconciler:
                 )
                 continue
 
-            # Check if there's a working exit order in SQLite
-            with sqlite3.connect(self.state_store.db_path) as conn_check:
-                cursor_check = conn_check.cursor()
-                cursor_check.execute(
-                    """
-                    SELECT status FROM order_intents
-                    WHERE symbol = ? AND side != ?
-                      AND status IN ('new', 'submitted', 'accepted', 'partially_filled', 'pending_new')
-                    """,
-                    (symbol, side),
-                )
-                sqlite_exit_orders = cursor_check.fetchall()
+            # Check if there's a working exit order in SQLite (from batched results)
+            sqlite_rows = sqlite_orders_by_symbol.get(symbol, [])
+            has_sqlite_working_exit = False
+            for _sym, row_side, _status in sqlite_rows:
+                if row_side != side:
+                    has_sqlite_working_exit = True
+                    break
 
-            if sqlite_exit_orders:
+            if has_sqlite_working_exit:
                 # Working exit order exists - not stuck
                 continue
 
