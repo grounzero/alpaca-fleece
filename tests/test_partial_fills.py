@@ -760,7 +760,7 @@ class TestLateFills:
 
 
 class TestSchemaVersion:
-    def test_schema_version_is_2(self, tmp_path):
+    def test_schema_version(self, tmp_path):
         db_path = str(tmp_path / "ver.db")
         SchemaManager.ensure_schema(db_path)
         with sqlite3.connect(db_path) as conn:
