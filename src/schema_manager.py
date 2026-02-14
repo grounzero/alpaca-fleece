@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 # Schema version — bump when adding tables, columns, or indexes
 # ---------------------------------------------------------------------------
-CURRENT_SCHEMA_VERSION = 3
+CURRENT_SCHEMA_VERSION = 4
 
 # ---------------------------------------------------------------------------
 # Canonical table definitions (CREATE TABLE IF NOT EXISTS)
@@ -151,6 +151,20 @@ TABLES: dict[str, str] = {
             reason TEXT
         )
     """,
+    "reconciliation_reports": """
+        CREATE TABLE IF NOT EXISTS reconciliation_reports (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            timestamp_utc TEXT NOT NULL,
+            check_type TEXT NOT NULL,
+            duration_ms INTEGER NOT NULL,
+            discrepancies_count INTEGER NOT NULL DEFAULT 0,
+            repaired_count INTEGER NOT NULL DEFAULT 0,
+            status TEXT NOT NULL,
+            discrepancies_json TEXT,
+            repairs_json TEXT,
+            error_message TEXT
+        )
+    """,
 }
 
 # ---------------------------------------------------------------------------
@@ -216,6 +230,14 @@ INDEXES: dict[str, str] = {
     "idx_position_tracking_pending_exit": (
         "CREATE INDEX IF NOT EXISTS idx_position_tracking_pending_exit "
         "ON position_tracking(pending_exit)"
+    ),
+    "idx_reconciliation_reports_timestamp": (
+        "CREATE INDEX IF NOT EXISTS idx_reconciliation_reports_timestamp "
+        "ON reconciliation_reports(timestamp_utc)"
+    ),
+    "idx_reconciliation_reports_status": (
+        "CREATE INDEX IF NOT EXISTS idx_reconciliation_reports_status "
+        "ON reconciliation_reports(status)"
     ),
 }
 
@@ -324,199 +346,204 @@ class SchemaManager:
         Path(db_path).parent.mkdir(parents=True, exist_ok=True)
         planned_actions: list[str] = []
 
-        conn = sqlite3.connect(db_path)
-        try:
-            cursor = conn.cursor()
-
-            # Set PRAGMAs before transaction. Avoid persistent changes and write
-            # locks when running in dry-run mode so the operation has no side
-            # effects and does not block other DB users.
-            if not dry_run:
-                cursor.execute("PRAGMA journal_mode=WAL")
-                cursor.execute("PRAGMA busy_timeout=5000")
-
-                # Acquire write lock early
-                cursor.execute("BEGIN IMMEDIATE")
-            else:
-                # Still configure busy_timeout for consistent behavior, but do
-                # not alter journal mode or acquire a write lock.
-                cursor.execute("PRAGMA busy_timeout=5000")
-                # Start a deferred transaction so dry-run DDL can be rolled back
-                cursor.execute("BEGIN")
-
-            # ------ schema_meta table (always create first) ------
-            existing_tables = cls._get_existing_tables(cursor)
-            if "schema_meta" not in existing_tables:
-                cursor.execute(TABLES["schema_meta"])
-                # Don't log schema_meta creation as a user-visible change
-
-            # ------ Version check ------
-            cursor.execute("SELECT schema_version FROM schema_meta WHERE id = 1")
-            row = cursor.fetchone()
-            stored_version: Optional[int] = row[0] if row else None
-
-            if stored_version is not None and stored_version > CURRENT_SCHEMA_VERSION:
-                conn.rollback()
-                raise SchemaError(
-                    f"Database schema version ({stored_version}) is newer than "
-                    f"code version ({CURRENT_SCHEMA_VERSION}). "
-                    f"Upgrade the application or restore from backup."
-                )
-
-            # Re-read tables after schema_meta creation
-            existing_tables = cls._get_existing_tables(cursor)
-
-            # ------ Create missing tables ------
-            for table_name in sorted(TABLES.keys()):
-                if table_name == "schema_meta":
-                    continue  # Already handled
-                if table_name not in existing_tables:
-                    cursor.execute(TABLES[table_name])
-                    action = f"Created table {table_name}"
-                    planned_actions.append(action)
-                    logger.info("[SchemaManager] %s", action)
-
-            # ------ Add missing columns (sorted deterministically) ------
-            sorted_columns = sorted(ADDITIVE_COLUMNS, key=lambda c: (c[0], c[1]))
-            # Cache table -> set(column names) to avoid repeated PRAGMA calls
-            existing_cols_cache: dict[str, set[str]] = {}
-            for table, col_name, col_def in sorted_columns:
-                if not cls._is_safe_column_def(col_def):
-                    logger.error(
-                        "[SchemaManager] Unsafe column definition encountered: %s.%s %s",
-                        table,
-                        col_name,
-                        col_def,
-                    )
-                    conn.rollback()
-                    raise SchemaError(f"Unsafe column definition for {table}.{col_name}: {col_def}")
-
-                existing_cols = existing_cols_cache.get(table)
-                if existing_cols is None:
-                    existing_cols = cls._get_table_columns(cursor, table)
-                    existing_cols_cache[table] = existing_cols
-                if col_name not in existing_cols:
-                    sql = f"ALTER TABLE {cls._quote_ident(table)} ADD COLUMN {cls._quote_ident(col_name)} {col_def}"
-                    cursor.execute(sql)
-                    # Update cached columns immediately so subsequent
-                    # iterations for the same table don't re-query PRAGMA.
-                    existing_cols.add(col_name)
-                    action = f"Added column {table}.{col_name}"
-                    planned_actions.append(action)
-                    logger.info("[SchemaManager] %s", action)
-
-            # ------ Create missing indexes ------
-            existing_indexes = cls._get_existing_indexes(cursor)
-            for idx_name in sorted(INDEXES.keys()):
-                if idx_name not in existing_indexes:
-                    cursor.execute(INDEXES[idx_name])
-                    action = f"Created index {idx_name}"
-                    planned_actions.append(action)
-                    logger.info("[SchemaManager] %s", action)
-
-            # ------ Detect non-additive drift on trades table ------
-            # The canonical trades schema requires UNIQUE constraints on
-            # (order_id, fill_id) and (order_id, client_order_id). These
-            # cannot be added via ALTER TABLE. If the table exists but lacks
-            # them, warn and abort.
-            if "trades" in existing_tables and "trades" not in [
-                a.split()[-1] for a in planned_actions if "Created table" in a
-            ]:
-                trades_cols = cls._get_table_columns(cursor, "trades")
-                if "fill_id" not in trades_cols:
-                    conn.rollback()
-                    raise SchemaError(
-                        "trades table exists but lacks the fill_id column and "
-                        "required UNIQUE constraints. This requires a manual "
-                        "migration (table rebuild). See prior state_store.py "
-                        "migration logic for reference."
-                    )
-
-                # Verify required UNIQUE constraints (or equivalent unique indexes)
-                # on (order_id, fill_id) and (order_id, client_order_id).
-                cursor.execute("PRAGMA index_list(trades)")
-                index_rows = cursor.fetchall()
-
-                unique_index_columns = []
-                for row in index_rows:
-                    # row layout: seq, name, unique, origin, partial, ...
-                    if len(row) >= 3 and row[2]:
-                        idx_name = row[1]
-                        # idx_name is obtained from SQLite metadata; still quote defensively.
-                        cursor.execute(f"PRAGMA index_info({cls._quote_ident(idx_name)})")
-                        cols = [info_row[2] for info_row in cursor.fetchall()]
-                        unique_index_columns.append(cols)
-
-                # Required UNIQUE constraints (column order is not semantically significant
-                # for drift detection, so we will compare using unordered sets of columns).
-                required_pairs = [
-                    ["order_id", "fill_id"],
-                    ["order_id", "client_order_id"],
-                ]
-
-                unique_index_sets = {frozenset(cols) for cols in unique_index_columns}
-                missing_pairs = [
-                    pair for pair in required_pairs if frozenset(pair) not in unique_index_sets
-                ]
-
-                if missing_pairs:
-                    conn.rollback()
-                    raise SchemaError(
-                        "trades table exists but lacks required UNIQUE constraints "
-                        "on (order_id, fill_id) and/or (order_id, client_order_id). "
-                        "This requires a manual migration (table rebuild). See prior "
-                        "state_store.py migration logic for reference."
-                    )
-            # ------ Update schema version ------
-            now = datetime.now(timezone.utc).isoformat()
-            if stored_version is None:
-                cursor.execute(
-                    "INSERT INTO schema_meta (id, schema_version, updated_at) " "VALUES (1, ?, ?)",
-                    (CURRENT_SCHEMA_VERSION, now),
-                )
-                action = f"Set schema version to {CURRENT_SCHEMA_VERSION}"
-                planned_actions.append(action)
-                logger.info("[SchemaManager] %s", action)
-            elif stored_version < CURRENT_SCHEMA_VERSION:
-                cursor.execute(
-                    "UPDATE schema_meta SET schema_version = ?, updated_at = ? " "WHERE id = 1",
-                    (CURRENT_SCHEMA_VERSION, now),
-                )
-                action = f"Schema upgraded from v{stored_version} " f"to v{CURRENT_SCHEMA_VERSION}"
-                planned_actions.append(action)
-                logger.info("[SchemaManager] %s", action)
-
-            # ------ Backup + Commit / Rollback ------
-            if dry_run:
-                conn.rollback()
-                if planned_actions:
-                    logger.info(
-                        "[SchemaManager] Dry-run: %d change(s) planned",
-                        len(planned_actions),
-                    )
-                else:
-                    logger.info("[SchemaManager] Dry-run: schema up to date")
-            else:
-                # Backup before committing if there are changes and DB exists
-                cls._backup_if_needed(db_path, planned_actions, dry_run)
-                conn.commit()
-                if planned_actions:
-                    logger.info(
-                        "[SchemaManager] Schema updated (%d change(s))",
-                        len(planned_actions),
-                    )
-                else:
-                    logger.info("[SchemaManager] Schema up to date (v%d)", CURRENT_SCHEMA_VERSION)
-
-        except SchemaError:
-            raise
-        except Exception as e:
+        with sqlite3.connect(db_path) as conn:
             try:
-                conn.rollback()
-            except Exception:
-                pass
-            raise SchemaError(f"Schema migration failed: {e}") from e
-        finally:
-            conn.close()
+                cursor = conn.cursor()
+
+                # Set PRAGMAs before transaction. Avoid persistent changes and write
+                # locks when running in dry-run mode so the operation has no side
+                # effects and does not block other DB users.
+                if not dry_run:
+                    cursor.execute("PRAGMA journal_mode=WAL")
+                    cursor.execute("PRAGMA busy_timeout=5000")
+
+                    # Acquire write lock early
+                    cursor.execute("BEGIN IMMEDIATE")
+                else:
+                    # Still configure busy_timeout for consistent behavior, but do
+                    # not alter journal mode or acquire a write lock.
+                    cursor.execute("PRAGMA busy_timeout=5000")
+                    # Start a deferred transaction so dry-run DDL can be rolled back
+                    cursor.execute("BEGIN")
+
+                # ------ schema_meta table (always create first) ------
+                existing_tables = cls._get_existing_tables(cursor)
+                if "schema_meta" not in existing_tables:
+                    cursor.execute(TABLES["schema_meta"])
+                    # Don't log schema_meta creation as a user-visible change
+
+                # ------ Version check ------
+                cursor.execute("SELECT schema_version FROM schema_meta WHERE id = 1")
+                row = cursor.fetchone()
+                stored_version: Optional[int] = row[0] if row else None
+
+                if stored_version is not None and stored_version > CURRENT_SCHEMA_VERSION:
+                    conn.rollback()
+                    raise SchemaError(
+                        f"Database schema version ({stored_version}) is newer than "
+                        f"code version ({CURRENT_SCHEMA_VERSION}). "
+                        f"Upgrade the application or restore from backup."
+                    )
+
+                # Re-read tables after schema_meta creation
+                existing_tables = cls._get_existing_tables(cursor)
+
+                # ------ Create missing tables ------
+                for table_name in sorted(TABLES.keys()):
+                    if table_name == "schema_meta":
+                        continue  # Already handled
+                    if table_name not in existing_tables:
+                        cursor.execute(TABLES[table_name])
+                        action = f"Created table {table_name}"
+                        planned_actions.append(action)
+                        logger.info("[SchemaManager] %s", action)
+
+                # ------ Add missing columns (sorted deterministically) ------
+                sorted_columns = sorted(ADDITIVE_COLUMNS, key=lambda c: (c[0], c[1]))
+                # Cache table -> set(column names) to avoid repeated PRAGMA calls
+                existing_cols_cache: dict[str, set[str]] = {}
+                for table, col_name, col_def in sorted_columns:
+                    if not cls._is_safe_column_def(col_def):
+                        logger.error(
+                            "[SchemaManager] Unsafe column definition encountered: %s.%s %s",
+                            table,
+                            col_name,
+                            col_def,
+                        )
+                        conn.rollback()
+                        raise SchemaError(
+                            f"Unsafe column definition for {table}.{col_name}: {col_def}"
+                        )
+
+                    existing_cols = existing_cols_cache.get(table)
+                    if existing_cols is None:
+                        existing_cols = cls._get_table_columns(cursor, table)
+                        existing_cols_cache[table] = existing_cols
+                    if col_name not in existing_cols:
+                        sql = f"ALTER TABLE {cls._quote_ident(table)} ADD COLUMN {cls._quote_ident(col_name)} {col_def}"
+                        cursor.execute(sql)
+                        # Update cached columns immediately so subsequent
+                        # iterations for the same table don't re-query PRAGMA.
+                        existing_cols.add(col_name)
+                        action = f"Added column {table}.{col_name}"
+                        planned_actions.append(action)
+                        logger.info("[SchemaManager] %s", action)
+
+                # ------ Create missing indexes ------
+                existing_indexes = cls._get_existing_indexes(cursor)
+                for idx_name in sorted(INDEXES.keys()):
+                    if idx_name not in existing_indexes:
+                        cursor.execute(INDEXES[idx_name])
+                        action = f"Created index {idx_name}"
+                        planned_actions.append(action)
+                        logger.info("[SchemaManager] %s", action)
+
+                # ------ Detect non-additive drift on trades table ------
+                # The canonical trades schema requires UNIQUE constraints on
+                # (order_id, fill_id) and (order_id, client_order_id). These
+                # cannot be added via ALTER TABLE. If the table exists but lacks
+                # them, warn and abort.
+                if "trades" in existing_tables and "trades" not in [
+                    a.split()[-1] for a in planned_actions if "Created table" in a
+                ]:
+                    trades_cols = cls._get_table_columns(cursor, "trades")
+                    if "fill_id" not in trades_cols:
+                        conn.rollback()
+                        raise SchemaError(
+                            "trades table exists but lacks the fill_id column and "
+                            "required UNIQUE constraints. This requires a manual "
+                            "migration (table rebuild). See prior state_store.py "
+                            "migration logic for reference."
+                        )
+
+                    # Verify required UNIQUE constraints (or equivalent unique indexes)
+                    # on (order_id, fill_id) and (order_id, client_order_id).
+                    cursor.execute("PRAGMA index_list(trades)")
+                    index_rows = cursor.fetchall()
+
+                    unique_index_columns = []
+                    for row in index_rows:
+                        # row layout: seq, name, unique, origin, partial, ...
+                        if len(row) >= 3 and row[2]:
+                            idx_name = row[1]
+                            # idx_name is obtained from SQLite metadata; still quote defensively.
+                            cursor.execute(f"PRAGMA index_info({cls._quote_ident(idx_name)})")
+                            cols = [info_row[2] for info_row in cursor.fetchall()]
+                            unique_index_columns.append(cols)
+
+                    # Required UNIQUE constraints (column order is not semantically significant
+                    # for drift detection, so we will compare using unordered sets of columns).
+                    required_pairs = [
+                        ["order_id", "fill_id"],
+                        ["order_id", "client_order_id"],
+                    ]
+
+                    unique_index_sets = {frozenset(cols) for cols in unique_index_columns}
+                    missing_pairs = [
+                        pair for pair in required_pairs if frozenset(pair) not in unique_index_sets
+                    ]
+
+                    if missing_pairs:
+                        conn.rollback()
+                        raise SchemaError(
+                            "trades table exists but lacks required UNIQUE constraints "
+                            "on (order_id, fill_id) and/or (order_id, client_order_id). "
+                            "This requires a manual migration (table rebuild). See prior "
+                            "state_store.py migration logic for reference."
+                        )
+                # ------ Update schema version ------
+                now = datetime.now(timezone.utc).isoformat()
+                if stored_version is None:
+                    cursor.execute(
+                        "INSERT INTO schema_meta (id, schema_version, updated_at) "
+                        "VALUES (1, ?, ?)",
+                        (CURRENT_SCHEMA_VERSION, now),
+                    )
+                    action = f"Set schema version to {CURRENT_SCHEMA_VERSION}"
+                    planned_actions.append(action)
+                    logger.info("[SchemaManager] %s", action)
+                elif stored_version < CURRENT_SCHEMA_VERSION:
+                    cursor.execute(
+                        "UPDATE schema_meta SET schema_version = ?, updated_at = ? " "WHERE id = 1",
+                        (CURRENT_SCHEMA_VERSION, now),
+                    )
+                    action = (
+                        f"Schema upgraded from v{stored_version} " f"to v{CURRENT_SCHEMA_VERSION}"
+                    )
+                    planned_actions.append(action)
+                    logger.info("[SchemaManager] %s", action)
+
+                # ------ Backup + Commit / Rollback ------
+                if dry_run:
+                    conn.rollback()
+                    if planned_actions:
+                        logger.info(
+                            "[SchemaManager] Dry-run: %d change(s) planned",
+                            len(planned_actions),
+                        )
+                    else:
+                        logger.info("[SchemaManager] Dry-run: schema up to date")
+                else:
+                    # Backup before committing if there are changes and DB exists
+                    cls._backup_if_needed(db_path, planned_actions, dry_run)
+                    conn.commit()
+                    if planned_actions:
+                        logger.info(
+                            "[SchemaManager] Schema updated (%d change(s))",
+                            len(planned_actions),
+                        )
+                    else:
+                        logger.info(
+                            "[SchemaManager] Schema up to date (v%d)", CURRENT_SCHEMA_VERSION
+                        )
+
+            except SchemaError:
+                raise
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                raise SchemaError(f"Schema migration failed: {e}") from e
 
         return planned_actions

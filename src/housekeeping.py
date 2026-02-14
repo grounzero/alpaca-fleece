@@ -155,15 +155,14 @@ class Housekeeping:
 
                 import sqlite3
 
-                conn = sqlite3.connect(self.state_store.db_path)
-                cursor = conn.cursor()
-                cursor.execute(
-                    """INSERT INTO equity_curve (timestamp_utc, equity, daily_pnl)
-                       VALUES (?, ?, ?)""",
-                    (datetime.now(timezone.utc).isoformat(), equity, 0),
-                )
-                conn.commit()
-                conn.close()
+                with sqlite3.connect(self.state_store.db_path) as conn:
+                    cursor = conn.cursor()
+                    cursor.execute(
+                        """INSERT INTO equity_curve (timestamp_utc, equity, daily_pnl)
+                           VALUES (?, ?, ?)""",
+                        (datetime.now(timezone.utc).isoformat(), equity, 0),
+                    )
+                    conn.commit()
 
                 logger.info(f"Final equity snapshot: ${equity:.2f}")
             except (sqlite3.Error, ConnectionError) as e:
@@ -191,15 +190,14 @@ class Housekeeping:
                     # Record to equity_curve table
                     import sqlite3
 
-                    conn = sqlite3.connect(self.state_store.db_path)
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        """INSERT INTO equity_curve (timestamp_utc, equity, daily_pnl)
-                           VALUES (?, ?, ?)""",
-                        (datetime.now(timezone.utc).isoformat(), equity, daily_pnl),
-                    )
-                    conn.commit()
-                    conn.close()
+                    with sqlite3.connect(self.state_store.db_path) as conn:
+                        cursor = conn.cursor()
+                        cursor.execute(
+                            """INSERT INTO equity_curve (timestamp_utc, equity, daily_pnl)
+                               VALUES (?, ?, ?)""",
+                            (datetime.now(timezone.utc).isoformat(), equity, daily_pnl),
+                        )
+                        conn.commit()
 
                     logger.debug(f"Equity snapshot: ${equity:.2f}")
                 except asyncio.CancelledError:

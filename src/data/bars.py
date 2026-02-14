@@ -106,28 +106,27 @@ class BarsHandler:
         """Persist bar to SQLite."""
         import sqlite3
 
-        conn = sqlite3.connect(self.state_store.db_path)
-        cursor = conn.cursor()
+        with sqlite3.connect(self.state_store.db_path) as conn:
+            cursor = conn.cursor()
 
-        cursor.execute(
-            """INSERT OR REPLACE INTO bars 
-               (symbol, timeframe, timestamp_utc, open, high, low, close, volume, trade_count, vwap)
-               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
-            (
-                event.symbol,
-                "1Min",  # TODO: make configurable
-                event.timestamp.isoformat(),
-                event.open,
-                event.high,
-                event.low,
-                event.close,
-                event.volume,
-                event.trade_count,
-                event.vwap,
-            ),
-        )
-        conn.commit()
-        conn.close()
+            cursor.execute(
+                """INSERT OR REPLACE INTO bars
+                   (symbol, timeframe, timestamp_utc, open, high, low, close, volume, trade_count, vwap)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                (
+                    event.symbol,
+                    "1Min",  # TODO: make configurable
+                    event.timestamp.isoformat(),
+                    event.open,
+                    event.high,
+                    event.low,
+                    event.close,
+                    event.volume,
+                    event.trade_count,
+                    event.vwap,
+                ),
+            )
+            conn.commit()
 
     def get_dataframe(self, symbol: str) -> Optional[pd.DataFrame]:
         """Get bars for symbol as DataFrame.

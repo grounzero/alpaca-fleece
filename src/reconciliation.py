@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any, Dict, List, cast
 
 from src.models.order_state import OrderState
-from src.state_store import StateStore
+from src.state_store import OrderIntentRow, StateStore
 from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
@@ -28,34 +28,21 @@ class ReconciliationError(Exception):
     pass
 
 
-async def reconcile(broker: Any, state_store: StateStore) -> None:
-    """Reconcile state with Alpaca on startup.
+def compare_order_states(
+    sqlite_orders: List[OrderIntentRow], alpaca_orders: List[Dict[str, Any]]
+) -> tuple[list[dict[str, object]], int]:
+    """Compare SQLite vs Alpaca orders.
 
-    Args:
-        broker: Broker client
-        state_store: State store
-
-    Raises:
-        ReconciliationError if discrepancies found
+    Returns: (discrepancies, safe_updates_count)
+    - discrepancies: List of mismatches (Rules 2-3)
+    - safe_updates_count: Count of safe terminal updates (Rule 1)
     """
     discrepancies: list[dict[str, object]] = []
-
-    # Get state from both sources (await async broker methods)
-    try:
-        alpaca_orders = cast(List[Dict[str, Any]], await broker.get_open_orders())
-        alpaca_positions = cast(List[Dict[str, Any]], await broker.get_positions())
-        sqlite_orders = state_store.get_all_order_intents()
-
-        logger.info(
-            f"Reconciling: {len(alpaca_orders)} open orders in Alpaca, {len(sqlite_orders)} in SQLite"
-        )
-    except (ConnectionError, TimeoutError) as e:
-        raise ReconciliationError(f"Failed to fetch state for reconciliation: {e}")
-
-    # Check open orders
+    safe_updates = 0
     alpaca_order_ids: dict[str, Any] = {o["client_order_id"]: o for o in alpaca_orders}
 
     # Rule 1: Alpaca has order terminal, SQLite has non-terminal → UPDATE SQLite (safe)
+    # Count these as safe updates
     for order in alpaca_orders:
         client_id = order["client_order_id"]
         alpaca_status = order["status"]
@@ -67,14 +54,7 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
             alpaca_state = OrderState.from_alpaca(alpaca_status)
 
             if alpaca_state.is_terminal and sqlite_state.has_fill_potential:
-                # Update SQLite to match Alpaca (Alpaca is authoritative for terminal states)
-                logger.info(f"Updating {client_id}: {sqlite_status} → {alpaca_status}")
-                state_store.update_order_intent(
-                    client_order_id=client_id,
-                    status=alpaca_status or "unknown",
-                    filled_qty=parse_optional_float(order.get("filled_qty")),
-                    alpaca_order_id=order.get("id"),
-                )
+                safe_updates += 1
 
     # Rule 2: SQLite has order terminal, Alpaca reports non-terminal → DISCREPANCY
     for sqlite_order_item in sqlite_orders:
@@ -111,24 +91,51 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
                 }
             )
 
-    # Rule 4: Position mismatch → DISCREPANCY
-    # Get last recorded positions from positions_snapshot table
-    conn = sqlite3.connect(state_store.db_path)
-    cursor = conn.cursor()
+    return discrepancies, safe_updates
 
-    # Get latest positions snapshot
-    cursor.execute("""
-        SELECT symbol, qty, avg_entry_price FROM positions_snapshot
-        WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
-    """)
-    sqlite_positions_rows = cursor.fetchall()
-    conn.close()
 
-    sqlite_positions = {
-        row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
-    }
+def apply_safe_order_updates(
+    state_store: StateStore,
+    sqlite_orders: List[OrderIntentRow],
+    alpaca_orders: List[Dict[str, Any]],
+) -> int:
+    """Apply Rule 1 updates (Alpaca terminal → SQLite).
 
-    # Compare positions
+    Returns: Count of orders updated
+    """
+    updated = 0
+    for order in alpaca_orders:
+        client_id = order["client_order_id"]
+        alpaca_status = order["status"]
+
+        if client_id in {o["client_order_id"] for o in sqlite_orders}:
+            sqlite_order: Any = next(o for o in sqlite_orders if o["client_order_id"] == client_id)
+            sqlite_status = str(sqlite_order.get("status") or "unknown")
+            sqlite_state = OrderState.from_alpaca(sqlite_status)
+            alpaca_state = OrderState.from_alpaca(alpaca_status)
+
+            if alpaca_state.is_terminal and sqlite_state.has_fill_potential:
+                # Update SQLite to match Alpaca (Alpaca is authoritative for terminal states)
+                logger.info(f"Updating {client_id}: {sqlite_status} → {alpaca_status}")
+                state_store.update_order_intent(
+                    client_order_id=client_id,
+                    status=alpaca_status or "unknown",
+                    filled_qty=parse_optional_float(order.get("filled_qty")),
+                    alpaca_order_id=order.get("id"),
+                )
+                updated += 1
+
+    return updated
+
+
+def compare_positions(
+    sqlite_positions: Dict[str, Dict[str, Any]], alpaca_positions: List[Dict[str, Any]]
+) -> list[dict[str, object]]:
+    """Compare SQLite vs Alpaca positions (Rule 4).
+
+    Returns: List of position mismatches
+    """
+    discrepancies: list[dict[str, object]] = []
     alpaca_position_map = {p["symbol"]: p["qty"] for p in alpaca_positions}
 
     for symbol, sqlite_qty in sqlite_positions.items():
@@ -154,6 +161,58 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
                 }
             )
 
+    return discrepancies
+
+
+async def reconcile(broker: Any, state_store: StateStore) -> None:
+    """Reconcile state with Alpaca on startup.
+
+    Args:
+        broker: Broker client
+        state_store: State store
+
+    Raises:
+        ReconciliationError if discrepancies found
+    """
+    # Get state from both sources (await async broker methods)
+    try:
+        alpaca_orders = cast(List[Dict[str, Any]], await broker.get_open_orders())
+        alpaca_positions = cast(List[Dict[str, Any]], await broker.get_positions())
+        sqlite_orders = state_store.get_all_order_intents()
+
+        logger.info(
+            f"Reconciling: {len(alpaca_orders)} open orders in Alpaca, {len(sqlite_orders)} in SQLite"
+        )
+    except (ConnectionError, TimeoutError) as e:
+        raise ReconciliationError(f"Failed to fetch state for reconciliation: {e}")
+
+    # Apply safe updates (Rule 1)
+    apply_safe_order_updates(state_store, sqlite_orders, alpaca_orders)
+
+    # Check for order discrepancies (Rules 2-3)
+    order_discrepancies, _ = compare_order_states(sqlite_orders, alpaca_orders)
+    discrepancies = order_discrepancies
+
+    # Rule 4: Position mismatch → DISCREPANCY
+    # Get last recorded positions from positions_snapshot table
+    with sqlite3.connect(state_store.db_path) as conn:
+        cursor = conn.cursor()
+
+        # Get latest positions snapshot
+        cursor.execute("""
+            SELECT symbol, qty, avg_entry_price FROM positions_snapshot
+            WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
+        """)
+        sqlite_positions_rows = cursor.fetchall()
+
+    sqlite_positions = {
+        row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
+    }
+
+    # Compare positions using helper
+    position_discrepancies = compare_positions(sqlite_positions, alpaca_positions)
+    discrepancies.extend(position_discrepancies)
+
     # If discrepancies found: write report and refuse
     if discrepancies:
         report = {
@@ -175,25 +234,24 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
     # Clean reconciliation: update positions snapshot
     logger.info("Reconciliation clean: updating positions snapshot")
 
-    conn = sqlite3.connect(state_store.db_path)
-    cursor = conn.cursor()
-
     now_utc = datetime.now(timezone.utc).isoformat()
 
-    for position in alpaca_positions:
-        cursor.execute(
-            """INSERT INTO positions_snapshot (timestamp_utc, symbol, qty, avg_entry_price)
-               VALUES (?, ?, ?, ?)""",
-            (
-                now_utc,
-                position["symbol"],
-                position["qty"],
-                position["avg_entry_price"] or 0.0,
-            ),
-        )
+    with sqlite3.connect(state_store.db_path) as conn:
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        for position in alpaca_positions:
+            cursor.execute(
+                """INSERT INTO positions_snapshot (timestamp_utc, symbol, qty, avg_entry_price)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    now_utc,
+                    position["symbol"],
+                    position["qty"],
+                    position["avg_entry_price"] or 0.0,
+                ),
+            )
+
+        conn.commit()
 
     logger.info(f"Reconciliation complete: {len(alpaca_positions)} positions recorded")
 

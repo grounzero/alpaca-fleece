@@ -124,122 +124,122 @@ class StateStore:
         import sqlite3 as _sqlite
         from datetime import timezone
 
-        conn = _sqlite.connect(self.db_path, timeout=5.0)
-        try:
-            conn.isolation_level = None
-            cur = conn.cursor()
+        with _sqlite.connect(self.db_path, timeout=5.0) as conn:
             try:
-                # Only set per-connection busy timeout on this hot path. The
-                # journal_mode (WAL) is configured once during `init_schema()`
-                # to avoid the overhead of repeatedly setting it here.
-                cur.execute("PRAGMA busy_timeout=5000")
-            except _sqlite.Error:
-                # Best-effort PRAGMA; do not fail the gate on PRAGMA issues.
-                logger.debug(
-                    "Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True
-                )
-
-            # Normalize timestamps to UTC ISO
-            last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
-            last_bar_iso = bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
-
-            if force:
-                cur.execute(
-                    "INSERT OR REPLACE INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc) VALUES (?, ?, ?, ?, ?)",
-                    (strategy, symbol, action, last_accepted_iso, last_bar_iso),
-                )
-                conn.commit()
-                return True
-
-            # Use an explicit immediate transaction to avoid races between concurrent workers.
-            cur.execute("BEGIN IMMEDIATE")
-            cur.execute(
-                "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
-                (strategy, symbol, action),
-            )
-            row = cur.fetchone()
-
-            def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
-                if not ts:
-                    return None
+                conn.isolation_level = None
+                cur = conn.cursor()
                 try:
-                    return datetime.fromisoformat(ts).astimezone(timezone.utc)
+                    # Only set per-connection busy timeout on this hot path. The
+                    # journal_mode (WAL) is configured once during `init_schema()`
+                    # to avoid the overhead of repeatedly setting it here.
+                    cur.execute("PRAGMA busy_timeout=5000")
+                except _sqlite.Error:
+                    # Best-effort PRAGMA; do not fail the gate on PRAGMA issues.
+                    logger.debug(
+                        "Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True
+                    )
+
+                # Normalize timestamps to UTC ISO
+                last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
+                last_bar_iso = (
+                    bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
+                )
+
+                if force:
+                    cur.execute(
+                        "INSERT OR REPLACE INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc) VALUES (?, ?, ?, ?, ?)",
+                        (strategy, symbol, action, last_accepted_iso, last_bar_iso),
+                    )
+                    conn.commit()
+                    return True
+
+                # Use an explicit immediate transaction to avoid races between concurrent workers.
+                cur.execute("BEGIN IMMEDIATE")
+                cur.execute(
+                    "SELECT last_accepted_ts_utc, last_bar_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                    (strategy, symbol, action),
+                )
+                row = cur.fetchone()
+
+                def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
+                    if not ts:
+                        return None
+                    try:
+                        return datetime.fromisoformat(ts).astimezone(timezone.utc)
+                    except Exception:
+                        return None
+
+                stored_last_accepted = _parse_iso(row[0]) if row else None
+                stored_last_bar = _parse_iso(row[1]) if row else None
+
+                # Same-bar dedupe
+                if bar_ts_utc is not None and stored_last_bar is not None:
+                    if bar_ts_utc.astimezone(timezone.utc) == stored_last_bar:
+                        conn.rollback()
+                        return False
+
+                # Cooldown check
+                if stored_last_accepted is not None:
+                    if now_utc.astimezone(timezone.utc) - stored_last_accepted < cooldown:
+                        conn.rollback()
+                        return False
+
+                # Monotonic upsert: only update if incoming timestamp is newer or row missing.
+                # Monotonic upsert SQL: only overwrite the stored `last_accepted_ts_utc`
+                # when the incoming `excluded.last_accepted_ts_utc` is newer (greater).
+                #
+                # Note for maintainers/tests: this behavior is subtle and should be
+                # covered by a unit test. A good test would:
+                # 1) call `gate_try_accept` with `now_utc = t2` and assert it returns True
+                #    and stores `t2`.
+                # 2) call `gate_try_accept` with an older `now_utc = t1 < t2` and assert
+                #    it returns False and that the stored timestamp remains `t2`.
+                # This will catch regressions in the COALESCE/strftime comparison logic
+                # and protect against older events overwriting newer gate timestamps.
+                upsert_sql = """
+                    INSERT INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc)
+                    VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(strategy, symbol, action) DO UPDATE SET
+                        last_accepted_ts_utc = excluded.last_accepted_ts_utc,
+                        last_bar_ts_utc = excluded.last_bar_ts_utc
+                    WHERE COALESCE(
+                        CAST(strftime('%s', signal_gates.last_accepted_ts_utc) AS REAL),
+                        0
+                    ) <= CAST(strftime('%s', excluded.last_accepted_ts_utc) AS REAL)
+                """
+
+                cur.execute(upsert_sql, (strategy, symbol, action, last_accepted_iso, last_bar_iso))
+
+                # Re-read to verify we own the stored timestamp
+                cur.execute(
+                    "SELECT last_accepted_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
+                    (strategy, symbol, action),
+                )
+                row2 = cur.fetchone()
+                conn.commit()
+
+                if not row2:
+                    return False
+
+                # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
+                stored_val: str = str(row2[0])
+                try:
+                    # Compare normalized datetimes (in UTC) rather than raw ISO strings to
+                    # avoid issues with differing ISO formatting (e.g., fractional seconds).
+                    stored_dt = datetime.fromisoformat(stored_val).astimezone(timezone.utc)
+                    new_dt = now_utc.astimezone(timezone.utc)
+                    accepted: bool = stored_dt == new_dt
+                except (TypeError, ValueError):
+                    # Fallback to string comparison if parsing fails for any reason.
+                    accepted = stored_val == last_accepted_iso
+                return accepted
+            except _sqlite.Error as e:
+                try:
+                    conn.rollback()
                 except Exception:
-                    return None
-
-            stored_last_accepted = _parse_iso(row[0]) if row else None
-            stored_last_bar = _parse_iso(row[1]) if row else None
-
-            # Same-bar dedupe
-            if bar_ts_utc is not None and stored_last_bar is not None:
-                if bar_ts_utc.astimezone(timezone.utc) == stored_last_bar:
-                    conn.rollback()
-                    return False
-
-            # Cooldown check
-            if stored_last_accepted is not None:
-                if now_utc.astimezone(timezone.utc) - stored_last_accepted < cooldown:
-                    conn.rollback()
-                    return False
-
-            # Monotonic upsert: only update if incoming timestamp is newer or row missing.
-            # Monotonic upsert SQL: only overwrite the stored `last_accepted_ts_utc`
-            # when the incoming `excluded.last_accepted_ts_utc` is newer (greater).
-            #
-            # Note for maintainers/tests: this behavior is subtle and should be
-            # covered by a unit test. A good test would:
-            # 1) call `gate_try_accept` with `now_utc = t2` and assert it returns True
-            #    and stores `t2`.
-            # 2) call `gate_try_accept` with an older `now_utc = t1 < t2` and assert
-            #    it returns False and that the stored timestamp remains `t2`.
-            # This will catch regressions in the COALESCE/strftime comparison logic
-            # and protect against older events overwriting newer gate timestamps.
-            upsert_sql = """
-                INSERT INTO signal_gates (strategy, symbol, action, last_accepted_ts_utc, last_bar_ts_utc)
-                VALUES (?, ?, ?, ?, ?)
-                ON CONFLICT(strategy, symbol, action) DO UPDATE SET
-                    last_accepted_ts_utc = excluded.last_accepted_ts_utc,
-                    last_bar_ts_utc = excluded.last_bar_ts_utc
-                WHERE COALESCE(
-                    CAST(strftime('%s', signal_gates.last_accepted_ts_utc) AS REAL),
-                    0
-                ) <= CAST(strftime('%s', excluded.last_accepted_ts_utc) AS REAL)
-            """
-
-            cur.execute(upsert_sql, (strategy, symbol, action, last_accepted_iso, last_bar_iso))
-
-            # Re-read to verify we own the stored timestamp
-            cur.execute(
-                "SELECT last_accepted_ts_utc FROM signal_gates WHERE strategy = ? AND symbol = ? AND action = ?",
-                (strategy, symbol, action),
-            )
-            row2 = cur.fetchone()
-            conn.commit()
-
-            if not row2:
+                    pass
+                logger.exception("signal gate DB error: %s", e)
                 return False
-
-            # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
-            stored_val: str = str(row2[0])
-            try:
-                # Compare normalized datetimes (in UTC) rather than raw ISO strings to
-                # avoid issues with differing ISO formatting (e.g., fractional seconds).
-                stored_dt = datetime.fromisoformat(stored_val).astimezone(timezone.utc)
-                new_dt = now_utc.astimezone(timezone.utc)
-                accepted: bool = stored_dt == new_dt
-            except (TypeError, ValueError):
-                # Fallback to string comparison if parsing fails for any reason.
-                accepted = stored_val == last_accepted_iso
-            return accepted
-        except _sqlite.Error as e:
-            try:
-                conn.rollback()
-            except Exception:
-                pass
-            logger.exception("signal gate DB error: %s", e)
-            return False
-        finally:
-            conn.close()
 
     def get_gate(
         self, strategy: str, symbol: str, action: str

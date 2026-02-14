@@ -25,6 +25,7 @@ from src.data_handler import DataHandler
 from src.event_bus import BarEvent, EventBus, ExitSignalEvent, OrderUpdateEvent, SignalEvent
 from src.exit_manager import ExitManager
 from src.housekeeping import Housekeeping
+from src.runtime_reconciler import RuntimeReconciler
 from src.logger import setup_logger
 from src.metrics import metrics, write_metrics_to_file
 from src.models.order_state import OrderState
@@ -508,6 +509,26 @@ class Orchestrator:
             )
             logger.info("   Exit manager ready")
 
+            # Initialise runtime reconciler
+            logger.info("Initialising runtime reconciler...")
+            runtime_recon_config = self.trading_config.get("runtime_reconciliation", {})
+
+            if runtime_recon_config.get("enabled", True):
+                self.runtime_reconciler = RuntimeReconciler(
+                    broker=self.broker,
+                    state_store=self.state_store,
+                    position_tracker=self.position_tracker,
+                    event_bus=self.event_bus,
+                    check_interval_seconds=runtime_recon_config.get("check_interval_seconds", 120),
+                    repair_stuck_exits=runtime_recon_config.get("repair_stuck_exits", True),
+                    halt_on_discrepancy=runtime_recon_config.get("halt_on_discrepancy", True),
+                    broker_timeout_seconds=runtime_recon_config.get("broker_timeout_seconds", 30),
+                )
+                logger.info("   Runtime reconciler ready")
+            else:
+                self.runtime_reconciler = None
+                logger.info("   Runtime reconciler disabled")
+
             logger.info("Phase 3 complete")
             return {
                 "status": "ready",
@@ -557,6 +578,11 @@ class Orchestrator:
         # Start exit manager
         logger.info("Starting exit manager...")
         await self.exit_manager.start()
+
+        # Start runtime reconciler
+        if hasattr(self, 'runtime_reconciler') and self.runtime_reconciler:
+            logger.info("Starting runtime reconciler...")
+            await self.runtime_reconciler.start()
 
         # Start metrics writer
         logger.info("Starting metrics writer...")
@@ -967,6 +993,11 @@ class Orchestrator:
             if self.exit_manager:
                 logger.info("Stopping exit manager...")
                 await self.exit_manager.stop()
+
+            # Stop runtime reconciler
+            if hasattr(self, 'runtime_reconciler') and self.runtime_reconciler:
+                logger.info("Stopping runtime reconciler...")
+                await self.runtime_reconciler.stop()
 
             # Stop stream
             if self.stream:
