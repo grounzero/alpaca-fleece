@@ -25,7 +25,6 @@ from src.data_handler import DataHandler
 from src.event_bus import BarEvent, EventBus, ExitSignalEvent, OrderUpdateEvent, SignalEvent
 from src.exit_manager import ExitManager
 from src.housekeeping import Housekeeping
-from src.runtime_reconciler import RuntimeReconciler
 from src.logger import setup_logger
 from src.metrics import metrics, write_metrics_to_file
 from src.models.order_state import OrderState
@@ -35,6 +34,7 @@ from src.position_sizer import calculate_position_size
 from src.position_tracker import PositionTracker
 from src.reconciliation import ReconciliationError, reconcile
 from src.risk_manager import RiskManager
+from src.runtime_reconciler import RuntimeReconciler
 from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 from src.strategy.sma_crossover import SMACrossover
@@ -580,7 +580,7 @@ class Orchestrator:
         await self.exit_manager.start()
 
         # Start runtime reconciler
-        if hasattr(self, 'runtime_reconciler') and self.runtime_reconciler:
+        if hasattr(self, "runtime_reconciler") and self.runtime_reconciler:
             logger.info("Starting runtime reconciler...")
             await self.runtime_reconciler.start()
 
@@ -995,7 +995,7 @@ class Orchestrator:
                 await self.exit_manager.stop()
 
             # Stop runtime reconciler
-            if hasattr(self, 'runtime_reconciler') and self.runtime_reconciler:
+            if hasattr(self, "runtime_reconciler") and self.runtime_reconciler:
                 logger.info("Stopping runtime reconciler...")
                 await self.runtime_reconciler.stop()
 

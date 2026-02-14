@@ -96,5 +96,5 @@ async def test_reconciliation_updates_terminal_orders(state_store, mock_broker):
 
     # Order should now be marked as filled
     order = state_store.get_order_intent(client_id)
-    assert order["status"] == "filled"
-    assert order["filled_qty"] == 10.0
+    assert order.status == "filled"
+    assert order.filled_qty == 10.0

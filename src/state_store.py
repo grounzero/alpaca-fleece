@@ -8,29 +8,15 @@ import logging
 import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Optional, TypedDict
+from typing import Optional
 
-from src.utils import parse_optional_float
+from src.adapters.persistence.mappers import order_intent_from_row
+from src.models.persistence import OrderIntent
 
 logger = logging.getLogger(__name__)
 
 
 # Use the public utility from src.utils for DB numeric coercion directly.
-
-
-class OrderIntentRow(TypedDict, total=False):
-    """Order intent row from database."""
-
-    client_order_id: str
-    symbol: str
-    side: str
-    qty: float
-    atr: Optional[float]
-    strategy: Optional[str]
-    status: str
-    filled_qty: Optional[float]
-    filled_avg_price: Optional[float]
-    alpaca_order_id: Optional[str]
 
 
 class StateStoreError(Exception):
@@ -139,7 +125,6 @@ class StateStore:
                         "Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True
                     )
 
-                # Normalize timestamps to UTC ISO
                 last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
                 last_bar_iso = (
                     bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
@@ -224,7 +209,7 @@ class StateStore:
                 # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
                 stored_val: str = str(row2[0])
                 try:
-                    # Compare normalized datetimes (in UTC) rather than raw ISO strings to
+                    # Compare datetimes (in UTC) rather than raw ISO strings to
                     # avoid issues with differing ISO formatting (e.g., fractional seconds).
                     stored_dt = datetime.fromisoformat(stored_val).astimezone(timezone.utc)
                     new_dt = now_utc.astimezone(timezone.utc)
@@ -334,8 +319,8 @@ class StateStore:
             )
             conn.commit()
 
-    def get_order_intent(self, client_order_id: str) -> Optional[dict[str, object]]:
-        """Get order intent by client_order_id."""
+    def get_order_intent(self, client_order_id: str) -> Optional[OrderIntent]:
+        """Get order intent by client_order_id as an OrderIntent dataclass."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -344,31 +329,22 @@ class StateStore:
             )
             row = cursor.fetchone()
             if row:
-                atr_val = parse_optional_float(row[5])
-                # Convert required numeric fields to float and optional ones
-                # via the shared helper to avoid leaking Decimal/str values.
-                return {
-                    "client_order_id": row[0],
-                    "strategy": row[1],
-                    "symbol": row[2],
-                    "side": row[3],
-                    "qty": float(row[4]),
-                    "atr": atr_val,
-                    "status": row[6],
-                    "filled_qty": parse_optional_float(row[7]),
-                    "filled_avg_price": parse_optional_float(row[8]),
-                    "alpaca_order_id": row[9],
-                }
+                # Use mapper to construct dataclass (defensive against type variations)
+                return order_intent_from_row(row)
             return None
 
-    def get_all_order_intents(self, status: Optional[str] = None) -> list[OrderIntentRow]:
+    def get_all_order_intents(self, status: Optional[str] = None) -> list[OrderIntent]:
         """Get all order intents, optionally filtered by status.
 
         Args:
             status: Optional status filter (e.g., 'new', 'submitted', 'filled')
 
         Returns:
-            List of order intent rows
+            List of `OrderIntent` dataclass instances representing persisted order intents.
+
+        Notes:
+            - Rows are converted to `OrderIntent` via `src.adapters.persistence.mappers.order_intent_from_row`.
+            - If callers expect mapping/dict shapes for backward compatibility, call `order_intent.to_dict()`.
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
@@ -383,23 +359,8 @@ class StateStore:
                 )
 
             rows = cursor.fetchall()
-
-            def map_row(row: tuple[Any, ...]) -> OrderIntentRow:
-                atr_val = parse_optional_float(row[5])
-                return {
-                    "client_order_id": row[0],
-                    "strategy": row[1],
-                    "symbol": row[2],
-                    "side": row[3],
-                    "qty": float(row[4]),
-                    "atr": atr_val,
-                    "status": row[6],
-                    "filled_qty": parse_optional_float(row[7]),
-                    "filled_avg_price": parse_optional_float(row[8]),
-                    "alpaca_order_id": row[9],
-                }
-
-            return [map_row(row) for row in rows]
+            # Use defensive mapper to build dataclass instances from rows
+            return [order_intent_from_row(row) for row in rows]
 
     # Win #3: Daily Limits & Circuit Breaker Persistence
 
@@ -457,8 +418,11 @@ class StateStore:
     # Partial-fill support
     # ------------------------------------------------------------------
 
-    def get_order_intent_by_alpaca_id(self, alpaca_order_id: str) -> Optional[dict[str, object]]:
-        """Get order intent by Alpaca order ID (primary lookup for fills)."""
+    def get_order_intent_by_alpaca_id(self, alpaca_order_id: str) -> Optional[OrderIntent]:
+        """Get order intent by Alpaca order ID (primary lookup for fills).
+
+        Returns an `OrderIntent` dataclass or `None` if not found.
+        """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute(
@@ -469,18 +433,8 @@ class StateStore:
             )
             row = cursor.fetchone()
             if row:
-                return {
-                    "client_order_id": row[0],
-                    "strategy": row[1],
-                    "symbol": row[2],
-                    "side": row[3],
-                    "qty": float(row[4]),
-                    "atr": parse_optional_float(row[5]),
-                    "status": row[6],
-                    "filled_qty": parse_optional_float(row[7]),
-                    "filled_avg_price": parse_optional_float(row[8]),
-                    "alpaca_order_id": row[9],
-                }
+                # Use defensive mapper to construct dataclass
+                return order_intent_from_row(row)
             return None
 
     def get_last_cum_qty_for_order(self, alpaca_order_id: str) -> float:

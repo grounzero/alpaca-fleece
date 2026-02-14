@@ -423,7 +423,8 @@ class OrderUpdatesHandler:
         if qty_to_record is None:
             oi = self.state_store.get_order_intent(event.client_order_id)
             if oi:
-                qty_to_record = parse_optional_float(oi.get("filled_qty"))
+                # order_intent now returns an OrderIntent dataclass
+                qty_to_record = oi.filled_qty
 
         if qty_to_record is None:
             logger.warning(

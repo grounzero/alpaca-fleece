@@ -1,8 +1,6 @@
 name: Test and Lint
 
 on:
-  push:
-    branches: [main]
   pull_request:
     branches: [main]
 
@@ -28,10 +26,10 @@ jobs:
           pip install -e ".[dev,test]"
 
       - name: Lint with ruff
-        run: ruff check src tests
+        run: ruff check .
 
       - name: Format check with black
-        run: black --check src tests
+        run: black --check .
 
       - name: Import sorting check with isort
         run: isort --check-only --profile black src tests

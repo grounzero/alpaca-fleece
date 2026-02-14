@@ -104,9 +104,9 @@ async def test_reconciler_updates_intent_to_terminal_filled(
     # Verify order updated to filled
     orders = state_store.get_all_order_intents()
     assert len(orders) == 1
-    assert orders[0]["status"] == "filled"
-    assert orders[0]["filled_qty"] == 10.0
-    assert orders[0]["alpaca_order_id"] == "alpaca-123"
+    assert orders[0].status == "filled"
+    assert orders[0].filled_qty == 10.0
+    assert orders[0].alpaca_order_id == "alpaca-123"
 
 
 @pytest.mark.asyncio
@@ -142,7 +142,7 @@ async def test_reconciler_marks_intent_failed_on_rejected(
     # Verify order updated to rejected
     orders = state_store.get_all_order_intents()
     assert len(orders) == 1
-    assert orders[0]["status"] == "rejected"
+    assert orders[0].status == "rejected"
 
 
 @pytest.mark.asyncio

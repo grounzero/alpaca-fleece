@@ -2,10 +2,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from src.async_broker_adapter import (
-    BrokerFatalError,
-    BrokerTimeoutError,
-)
+from src.async_broker_adapter import BrokerFatalError, BrokerTimeoutError
 from src.risk_manager import RiskManager, RiskManagerError
 
 

@@ -17,16 +17,14 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from src.adapters.persistence.mappers import position_snapshot_from_row
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.event_bus import EventBus
 from src.models.order_state import OrderState
+from src.models.persistence import OrderIntent
 from src.position_tracker import PositionTracker
-from src.reconciliation import (
-    apply_safe_order_updates,
-    compare_order_states,
-    compare_positions,
-)
-from src.state_store import OrderIntentRow, StateStore
+from src.reconciliation import apply_safe_order_updates, compare_order_states, compare_positions
+from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
@@ -161,7 +159,7 @@ class RuntimeReconciler:
 
             alpaca_orders = broker_state["orders"]
             alpaca_positions = broker_state["positions"]
-            sqlite_orders: List[OrderIntentRow] = self.state_store.get_all_order_intents()
+            sqlite_orders: List[OrderIntent] = self.state_store.get_all_order_intents()
 
             # Reset broker health to healthy
             self.state_store.set_state("broker_health", "healthy")
@@ -183,9 +181,9 @@ class RuntimeReconciler:
                     WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
                 """)
                 sqlite_positions_rows = cursor.fetchall()
-            sqlite_positions = {
-                row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
-            }
+
+            sqlite_snapshots = [position_snapshot_from_row(r) for r in sqlite_positions_rows]
+            sqlite_positions = {p.symbol: p for p in sqlite_snapshots}
             position_discrepancies = compare_positions(sqlite_positions, alpaca_positions)
 
             # Combine all discrepancies

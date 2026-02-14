@@ -101,7 +101,7 @@ async def test_order_manager_persists_intent_before_submission(
     client_id = order_mgr._generate_client_order_id("AAPL", signal.timestamp, "buy")
     intent = state_store.get_order_intent(client_id)
     assert intent is not None
-    assert intent["symbol"] == "AAPL"
+    assert intent.symbol == "AAPL"
 
 
 @pytest.mark.asyncio
