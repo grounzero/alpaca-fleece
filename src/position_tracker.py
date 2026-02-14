@@ -571,22 +571,53 @@ class PositionTracker:
                 # Map DB row to persistence Position dataclass then convert to PositionData
                 p = position_from_row(row)
 
+                # If entry_time is missing or could not be parsed, don't
+                # silently substitute 'now' — that can change exit and
+                # trailing-stop behaviour. Log and skip the corrupt row so
+                # operators can investigate the persisted data.
+                if p.entry_time is None:
+                    logger.error(
+                        "Skipped loading persisted position for %s: missing or unparseable entry_time",
+                        p.symbol,
+                    )
+                    continue
+
+                # Ensure timestamps are timezone-aware. If a stored value is
+                # naive, assume UTC but log a warning so this can be
+                # investigated; coercing to UTC avoids naive/aware arithmetic
+                # errors elsewhere in the tracker.
+                entry_time = p.entry_time
+                if entry_time.tzinfo is None:
+                    logger.warning(
+                        "Persisted entry_time for %s is naive; assuming UTC",
+                        p.symbol,
+                    )
+                    entry_time = entry_time.replace(tzinfo=timezone.utc)
+
+                updated_at = p.updated_at
+                if updated_at is not None and updated_at.tzinfo is None:
+                    logger.warning(
+                        "Persisted updated_at for %s is naive; assuming UTC",
+                        p.symbol,
+                    )
+                    updated_at = updated_at.replace(tzinfo=timezone.utc)
+
                 position = PositionData(
                     symbol=p.symbol,
                     side=p.side,
                     qty=p.qty,
                     entry_price=p.entry_price,
-                    entry_time=p.entry_time or datetime.now(timezone.utc),
+                    entry_time=entry_time,
                     extreme_price=p.extreme_price,
                     atr=p.atr,
                     trailing_stop_price=p.trailing_stop_price,
                     trailing_stop_activated=bool(p.trailing_stop_activated),
                     pending_exit=bool(p.pending_exit),
-                    last_updated=p.updated_at,
+                    last_updated=updated_at,
                 )
 
-                if p.updated_at:
-                    self._last_updates[position.symbol] = p.updated_at
+                if updated_at:
+                    self._last_updates[position.symbol] = updated_at
 
                 self._positions[position.symbol] = position
                 positions.append(position)
