@@ -10,10 +10,10 @@ with the existing `StateStore` SQLite usage.
 """
 
 import asyncio
-from dataclasses import dataclass
-from datetime import datetime, timezone
 import logging
 import sqlite3
+from dataclasses import dataclass
+from datetime import datetime, timezone
 from typing import Dict, List, Optional
 
 from src.adapters.persistence.mappers import position_from_row
