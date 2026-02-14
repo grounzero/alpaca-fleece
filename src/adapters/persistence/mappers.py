@@ -10,8 +10,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from src.models.persistence import ExitAttempt, Fill, OrderIntent, Position
-from src.models.persistence import PositionSnapshot
+from src.models.persistence import ExitAttempt, Fill, OrderIntent, Position, PositionSnapshot
 from src.utils import parse_optional_float
 
 

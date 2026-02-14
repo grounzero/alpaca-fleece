@@ -15,11 +15,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, cast
 
+from src.adapters.persistence.mappers import position_snapshot_from_row
 from src.models.order_state import OrderState
 from src.models.persistence import OrderIntent, PositionSnapshot
 from src.state_store import StateStore
 from src.utils import parse_optional_float
-from src.adapters.persistence.mappers import position_snapshot_from_row
 
 logger = logging.getLogger(__name__)
 

@@ -10,15 +10,15 @@ with the existing `StateStore` SQLite usage.
 """
 
 import asyncio
-import logging
-import sqlite3
 from dataclasses import dataclass
 from datetime import datetime, timezone
+import logging
+import sqlite3
 from typing import Dict, List, Optional
 
+from src.adapters.persistence.mappers import position_from_row
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.state_store import StateStore
-from src.adapters.persistence.mappers import position_from_row
 
 logger = logging.getLogger(__name__)
 

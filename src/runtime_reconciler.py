@@ -17,6 +17,7 @@ import sqlite3
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
+from src.adapters.persistence.mappers import position_snapshot_from_row
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.event_bus import EventBus
 from src.models.order_state import OrderState
@@ -27,7 +28,6 @@ from src.reconciliation import (
     compare_order_states,
     compare_positions,
 )
-from src.adapters.persistence.mappers import position_snapshot_from_row
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
