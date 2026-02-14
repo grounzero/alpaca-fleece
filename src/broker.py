@@ -24,8 +24,8 @@ from alpaca.trading.enums import OrderSide, TimeInForce
 from alpaca.trading.models import Clock, Order, Position, TradeAccount
 from alpaca.trading.requests import LimitOrderRequest, MarketOrderRequest
 
-from src.utils import parse_optional_float
 from src.models.persistence import PositionInfo
+from src.utils import parse_optional_float
 
 T = TypeVar("T")
 

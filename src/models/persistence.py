@@ -109,6 +109,7 @@ class PositionInfo:
 
     Kept in `models.persistence` so all persistence-facing dataclasses are colocated.
     """
+
     symbol: str = ""
     qty: float = 0.0
     avg_entry_price: Optional[float] = None
