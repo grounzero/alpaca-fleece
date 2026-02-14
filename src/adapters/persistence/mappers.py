@@ -7,7 +7,7 @@ can migrate incrementally.
 from __future__ import annotations
 
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import Any, Optional
 
 from src.models.persistence import ExitAttempt, Fill, OrderIntent, Position
@@ -53,9 +53,12 @@ def _parse_iso(ts: Optional[Any]) -> Optional[datetime]:
     if ts is None:
         return None
     if isinstance(ts, datetime):
-        return ts
+        # Normalize naive datetimes to UTC for consistent downstream handling
+        return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
     try:
-        return datetime.fromisoformat(str(ts))
+        parsed = datetime.fromisoformat(str(ts))
+        # If parsed datetime is naive (no tzinfo), assume UTC
+        return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
     except Exception:
         return None
 
