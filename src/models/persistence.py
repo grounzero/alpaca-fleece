@@ -82,3 +82,19 @@ class ExitAttempt:
     attempt_count: int
     last_attempt_ts_utc: Optional[datetime]
     reason: Optional[str] = None
+
+
+@dataclass
+class PositionSnapshot:
+    symbol: str
+    qty: float
+    avg_entry_price: float
+    timestamp_utc: Optional[datetime] = None
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "symbol": self.symbol,
+            "qty": float(self.qty),
+            "avg_entry_price": float(self.avg_entry_price),
+            "timestamp_utc": self.timestamp_utc.isoformat() if self.timestamp_utc else None,
+        }

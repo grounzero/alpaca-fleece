@@ -11,6 +11,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 from src.models.persistence import ExitAttempt, Fill, OrderIntent, Position
+from src.models.persistence import PositionSnapshot
 from src.utils import parse_optional_float
 
 
@@ -200,4 +201,28 @@ def exit_attempt_from_row(row: Any) -> ExitAttempt:
         attempt_count=attempt_count,
         last_attempt_ts_utc=last_attempt_ts_utc,
         reason=reason,
+    )
+
+
+def position_snapshot_from_row(row: Any) -> PositionSnapshot:
+    """Map a positions_snapshot row into PositionSnapshot.
+
+    Expected row shape: (symbol, qty, avg_entry_price) or similar mapping.
+    """
+    # Support tuple/list, sqlite3.Row, dict, or object
+    symbol = _get(row, 0, "symbol") or ""
+    qty_raw = _get(row, 1, "qty")
+    avg_entry_raw = _get(row, 2, "avg_entry_price")
+    # Timestamp may not be present in select; try index 3 or key 'timestamp_utc'
+    timestamp_raw = _get(row, 3, "timestamp_utc") or _get(row, 0, "timestamp_utc")
+
+    qty = float(qty_raw) if qty_raw is not None else 0.0
+    avg_entry_price = float(avg_entry_raw) if avg_entry_raw is not None else 0.0
+    timestamp = _parse_iso(timestamp_raw)
+
+    return PositionSnapshot(
+        symbol=str(symbol),
+        qty=qty,
+        avg_entry_price=avg_entry_price,
+        timestamp_utc=timestamp,
     )

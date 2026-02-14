@@ -9,7 +9,7 @@ import os
 import sqlite3
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Callable, List, Optional
 
 from alpaca.data.enums import DataFeed
 from alpaca.data.historical import StockHistoricalDataClient
@@ -443,19 +443,27 @@ class StreamPolling:
 
         sem = asyncio.Semaphore(self._order_polling_concurrency)
 
-        async def _process_one(order: dict[str, Any]) -> None:
-            """Fetch Alpaca order and process status for a single order."""
-            client_id = order.get("client_order_id", "unknown")
+        async def _process_one(order: Any) -> None:
+            """Fetch Alpaca order and process status for a single order.
+
+            Supports both legacy dict-shaped rows and `OrderIntent` dataclasses.
+            """
+            def _val(key: str, default: Any = None) -> Any:
+                if isinstance(order, dict):
+                    return order.get(key, default)
+                return getattr(order, key, default)
+
+            client_id = _val("client_order_id", "unknown")
             try:
                 async with sem:
                     # Convert hex order ID to UUID format if needed
-                    alpaca_order_id = self._hex_to_uuid(order["alpaca_order_id"])
+                    alpaca_order_id = self._hex_to_uuid(_val("alpaca_order_id", None))
 
                     # Query Alpaca for current status in a worker thread
                     # Ensure we pass a non-None string to the trading client
                     alpaca_order = await asyncio.to_thread(
                         self.trading_client.get_order_by_id,
-                        alpaca_order_id or order["alpaca_order_id"],
+                        alpaca_order_id or _val("alpaca_order_id", "") or "",
                     )
 
                 if not alpaca_order:
@@ -506,11 +514,11 @@ class StreamPolling:
                 # Detect whether an event should be emitted:
                 # 1. Status changed, OR
                 # 2. Cumulative filled qty increased (incremental fill detection)
-                status_changed = current_status != order["status"]
+                status_changed = current_status != str(_val("status", ""))
 
                 # Compare cumulative fill qty to detect incremental fills
                 # Use parse_optional_float for type safety (DB may store as string/Decimal)
-                stored_filled_qty_raw = order.get("filled_qty")
+                stored_filled_qty_raw = _val("filled_qty", None)
                 # Ensure stored_filled_qty is a concrete float (coerce None -> 0.0)
                 if stored_filled_qty_raw is None:
                     stored_filled_qty = 0.0
@@ -526,7 +534,7 @@ class StreamPolling:
                 if should_emit:
                     if status_changed:
                         logger.info(
-                            f"Order {client_id} status: {order['status']} -> {current_status}"
+                            f"Order {client_id} status: {str(_val('status',''))} -> {current_status}"
                         )
                     if fill_qty_increased:
                         logger.info(
@@ -541,17 +549,17 @@ class StreamPolling:
                         current_status,
                         parsed_filled_qty if parsed_filled_qty is not None else None,
                         parsed_filled_avg_price if parsed_filled_avg_price is not None else None,
-                        order.get("alpaca_order_id"),
+                        _val("alpaca_order_id", None),
                     )
 
                     # Create update event, merging DB row fallback values so
                     # missing Alpaca fields (client_order_id, symbol, side)
                     # don't produce events with empty identifiers.
                     fallback = {
-                        "client_order_id": order.get("client_order_id", ""),
-                        "symbol": order.get("symbol", ""),
-                        "side": order.get("side", "unknown"),
-                        "id": order.get("alpaca_order_id", None),
+                        "client_order_id": _val("client_order_id", ""),
+                        "symbol": _val("symbol", ""),
+                        "side": _val("side", "unknown"),
+                        "id": _val("alpaca_order_id", None),
                         "status": current_status,
                         "filled_qty": filled_qty,
                         "filled_avg_price": filled_avg_price,
@@ -596,50 +604,50 @@ class StreamPolling:
         tasks = [_process_one(o) for o in submitted_orders]
         await asyncio.gather(*tasks)
 
-    def _get_submitted_orders(self) -> List[Dict[str, Any]]:
-        """Get all submitted orders from SQLite that need status checking."""
+    def _get_submitted_orders(self) -> List[dict[str, Any]]:
+        """Return OrderIntent dataclasses for submitted/non-terminal orders with Alpaca IDs."""
         try:
-            # Use context manager to ensure connection is closed even on errors
             with sqlite3.connect(self._db_path) as conn:
                 cursor = conn.cursor()
-
-                # Get orders with non-terminal status and valid alpaca_order_id
-                cursor.execute("""
+                cursor.execute(
+                    """
                     SELECT client_order_id, symbol, side, qty, status,
                            filled_qty, alpaca_order_id
                     FROM order_intents
                     WHERE status IN ('submitted', 'pending', 'accepted', 'new', 'partially_filled')
-                    AND alpaca_order_id IS NOT NULL
-                    AND alpaca_order_id != ''
-                    """)
-
+                      AND alpaca_order_id IS NOT NULL
+                      AND alpaca_order_id != ''
+                    """
+                )
                 rows = cursor.fetchall()
 
-                orders = []
+            orders: List[dict[str, Any]] = []
+            for row in rows:
+                client_order_id = row[0]
+                symbol = row[1]
+                side = row[2]
+                qty = float(row[3]) if row[3] is not None else 0.0
+                status = str(row[4]) if row[4] is not None else ""
+                filled_qty = None
+                try:
+                    filled_qty = float(row[5]) if row[5] is not None else None
+                except Exception:
+                    filled_qty = None
+                alpaca_order_id = row[6]
 
-                def _to_optional_float(val: Any) -> Optional[float]:
-                    if val is None:
-                        return None
-                    try:
-                        return float(val)
-                    except Exception:
-                        return None
+                orders.append(
+                    {
+                        "client_order_id": client_order_id,
+                        "symbol": symbol,
+                        "side": side,
+                        "qty": qty,
+                        "status": status,
+                        "filled_qty": filled_qty,
+                        "alpaca_order_id": alpaca_order_id,
+                    }
+                )
 
-                for row in rows:
-                    orders.append(
-                        {
-                            "client_order_id": row[0],
-                            "symbol": row[1],
-                            "side": row[2],
-                            "qty": row[3],
-                            "status": row[4],
-                            "filled_qty": _to_optional_float(row[5]),
-                            "alpaca_order_id": row[6],
-                        }
-                    )
-
-                return orders
-
+            return orders
         except sqlite3.Error as e:
             logger.error(f"Database error fetching orders: {e}")
             return []

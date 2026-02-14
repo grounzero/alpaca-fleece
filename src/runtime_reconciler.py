@@ -27,6 +27,7 @@ from src.reconciliation import (
     compare_order_states,
     compare_positions,
 )
+from src.adapters.persistence.mappers import position_snapshot_from_row
 from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
@@ -184,9 +185,9 @@ class RuntimeReconciler:
                     WHERE timestamp_utc = (SELECT MAX(timestamp_utc) FROM positions_snapshot)
                 """)
                 sqlite_positions_rows = cursor.fetchall()
-            sqlite_positions = {
-                row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
-            }
+
+            sqlite_snapshots = [position_snapshot_from_row(r) for r in sqlite_positions_rows]
+            sqlite_positions = {p.symbol: p for p in sqlite_snapshots}
             position_discrepancies = compare_positions(sqlite_positions, alpaca_positions)
 
             # Combine all discrepancies

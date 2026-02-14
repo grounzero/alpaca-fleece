@@ -16,9 +16,10 @@ from pathlib import Path
 from typing import Any, Dict, List, cast
 
 from src.models.order_state import OrderState
-from src.models.persistence import OrderIntent
+from src.models.persistence import OrderIntent, PositionSnapshot
 from src.state_store import StateStore
 from src.utils import parse_optional_float
+from src.adapters.persistence.mappers import position_snapshot_from_row
 
 logger = logging.getLogger(__name__)
 
@@ -130,7 +131,7 @@ def apply_safe_order_updates(
 
 
 def compare_positions(
-    sqlite_positions: Dict[str, Dict[str, Any]], alpaca_positions: List[Dict[str, Any]]
+    sqlite_positions: Dict[str, PositionSnapshot], alpaca_positions: List[Dict[str, Any]]
 ) -> list[dict[str, object]]:
     """Compare SQLite vs Alpaca positions (Rule 4).
 
@@ -139,14 +140,14 @@ def compare_positions(
     discrepancies: list[dict[str, object]] = []
     alpaca_position_map = {p["symbol"]: p["qty"] for p in alpaca_positions}
 
-    for symbol, sqlite_qty in sqlite_positions.items():
+    for symbol, sqlite_snapshot in sqlite_positions.items():
         alpaca_qty = alpaca_position_map.get(symbol, 0)
-        if alpaca_qty != sqlite_qty["qty"]:
+        if alpaca_qty != sqlite_snapshot.qty:
             discrepancies.append(
                 {
                     "type": "position_mismatch",
                     "symbol": symbol,
-                    "sqlite_qty": sqlite_qty["qty"],
+                    "sqlite_qty": sqlite_snapshot.qty,
                     "alpaca_qty": alpaca_qty,
                 }
             )
@@ -206,9 +207,9 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
         """)
         sqlite_positions_rows = cursor.fetchall()
 
-    sqlite_positions = {
-        row[0]: {"qty": row[1], "avg_entry_price": row[2]} for row in sqlite_positions_rows
-    }
+    # Map DB rows to PositionSnapshot dataclasses and index by symbol
+    sqlite_snapshots = [position_snapshot_from_row(r) for r in sqlite_positions_rows]
+    sqlite_positions = {p.symbol: p for p in sqlite_snapshots}
 
     # Compare positions using helper
     position_discrepancies = compare_positions(sqlite_positions, alpaca_positions)
