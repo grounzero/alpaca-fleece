@@ -12,7 +12,6 @@ from typing import Optional
 
 from src.adapters.persistence.mappers import order_intent_from_row
 from src.models.persistence import OrderIntent
-from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
 
