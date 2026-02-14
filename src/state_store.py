@@ -125,7 +125,6 @@ class StateStore:
                         "Failed to apply SQLite PRAGMA busy_timeout for signal gate.", exc_info=True
                     )
 
-                # Normalize timestamps to UTC ISO
                 last_accepted_iso = now_utc.astimezone(timezone.utc).isoformat()
                 last_bar_iso = (
                     bar_ts_utc.astimezone(timezone.utc).isoformat() if bar_ts_utc else None
@@ -210,7 +209,7 @@ class StateStore:
                 # row2[0] may be Any from sqlite; coerce to str and ensure a bool is returned
                 stored_val: str = str(row2[0])
                 try:
-                    # Compare normalized datetimes (in UTC) rather than raw ISO strings to
+                    # Compare datetimes (in UTC) rather than raw ISO strings to
                     # avoid issues with differing ISO formatting (e.g., fractional seconds).
                     stored_dt = datetime.fromisoformat(stored_val).astimezone(timezone.utc)
                     new_dt = now_utc.astimezone(timezone.utc)

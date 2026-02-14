@@ -689,8 +689,8 @@ class StreamPolling:
             alpaca_order_id: The Alpaca order ID (optional, None to preserve DB value)
         """
         try:
-            # Route persistence through the centralized StateStore so both
-            # SDK-driven and polling-driven updates follow the same codepath.
+            # Route persistence through the StateStore so both SDK-driven and
+            # polling-driven updates follow the same codepath.
             # Only update filled_qty/filled_avg_price if not None; else preserve DB value.
             from src.utils import parse_optional_float
 

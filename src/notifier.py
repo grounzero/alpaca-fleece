@@ -240,21 +240,20 @@ class AlertNotifier:
             return True
 
         except smtplib.SMTPAuthenticationError:
-            # Sanitize: don't log credentials
             logger.error(
                 f"SMTP authentication failed for {smtp_host}:{smtp_port}",
                 extra={"error_type": "SMTPAuthenticationError"},
             )
             return False
         except smtplib.SMTPException as e:
-            # SMTP-specific errors (don't expose credentials)
+            # SMTP-specific errors
             logger.error(
                 f"SMTP error sending email alert: {type(e).__name__}",
                 extra={"error_type": type(e).__name__, "smtp_host": smtp_host},
             )
             return False
         except Exception as e:
-            # Generic error handling (credentials already stripped)
+            # Generic error handling
             logger.error(
                 f"Failed to send email alert: {type(e).__name__}",
                 extra={"error_type": type(e).__name__},

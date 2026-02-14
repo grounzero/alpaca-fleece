@@ -56,11 +56,9 @@ def _parse_iso(ts: Optional[Any]) -> Optional[datetime]:
     if ts is None:
         return None
     if isinstance(ts, datetime):
-        # Normalize naive datetimes to UTC for consistent downstream handling
         return ts if ts.tzinfo is not None else ts.replace(tzinfo=timezone.utc)
     try:
         parsed = datetime.fromisoformat(str(ts))
-        # If parsed datetime is naive (no tzinfo), assume UTC
         return parsed if parsed.tzinfo is not None else parsed.replace(tzinfo=timezone.utc)
     except Exception:
         return None
