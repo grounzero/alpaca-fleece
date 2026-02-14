@@ -160,7 +160,15 @@ def fill_from_row(row: Any) -> Fill:
     cum_qty = float(cum_qty_raw) if cum_qty_raw is not None else 0.0
     cum_avg_price = parse_optional_float(cum_avg_price_raw)
     timestamp_utc = _parse_iso(timestamp_raw)
-    price_is_estimate = bool(int(price_is_estimate_raw or 0))
+    if price_is_estimate_raw is None:
+        # Align with DB default (1) and Fill dataclass default (True)
+        price_is_estimate = True
+    else:
+        try:
+            price_is_estimate = bool(int(price_is_estimate_raw))
+        except (TypeError, ValueError):
+            # On unparseable value, fall back to the same default
+            price_is_estimate = True
     delta_fill_price = parse_optional_float(delta_fill_price_raw)
 
     return Fill(
