@@ -6,6 +6,4 @@ if ! command -v pre-commit >/dev/null 2>&1; then
 fi
 
 echo "Running pre-commit hooks..."
-pre-commit run --all-files || exit $?
-
-exit 0
+pre-commit run --all-files
