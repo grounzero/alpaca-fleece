@@ -448,6 +448,7 @@ class StreamPolling:
 
             Supports both legacy dict-shaped rows and `OrderIntent` dataclasses.
             """
+
             def _val(key: str, default: Any = None) -> Any:
                 if isinstance(order, dict):
                     return order.get(key, default)
@@ -609,16 +610,14 @@ class StreamPolling:
         try:
             with sqlite3.connect(self._db_path) as conn:
                 cursor = conn.cursor()
-                cursor.execute(
-                    """
+                cursor.execute("""
                     SELECT client_order_id, symbol, side, qty, status,
                            filled_qty, alpaca_order_id
                     FROM order_intents
                     WHERE status IN ('submitted', 'pending', 'accepted', 'new', 'partially_filled')
                       AND alpaca_order_id IS NOT NULL
                       AND alpaca_order_id != ''
-                    """
-                )
+                    """)
                 rows = cursor.fetchall()
 
             orders: List[dict[str, Any]] = []

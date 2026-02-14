@@ -35,6 +35,7 @@ class AccountInfo:
     buying_power: float = 0.0
     cash: float = 0.0
     portfolio_value: float = 0.0
+
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
@@ -45,6 +46,7 @@ class PositionInfo:
     qty: float = 0.0
     avg_entry_price: Optional[float] = None
     current_price: Optional[float] = None
+
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
@@ -60,6 +62,7 @@ class OrderInfo:
     filled_qty: Optional[float] = None
     filled_avg_price: Optional[float] = None
     created_at: Optional[str] = None
+
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
@@ -70,6 +73,7 @@ class ClockInfo:
     next_open: Optional[str] = None
     next_close: Optional[str] = None
     timestamp: Optional[str] = None
+
     def __getitem__(self, key: str) -> Any:
         return getattr(self, key)
 
@@ -227,9 +231,7 @@ class Broker:
                     PositionInfo(
                         symbol=p.symbol,
                         qty=float(p.qty) if p.qty else 0.0,
-                        avg_entry_price=(
-                            float(p.avg_entry_price) if p.avg_entry_price else None
-                        ),
+                        avg_entry_price=(float(p.avg_entry_price) if p.avg_entry_price else None),
                         current_price=(float(p.current_price) if p.current_price else None),
                     )
                 )
