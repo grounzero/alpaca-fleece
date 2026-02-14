@@ -346,9 +346,7 @@ async def test_does_not_repair_if_exit_order_working(
 
 
 @pytest.mark.asyncio
-async def test_repairs_if_position_closed(
-    runtime_reconciler, mock_broker, position_tracker
-):
+async def test_repairs_if_position_closed(runtime_reconciler, mock_broker, position_tracker):
     """Test that pending_exit is repaired if position already closed in broker."""
     # Create a position with pending_exit=True
     position = position_tracker.start_tracking(
