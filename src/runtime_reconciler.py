@@ -322,7 +322,7 @@ class RuntimeReconciler:
         # Batch-query SQLite for exit orders for all pending symbols to avoid
         # opening a new DB connection per symbol (performance/scalability).
         symbols = [s for s, _ in pending_exits]
-        sqlite_orders_by_symbol: Dict[str, List[tuple]] = {}
+        sqlite_orders_by_symbol: Dict[str, List[tuple[str, str, str]]] = {}
         if symbols:
             placeholders = ",".join("?" for _ in symbols)
             with sqlite3.connect(self.state_store.db_path) as conn_check:
