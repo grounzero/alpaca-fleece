@@ -1,0 +1,11 @@
+#!/usr/bin/env sh
+# Run pre-commit hooks locally; fail if pre-commit is not available
+if ! command -v pre-commit >/dev/null 2>&1; then
+  echo "pre-commit not found. Activate the project's venv or install pre-commit." >&2
+  exit 1
+fi
+
+echo "Running pre-commit hooks..."
+pre-commit run --all-files || exit $?
+
+exit 0

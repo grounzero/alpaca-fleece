@@ -51,8 +51,8 @@ def test_migration_adds_atr_and_persists():
 
         row = store.get_order_intent(client_order_id)
         assert row is not None
-        assert row["client_order_id"] == client_order_id
-        assert row["atr"] == pytest.approx(0.42)
+        assert row.client_order_id == client_order_id
+        assert row.atr == pytest.approx(0.42)
 
 
 def test_get_all_order_intents_handles_null_atr():
@@ -73,4 +73,4 @@ def test_get_all_order_intents_handles_null_atr():
         )
 
         intents = store.get_all_order_intents()
-        assert any(i["client_order_id"] == "no-atr" and i["atr"] is None for i in intents)
+        assert any(i.client_order_id == "no-atr" and i.atr is None for i in intents)

@@ -29,8 +29,8 @@ def test_missing_filled_fields_do_not_overwrite(tmp_path):
 
     oi = ss.get_order_intent(client_id)
     assert oi is not None
-    assert oi["filled_qty"] == 5.0
-    assert oi["filled_avg_price"] == 10.0
+    assert oi.filled_qty == 5.0
+    assert oi.filled_avg_price == 10.0
 
     # Apply an update that omits filled fields (pass None)
     ss.update_order_intent(
@@ -44,8 +44,8 @@ def test_missing_filled_fields_do_not_overwrite(tmp_path):
     oi2 = ss.get_order_intent(client_id)
     assert oi2 is not None
     # Values must be preserved
-    assert oi2["filled_qty"] == 5.0
-    assert oi2["filled_avg_price"] == 10.0
+    assert oi2.filled_qty == 5.0
+    assert oi2.filled_avg_price == 10.0
 
     # Now apply an update with new numeric values
     ss.update_order_intent(
@@ -58,5 +58,5 @@ def test_missing_filled_fields_do_not_overwrite(tmp_path):
 
     oi3 = ss.get_order_intent(client_id)
     assert oi3 is not None
-    assert oi3["filled_qty"] == 7.5
-    assert oi3["filled_avg_price"] == 15.25
+    assert oi3.filled_qty == 7.5
+    assert oi3.filled_avg_price == 15.25

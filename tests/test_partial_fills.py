@@ -583,8 +583,8 @@ class TestStateStorePartialFillAPIs:
 
         result = store.get_order_intent_by_alpaca_id("a-1")
         assert result is not None
-        assert result["client_order_id"] == "c-1"
-        assert result["symbol"] == "AAPL"
+        assert result.client_order_id == "c-1"
+        assert result.symbol == "AAPL"
 
     def test_get_order_intent_by_alpaca_id_not_found(self, tmp_path):
         _, store = _setup_db(tmp_path)
