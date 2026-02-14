@@ -38,3 +38,10 @@ repos:
         language: system
         pass_filenames: false
         stages: [push]
+
+      - id: precommit-all
+        name: pre-commit run all (pre-push)
+        entry: bash -lc "pre-commit run --all-files"
+        language: system
+        pass_filenames: false
+        stages: [push]
