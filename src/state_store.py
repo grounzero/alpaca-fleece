@@ -344,7 +344,7 @@ class StateStore:
             status: Optional status filter (e.g., 'new', 'submitted', 'filled')
 
         Returns:
-            List of order intent rows
+            List of `OrderIntent` dataclass instances representing persisted order intents
         """
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
