@@ -161,7 +161,8 @@ def fill_from_row(row: Any) -> Fill:
     # Read it explicitly (even if unused) to avoid off-by-one issues when
     # queries include or omit that column. This makes the mapping robust
     # to both query shapes.
-    fill_dedupe_key_raw = _get(row, 10, "fill_dedupe_key")
+    # Read dedupe key if present to keep column indexing stable; value intentionally unused
+    _ = _get(row, 10, "fill_dedupe_key")
     delta_fill_price_raw = _get(row, 11, "delta_fill_price")
 
     delta_qty = float(delta_qty_raw) if delta_qty_raw is not None else 0.0
