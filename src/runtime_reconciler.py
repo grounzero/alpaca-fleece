@@ -169,6 +169,8 @@ class RuntimeReconciler:
             # Apply safe updates (Rule 1)
             safe_updates = apply_safe_order_updates(self.state_store, sqlite_orders, alpaca_orders)
 
+            # Refresh sqlite_orders after applying safe updates to avoid using a stale snapshot
+            sqlite_orders = self.state_store.get_all_order_intents()
             # Check for order discrepancies (Rules 2-3)
             order_discrepancies, _ = compare_order_states(sqlite_orders, alpaca_orders)
 
