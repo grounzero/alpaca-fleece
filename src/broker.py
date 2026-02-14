@@ -16,7 +16,8 @@ Calendar (/v2/calendar) is NOT owned here; use alpaca_api.calendar instead.
 
 from concurrent.futures import ThreadPoolExecutor
 from concurrent.futures import TimeoutError as FutureTimeoutError
-from typing import Any, Callable, Optional, TypedDict, TypeVar, Union
+from dataclasses import dataclass
+from typing import Any, Callable, Optional, TypeVar, Union
 
 from alpaca.trading.client import TradingClient
 from alpaca.trading.enums import OrderSide, TimeInForce
@@ -28,45 +29,49 @@ from src.utils import parse_optional_float
 T = TypeVar("T")
 
 
-class AccountInfo(TypedDict, total=False):
-    """Account information from broker."""
-
-    equity: float
-    buying_power: float
-    cash: float
-    portfolio_value: float
-
-
-class PositionInfo(TypedDict, total=False):
-    """Position information."""
-
-    symbol: str
-    qty: float
-    avg_entry_price: Optional[float]
-    current_price: Optional[float]
+@dataclass
+class AccountInfo:
+    equity: float = 0.0
+    buying_power: float = 0.0
+    cash: float = 0.0
+    portfolio_value: float = 0.0
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
 
 
-class OrderInfo(TypedDict, total=False):
-    """Order information."""
-
-    id: str
-    client_order_id: str
-    symbol: str
-    side: Optional[str]
-    qty: Optional[float]
-    status: Optional[str]
-    filled_qty: Optional[float]
-    filled_avg_price: Optional[float]
-    created_at: Optional[str]
+@dataclass
+class PositionInfo:
+    symbol: str = ""
+    qty: float = 0.0
+    avg_entry_price: Optional[float] = None
+    current_price: Optional[float] = None
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
 
 
-class ClockInfo(TypedDict, total=False):
-    """Market clock information."""
+@dataclass
+class OrderInfo:
+    id: str = ""
+    client_order_id: str = ""
+    symbol: str = ""
+    side: Optional[str] = None
+    qty: Optional[float] = None
+    status: Optional[str] = None
+    filled_qty: Optional[float] = None
+    filled_avg_price: Optional[float] = None
+    created_at: Optional[str] = None
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
 
-    is_open: bool
-    next_open: Optional[str]
-    next_close: Optional[str]
-    timestamp: Optional[str]
+
+@dataclass
+class ClockInfo:
+    is_open: bool = False
+    next_open: Optional[str] = None
+    next_close: Optional[str] = None
+    timestamp: Optional[str] = None
+    def __getitem__(self, key: str) -> Any:
+        return getattr(self, key)
 
 
 class BrokerError(Exception):
@@ -181,21 +186,21 @@ class Broker:
             )
             # Handle both SDK object and dict responses
             if isinstance(account, dict):
-                return {
-                    "equity": float(account.get("equity", 0)),
-                    "buying_power": float(account.get("buying_power", 0)),
-                    "cash": float(account.get("cash", 0)),
-                    "portfolio_value": float(account.get("portfolio_value", 0)),
-                }
+                return AccountInfo(
+                    equity=float(account.get("equity", 0)),
+                    buying_power=float(account.get("buying_power", 0)),
+                    cash=float(account.get("cash", 0)),
+                    portfolio_value=float(account.get("portfolio_value", 0)),
+                )
             else:
-                return {
-                    "equity": float(account.equity) if account.equity else 0.0,
-                    "buying_power": float(account.buying_power) if account.buying_power else 0.0,
-                    "cash": float(account.cash) if account.cash else 0.0,
-                    "portfolio_value": (
+                return AccountInfo(
+                    equity=float(account.equity) if account.equity else 0.0,
+                    buying_power=float(account.buying_power) if account.buying_power else 0.0,
+                    cash=float(account.cash) if account.cash else 0.0,
+                    portfolio_value=(
                         float(account.portfolio_value) if account.portfolio_value else 0.0
                     ),
-                }
+                )
         except BrokerError:
             raise
         except Exception as e:
@@ -219,12 +224,14 @@ class Broker:
                 if isinstance(p, str):
                     continue  # Skip error strings
                 result.append(
-                    {
-                        "symbol": p.symbol,
-                        "qty": float(p.qty) if p.qty else 0.0,
-                        "avg_entry_price": float(p.avg_entry_price) if p.avg_entry_price else None,
-                        "current_price": float(p.current_price) if p.current_price else None,
-                    }
+                    PositionInfo(
+                        symbol=p.symbol,
+                        qty=float(p.qty) if p.qty else 0.0,
+                        avg_entry_price=(
+                            float(p.avg_entry_price) if p.avg_entry_price else None
+                        ),
+                        current_price=(float(p.current_price) if p.current_price else None),
+                    )
                 )
             return result
         except BrokerError:
@@ -259,21 +266,21 @@ class Broker:
                 if isinstance(o, str):
                     continue  # Skip error strings
                 result.append(
-                    {
-                        "id": str(o.id) if o.id else "",
-                        "client_order_id": o.client_order_id if o.client_order_id else "",
-                        "symbol": o.symbol if o.symbol else "",
-                        "side": o.side.value if o.side else None,
-                        "qty": float(o.qty) if o.qty else None,
-                        "status": o.status.value if o.status else None,
-                        "filled_qty": parse_optional_float(getattr(o, "filled_qty", None)),
-                        "filled_avg_price": (
+                    OrderInfo(
+                        id=str(o.id) if o.id else "",
+                        client_order_id=o.client_order_id if o.client_order_id else "",
+                        symbol=o.symbol if o.symbol else "",
+                        side=(o.side.value if o.side else None),
+                        qty=(float(o.qty) if o.qty else None),
+                        status=(o.status.value if o.status else None),
+                        filled_qty=parse_optional_float(getattr(o, "filled_qty", None)),
+                        filled_avg_price=(
                             parse_optional_float(getattr(o, "filled_avg_price", None))
                             if getattr(o, "filled_avg_price", None) is not None
                             else None
                         ),
-                        "created_at": o.created_at.isoformat() if o.created_at else None,
-                    }
+                        created_at=(o.created_at.isoformat() if o.created_at else None),
+                    )
                 )
             return result
         except BrokerError:
@@ -298,19 +305,19 @@ class Broker:
             )
             # Handle both SDK object and dict responses
             if isinstance(clock, dict):
-                return {
-                    "is_open": bool(clock.get("is_open", False)),
-                    "next_open": clock.get("next_open"),
-                    "next_close": clock.get("next_close"),
-                    "timestamp": clock.get("timestamp"),
-                }
+                return ClockInfo(
+                    is_open=bool(clock.get("is_open", False)),
+                    next_open=clock.get("next_open"),
+                    next_close=clock.get("next_close"),
+                    timestamp=clock.get("timestamp"),
+                )
             else:
-                return {
-                    "is_open": clock.is_open if clock.is_open is not None else False,
-                    "next_open": clock.next_open.isoformat() if clock.next_open else None,
-                    "next_close": clock.next_close.isoformat() if clock.next_close else None,
-                    "timestamp": clock.timestamp.isoformat() if clock.timestamp else None,
-                }
+                return ClockInfo(
+                    is_open=clock.is_open if clock.is_open is not None else False,
+                    next_open=(clock.next_open.isoformat() if clock.next_open else None),
+                    next_close=(clock.next_close.isoformat() if clock.next_close else None),
+                    timestamp=(clock.timestamp.isoformat() if clock.timestamp else None),
+                )
         except BrokerError:
             raise
         except Exception as e:
@@ -371,37 +378,37 @@ class Broker:
             )
             # Handle both SDK object and dict responses
             if isinstance(order_result, dict):
-                return {
-                    "id": str(order_result.get("id", "")),
-                    "client_order_id": str(order_result.get("client_order_id", "")),
-                    "symbol": str(order_result.get("symbol", "")),
-                    "side": str(order_result.get("side")) if order_result.get("side") else None,
-                    "qty": float(order_result["qty"]) if order_result.get("qty") else None,
-                    "status": str(order_result["status"]) if order_result.get("status") else None,
-                    "filled_qty": parse_optional_float(order_result.get("filled_qty")),
-                    "filled_avg_price": (
+                return OrderInfo(
+                    id=str(order_result.get("id", "")),
+                    client_order_id=str(order_result.get("client_order_id", "")),
+                    symbol=str(order_result.get("symbol", "")),
+                    side=(str(order_result.get("side")) if order_result.get("side") else None),
+                    qty=(float(order_result["qty"]) if order_result.get("qty") else None),
+                    status=(str(order_result["status"]) if order_result.get("status") else None),
+                    filled_qty=parse_optional_float(order_result.get("filled_qty")),
+                    filled_avg_price=(
                         parse_optional_float(order_result.get("filled_avg_price"))
                         if order_result.get("filled_avg_price") is not None
                         else None
                     ),
-                }
+                )
             else:
-                return {
-                    "id": str(order_result.id) if order_result.id else "",
-                    "client_order_id": (
+                return OrderInfo(
+                    id=str(order_result.id) if order_result.id else "",
+                    client_order_id=(
                         order_result.client_order_id if order_result.client_order_id else ""
                     ),
-                    "symbol": order_result.symbol if order_result.symbol else "",
-                    "side": order_result.side.value if order_result.side else None,
-                    "qty": float(order_result.qty) if order_result.qty else None,
-                    "status": order_result.status.value if order_result.status else None,
-                    "filled_qty": parse_optional_float(getattr(order_result, "filled_qty", None)),
-                    "filled_avg_price": (
+                    symbol=order_result.symbol if order_result.symbol else "",
+                    side=(order_result.side.value if order_result.side else None),
+                    qty=(float(order_result.qty) if order_result.qty else None),
+                    status=(order_result.status.value if order_result.status else None),
+                    filled_qty=parse_optional_float(getattr(order_result, "filled_qty", None)),
+                    filled_avg_price=(
                         parse_optional_float(getattr(order_result, "filled_avg_price", None))
                         if getattr(order_result, "filled_avg_price", None) is not None
                         else None
                     ),
-                }
+                )
         except BrokerError:
             raise
         except Exception as e:
