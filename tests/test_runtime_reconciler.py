@@ -1,15 +1,12 @@
 """Tests for runtime reconciler."""
 
 import asyncio
-import json
 import sqlite3
-from datetime import datetime, timezone
 
 import pytest
 
 from src.position_tracker import PositionTracker
 from src.runtime_reconciler import RuntimeReconciler
-from src.state_store import StateStore
 
 
 @pytest.fixture

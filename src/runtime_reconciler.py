@@ -333,18 +333,17 @@ class RuntimeReconciler:
                 continue
 
             # Check if there's a working exit order in SQLite
-            conn_check = sqlite3.connect(self.state_store.db_path)
-            cursor_check = conn_check.cursor()
-            cursor_check.execute(
-                """
-                SELECT status FROM order_intents
-                WHERE symbol = ? AND side != ?
-                  AND status IN ('new', 'submitted', 'accepted', 'partially_filled', 'pending_new')
-                """,
-                (symbol, side),
-            )
-            sqlite_exit_orders = cursor_check.fetchall()
-            conn_check.close()
+            with sqlite3.connect(self.state_store.db_path) as conn_check:
+                cursor_check = conn_check.cursor()
+                cursor_check.execute(
+                    """
+                    SELECT status FROM order_intents
+                    WHERE symbol = ? AND side != ?
+                      AND status IN ('new', 'submitted', 'accepted', 'partially_filled', 'pending_new')
+                    """,
+                    (symbol, side),
+                )
+                sqlite_exit_orders = cursor_check.fetchall()
 
             if sqlite_exit_orders:
                 # Working exit order exists - not stuck

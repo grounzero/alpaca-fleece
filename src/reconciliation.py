@@ -234,25 +234,24 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
     # Clean reconciliation: update positions snapshot
     logger.info("Reconciliation clean: updating positions snapshot")
 
-    conn = sqlite3.connect(state_store.db_path)
-    cursor = conn.cursor()
-
     now_utc = datetime.now(timezone.utc).isoformat()
 
-    for position in alpaca_positions:
-        cursor.execute(
-            """INSERT INTO positions_snapshot (timestamp_utc, symbol, qty, avg_entry_price)
-               VALUES (?, ?, ?, ?)""",
-            (
-                now_utc,
-                position["symbol"],
-                position["qty"],
-                position["avg_entry_price"] or 0.0,
-            ),
-        )
+    with sqlite3.connect(state_store.db_path) as conn:
+        cursor = conn.cursor()
 
-    conn.commit()
-    conn.close()
+        for position in alpaca_positions:
+            cursor.execute(
+                """INSERT INTO positions_snapshot (timestamp_utc, symbol, qty, avg_entry_price)
+                   VALUES (?, ?, ?, ?)""",
+                (
+                    now_utc,
+                    position["symbol"],
+                    position["qty"],
+                    position["avg_entry_price"] or 0.0,
+                ),
+            )
+
+        conn.commit()
 
     logger.info(f"Reconciliation complete: {len(alpaca_positions)} positions recorded")
 
