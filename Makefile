@@ -125,7 +125,7 @@ dev-setup:
 	python3 -m venv .venv
 	. .venv/bin/activate && python -m pip install --upgrade pip setuptools wheel
 	@if [ -f requirements-dev.txt ]; then \
-		. .venv/bin/activate && pip install --upgrade pip && . .venv/bin/activate && pip install -r requirements-dev.txt; \
+		. .venv/bin/activate && pip install -r requirements-dev.txt; \
 	fi
 	. .venv/bin/activate && pip install pre-commit || true
 	# Install pre-commit hooks and ensure repository hooks path is set to tracked .githooks
