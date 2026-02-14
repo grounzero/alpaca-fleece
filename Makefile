@@ -119,3 +119,18 @@ clean:
 	find . -type f -name "*.pyc" -delete 2>/dev/null || true
 	find . -type f -name ".coverage" -delete 2>/dev/null || true
 	rm -rf data/alpaca_bot.pid 2>/dev/null || true
+
+dev-setup:
+	@echo "Creating virtualenv in .venv and installing development dependencies..."
+	python3 -m venv .venv
+	. .venv/bin/activate && python -m pip install --upgrade pip setuptools wheel
+	@if [ -f requirements-dev.txt ]; then \
+		. .venv/bin/activate && pip install --upgrade pip && . .venv/bin/activate && pip install -r requirements-dev.txt; \
+	fi
+	. .venv/bin/activate && pip install pre-commit || true
+	# Install pre-commit hooks and ensure repository hooks path is set to tracked .githooks
+	. .venv/bin/activate && pre-commit install || true
+	. .venv/bin/activate && pre-commit install --hook-type pre-push || true
+	@git config core.hooksPath .githooks || true
+	@chmod +x .githooks/* || true
+	@echo "Done. Activate with: source .venv/bin/activate"

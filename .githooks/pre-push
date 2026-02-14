@@ -1,0 +1,10 @@
+#!/usr/bin/env sh
+if ! command -v pre-commit >/dev/null 2>&1; then
+  echo "pre-commit not found. Activate the project's venv or install pre-commit." >&2
+  exit 1
+fi
+
+echo "Running pre-commit (pre-push) checks..."
+pre-commit run --all-files || exit $?
+
+exit 0
