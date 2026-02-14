@@ -18,7 +18,6 @@ from typing import Dict, List, Optional
 
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.state_store import StateStore
-from src.utils import parse_optional_float
 from src.adapters.persistence.mappers import position_from_row
 
 logger = logging.getLogger(__name__)
