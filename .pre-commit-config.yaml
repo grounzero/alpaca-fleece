@@ -21,3 +21,20 @@ repos:
     rev: 5.13.2
     hooks:
       - id: isort
+
+  # Local hooks: run slow or environment-dependent checks in the developer environment
+  - repo: local
+    hooks:
+      - id: mypy
+        name: mypy (static type check)
+        entry: bash -lc "PYTHONPATH=. .venv/bin/python -m mypy src --strict"
+        language: system
+        pass_filenames: false
+        stages: [commit]
+
+      - id: run-pytest
+        name: pytest (run full test suite)
+        entry: bash -lc "PYTHONPATH=. .venv/bin/pytest -q"
+        language: system
+        pass_filenames: false
+        stages: [push]
