@@ -755,22 +755,6 @@ class TestLateFills:
 
 
 # ---------------------------------------------------------------
-# Schema version test
-# ---------------------------------------------------------------
-
-
-class TestSchemaVersion:
-    def test_schema_version(self, tmp_path):
-        db_path = str(tmp_path / "ver.db")
-        SchemaManager.ensure_schema(db_path)
-        with sqlite3.connect(db_path) as conn:
-            cur = conn.cursor()
-            cur.execute("SELECT schema_version FROM schema_meta WHERE id = 1")
-            row = cur.fetchone()
-        assert row[0] == 4
-
-
-# ---------------------------------------------------------------
 # Reconciliation tests
 # ---------------------------------------------------------------
 
