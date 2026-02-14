@@ -414,16 +414,15 @@ async def test_persists_reconciliation_report(runtime_reconciler, mock_broker, s
     await runtime_reconciler._run_reconciliation_check()
 
     # Query reports table
-    conn = sqlite3.connect(state_store.db_path)
-    cursor = conn.cursor()
-    cursor.execute("""
-        SELECT timestamp_utc, check_type, status, discrepancies_count, repaired_count
-        FROM reconciliation_reports
-        ORDER BY timestamp_utc DESC
-        LIMIT 1
-    """)
-    row = cursor.fetchone()
-    conn.close()
+    with sqlite3.connect(state_store.db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT timestamp_utc, check_type, status, discrepancies_count, repaired_count
+            FROM reconciliation_reports
+            ORDER BY timestamp_utc DESC
+            LIMIT 1
+        """)
+        row = cursor.fetchone()
 
     # Verify report persisted
     assert row is not None
