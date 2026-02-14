@@ -656,15 +656,7 @@ class StreamPolling:
                     logger.exception("Failed to map DB row to OrderIntent; skipping")
                     continue
 
-                if is_dataclass(oi):
-                    orders.append(oi)
-                else:
-                    try:
-                        oi_mapped = order_intent_from_row(oi)
-                        orders.append(oi_mapped)
-                    except Exception:
-                        logger.exception("Failed to coerce mapped row into OrderIntent; skipping")
-                        continue
+                orders.append(oi)
 
             return orders
         except sqlite3.Error as e:
