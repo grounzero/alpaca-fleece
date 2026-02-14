@@ -157,6 +157,11 @@ def fill_from_row(row: Any) -> Fill:
     timestamp_raw = _get(row, 7, "timestamp_utc")
     fill_id = _get(row, 8, "fill_id")
     price_is_estimate_raw = _get(row, 9, "price_is_estimate")
+    # The DB shape in the docstring includes a 'fill_dedupe_key' at index 10.
+    # Read it explicitly (even if unused) to avoid off-by-one issues when
+    # queries include or omit that column. This makes the mapping robust
+    # to both query shapes.
+    fill_dedupe_key_raw = _get(row, 10, "fill_dedupe_key")
     delta_fill_price_raw = _get(row, 11, "delta_fill_price")
 
     delta_qty = float(delta_qty_raw) if delta_qty_raw is not None else 0.0
@@ -215,8 +220,7 @@ def position_snapshot_from_row(row: Any) -> PositionSnapshot:
     symbol = _get(row, 0, "symbol") or ""
     qty_raw = _get(row, 1, "qty")
     avg_entry_raw = _get(row, 2, "avg_entry_price")
-    # Timestamp may not be present in select; try index 3 or key 'timestamp_utc'
-    timestamp_raw = _get(row, 3, "timestamp_utc") or _get(row, 0, "timestamp_utc")
+    timestamp_raw = _get(row, 3, "timestamp_utc")
 
     qty = float(qty_raw) if qty_raw is not None else 0.0
     avg_entry_price = float(avg_entry_raw) if avg_entry_raw is not None else 0.0

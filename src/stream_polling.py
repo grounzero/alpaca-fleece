@@ -19,6 +19,9 @@ from alpaca.trading.client import TradingClient
 
 from src.state_store import StateStore
 from src.utils import batch_iter, parse_optional_float
+from src.adapters.persistence.mappers import order_intent_from_row
+from src.models.persistence import OrderIntent
+from dataclasses import asdict, is_dataclass
 
 logger = logging.getLogger(__name__)
 
@@ -605,8 +608,12 @@ class StreamPolling:
         tasks = [_process_one(o) for o in submitted_orders]
         await asyncio.gather(*tasks)
 
-    def _get_submitted_orders(self) -> List[dict[str, Any]]:
-        """Return OrderIntent dataclasses for submitted/non-terminal orders with Alpaca IDs."""
+    def _get_submitted_orders(self) -> List[OrderIntent]:
+        """Return `OrderIntent` dataclasses for submitted/non-terminal orders with Alpaca IDs.
+
+        Uses the persistence mapper so callers receive the typed dataclass regardless
+        of whether the DB cursor returns tuples or `sqlite3.Row` objects.
+        """
         try:
             with sqlite3.connect(self._db_path) as conn:
                 cursor = conn.cursor()
@@ -620,31 +627,42 @@ class StreamPolling:
                     """)
                 rows = cursor.fetchall()
 
-            orders: List[dict[str, Any]] = []
+            orders: List[OrderIntent] = []
             for row in rows:
-                client_order_id = row[0]
-                symbol = row[1]
-                side = row[2]
-                qty = float(row[3]) if row[3] is not None else 0.0
-                status = str(row[4]) if row[4] is not None else ""
-                filled_qty = None
                 try:
-                    filled_qty = float(row[5]) if row[5] is not None else None
+                    # If the DB returned a plain tuple (default sqlite3 behaviour
+                    # for our simple queries), convert it into a dict with the
+                    # keys expected by `order_intent_from_row`. This query selects
+                    # a subset of columns so we explicitly provide `None` for
+                    # missing fields (e.g. `strategy`, `atr`, `filled_avg_price`).
+                    if isinstance(row, (list, tuple)):
+                        mapped = {
+                            "client_order_id": row[0],
+                            "strategy": None,
+                            "symbol": row[1],
+                            "side": row[2],
+                            "qty": row[3],
+                            "atr": None,
+                            "status": row[4],
+                            "filled_qty": row[5] if len(row) > 5 else None,
+                            "filled_avg_price": None,
+                            "alpaca_order_id": row[6] if len(row) > 6 else None,
+                        }
+                        oi = order_intent_from_row(mapped)
+                    else:
+                        oi = order_intent_from_row(row)
                 except Exception:
-                    filled_qty = None
-                alpaca_order_id = row[6]
+                    # Fallback: skip malformed rows but continue processing
+                    logger.exception("Failed to map DB row to OrderIntent; skipping")
+                    continue
 
-                orders.append(
-                    {
-                        "client_order_id": client_order_id,
-                        "symbol": symbol,
-                        "side": side,
-                        "qty": qty,
-                        "status": status,
-                        "filled_qty": filled_qty,
-                        "alpaca_order_id": alpaca_order_id,
-                    }
-                )
+                # Tests and existing callers expect subscriptable dict-like
+                # results. Convert dataclass -> dict when necessary to remain
+                # backwards compatible while still using the mapper.
+                if is_dataclass(oi):
+                    orders.append(asdict(oi))
+                else:
+                    orders.append(oi)
 
             return orders
         except sqlite3.Error as e:
