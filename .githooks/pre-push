@@ -5,6 +5,4 @@ if ! command -v pre-commit >/dev/null 2>&1; then
 fi
 
 echo "Running pre-commit (pre-push) checks..."
-pre-commit run --all-files || exit $?
-
-exit 0
+pre-commit run --all-files
