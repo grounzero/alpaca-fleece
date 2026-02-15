@@ -12,12 +12,21 @@ import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Optional, Protocol
 
 import pytz
 
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.order_manager import OrderManagerError
 from src.state_store import StateStore
+
+if TYPE_CHECKING:
+    from src.order_manager import OrderManager
+
+
+class AlertNotifierProtocol(Protocol):
+    async def send_alert_async(self, title: str, message: str, severity: str) -> None:  # pragma: no cover - typing only
+        ...
 
 logger = logging.getLogger(__name__)
 
@@ -38,8 +47,13 @@ class Housekeeping:
         self.state_store = state_store
         self.running = False
         # These may be wired after initialisation by Orchestrator
-        self.order_manager = None
-        self.notifier = None
+        # `order_manager` is set later by Orchestrator; use a forward-annotated
+        # type to satisfy strict mypy without importing at runtime.
+        self.order_manager: "OrderManager" | None = None
+        # `notifier` implements a lightweight protocol used by Housekeeping
+        # for async alerting. Use the protocol type to avoid runtime import
+        # dependency cycles while keeping static typing strict.
+        self.notifier: Optional[AlertNotifierProtocol] = None
 
     async def start(self) -> None:
         """Start housekeeping tasks."""
@@ -210,14 +224,17 @@ class Housekeeping:
                                 else maybe_positions
                             )
                             for p in positions:
-                                try:
-                                    q = float(p.get("qty"))
-                                except Exception:
-                                    q = (
-                                        float(str(p.get("qty")))
-                                        if p.get("qty") is not None
-                                        else 0.0
-                                    )
+                                raw_qty = p.get("qty")
+                                if raw_qty is None:
+                                    q = 0.0
+                                else:
+                                    try:
+                                        q = float(raw_qty)
+                                    except Exception:
+                                        try:
+                                            q = float(str(raw_qty))
+                                        except Exception:
+                                            q = 0.0
                                 if q != 0:
                                     remaining.append(p.get("symbol"))
                         except Exception:
