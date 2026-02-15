@@ -10,6 +10,7 @@ import asyncio
 import inspect
 import logging
 import sqlite3
+import uuid
 from datetime import datetime, timezone
 
 import pytz
@@ -35,6 +36,9 @@ class Housekeeping:
         self.broker = broker  # type: AsyncBrokerInterface
         self.state_store = state_store
         self.running = False
+        # These may be wired after initialisation by Orchestrator
+        self.order_manager = None
+        self.notifier = None
 
     async def start(self) -> None:
         """Start housekeeping tasks."""
@@ -107,42 +111,125 @@ class Housekeeping:
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to cancel orders: {e}")
 
-            # Step 2: Close all open positions
-            logger.info("Closing open positions...")
+            # Step 2: Close/flatten open positions via OrderManager (preferred)
+            logger.info("Closing open positions (shutdown flatten)...")
             try:
-                maybe_positions = self.broker.get_positions()
-                positions = (
-                    await maybe_positions
-                    if asyncio.iscoroutine(maybe_positions)
-                    else maybe_positions
-                )
-                for position in positions:
-                    symbol = position["symbol"]
-                    qty = float(position["qty"])
-                    side = "sell" if qty > 0 else "buy"
-                    abs_qty = abs(qty)
-                    client_order_id = f"close_{symbol}_{datetime.now(timezone.utc).isoformat()}"
-
-                    logger.info(f"Closing position: {symbol} ({abs_qty} shares via {side})")
-                    maybe_submit = self.broker.submit_order(
-                        symbol=symbol,
-                        side=side,
-                        qty=abs_qty,
-                        client_order_id=client_order_id,
-                        order_type="market",
+                if self.order_manager is None:
+                    # No order manager wired - fall back to direct broker submits (legacy)
+                    logger.warning(
+                        "OrderManager not wired into Housekeeping; using legacy submit behavior"
                     )
-                    if inspect.isawaitable(maybe_submit):
-                        await maybe_submit
-                    # Invalidate caches after submitting a close order
-                    if hasattr(self.broker, "invalidate_cache"):
+                    maybe_positions = self.broker.get_positions()
+                    positions = (
+                        await maybe_positions
+                        if asyncio.iscoroutine(maybe_positions)
+                        else maybe_positions
+                    )
+                    for position in positions:
+                        symbol = position["symbol"]
+                        qty = float(position["qty"])
+                        side = "sell" if qty > 0 else "buy"
+                        abs_qty = abs(qty)
+                        client_order_id = f"close_{symbol}_{datetime.now(timezone.utc).isoformat()}"
+
+                        logger.info(f"Closing position: {symbol} ({abs_qty} shares via {side})")
+                        maybe_submit = self.broker.submit_order(
+                            symbol=symbol,
+                            side=side,
+                            qty=abs_qty,
+                            client_order_id=client_order_id,
+                            order_type="market",
+                        )
+                        if inspect.isawaitable(maybe_submit):
+                            await maybe_submit
+                        # Invalidate caches after submitting a close order
+                        if hasattr(self.broker, "invalidate_cache"):
+                            try:
+                                maybe_inv2 = self.broker.invalidate_cache(
+                                    "get_positions", "get_open_orders"
+                                )
+                                if inspect.isawaitable(maybe_inv2):
+                                    await maybe_inv2
+                            except Exception:
+                                logger.debug("invalidate_cache failed after submit", exc_info=True)
+                else:
+                    # Use OrderManager to perform deterministic, idempotent flattening
+                    # Use a UUID-based session id to ensure uniqueness even
+                    # across rapid successive shutdown attempts.
+                    shutdown_session_id = uuid.uuid4().hex
+                    try:
+                        summary = await self.order_manager.flatten_positions(shutdown_session_id)
+                    except Exception as e:
+                        logger.exception("Shutdown flatten failed to start: %s", e)
+                        # Alert and continue: attempt to determine remaining exposure
+                        if self.notifier is not None:
+                            try:
+                                if hasattr(self.notifier, "send_alert_async"):
+                                    await self.notifier.send_alert_async(
+                                        title="Shutdown flatten failed to start",
+                                        message=str(e),
+                                        severity="ERROR",
+                                    )
+                            except Exception:
+                                logger.debug(
+                                    "Notifier failed while reporting flatten start failure",
+                                    exc_info=True,
+                                )
+
+                        # Try to re-query positions to determine remaining exposure
+                        remaining = []
                         try:
-                            maybe_inv2 = self.broker.invalidate_cache(
-                                "get_positions", "get_open_orders"
+                            maybe_positions = self.broker.get_positions()
+                            positions = (
+                                await maybe_positions
+                                if inspect.isawaitable(maybe_positions)
+                                else maybe_positions
                             )
-                            if inspect.isawaitable(maybe_inv2):
-                                await maybe_inv2
+                            for p in positions:
+                                try:
+                                    q = float(p.get("qty"))
+                                except Exception:
+                                    q = float(str(p.get("qty"))) if p.get("qty") is not None else 0.0
+                                if q != 0:
+                                    remaining.append(p.get("symbol"))
                         except Exception:
-                            logger.debug("invalidate_cache failed after submit", exc_info=True)
+                            logger.warning(
+                                "Failed to re-query positions after flatten start failure; remaining exposure unknown"
+                            )
+
+                        summary = {
+                            "submitted": [],
+                            "failed": [{"error": str(e)}],
+                            "remaining_exposure_symbols": remaining,
+                        }
+
+                    # Log summary
+                    logger.info("Shutdown flatten summary: %s", summary)
+
+                    # If any remaining exposure, emit critical alert and set exit code later
+                    remaining = (
+                        summary.get("remaining_exposure_symbols", [])
+                        if isinstance(summary, dict)
+                        else []
+                    )
+                    if remaining:
+                        msg = f"Shutdown left remaining exposure on symbols: {remaining}"
+                        logger.critical(msg)
+                        if self.notifier is not None:
+                            try:
+                                if hasattr(self.notifier, "send_alert_async"):
+                                    await self.notifier.send_alert_async(
+                                        title="CRITICAL: Shutdown left exposure",
+                                        message=msg,
+                                        severity="CRITICAL",
+                                    )
+                            except Exception:
+                                logger.debug(
+                                    "Notifier failed while reporting remaining exposure",
+                                    exc_info=True,
+                                )
+                        # raise SystemExit with non-zero to indicate failure to fully flatten
+                        raise SystemExit(1)
             except (ConnectionError, TimeoutError) as e:
                 logger.error(f"Failed to close positions: {e}")
 

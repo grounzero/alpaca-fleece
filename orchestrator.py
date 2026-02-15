@@ -486,6 +486,13 @@ class Orchestrator:
                 position_tracker=self.position_tracker,
             )
             logger.info("   Order manager ready")
+            # Wire housekeeping with order manager and notifier for shutdown flows
+            if self.housekeeping is not None:
+                try:
+                    self.housekeeping.order_manager = self.order_manager
+                    self.housekeeping.notifier = self.notifier
+                except Exception:
+                    logger.warning("Failed to wire order_manager/notifier into Housekeeping", exc_info=True)
 
             # Initialise exit manager
             logger.info("Initialising exit manager...")
