@@ -13,10 +13,17 @@ import asyncio
 import hashlib
 import inspect
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from src.async_broker_adapter import AsyncBrokerInterface
+from src.async_broker_adapter import (
+    AsyncBrokerInterface,
+    BrokerFatalError,
+    BrokerTimeoutError,
+    BrokerTransientError,
+)
+from src.broker import BrokerError
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent
 from src.position_tracker import PositionTracker
 from src.state_store import StateStore
@@ -100,6 +107,342 @@ class OrderManager:
         data = f"{self.strategy_name}:{symbol}:{self.timeframe}:{signal_ts.isoformat()}:{converted_side}"
         hash_val = hashlib.sha256(data.encode()).hexdigest()[:16]
         return hash_val
+
+    def _generate_shutdown_client_order_id(
+        self, symbol: str, shutdown_session_id: str, action: str
+    ) -> str:
+        """Deterministic client_order_id for shutdown flatten actions.
+
+        Args:
+            symbol: Stock symbol
+            shutdown_session_id: unique shutdown session identifier
+            action: e.g. 'flatten'
+
+        Returns:
+            16-char hex string
+        """
+        # Use a fixed "shutdown" prefix here so the stored `strategy` field
+        # (which is set to "shutdown" when saving the intent) matches the
+        # namespace used to generate the client_order_id. Including
+        # `self.strategy_name` would create an inconsistency between the
+        # persisted `strategy` value and the client_order_id namespace.
+        data = f"shutdown:{symbol}:{shutdown_session_id}:{action}"
+        return hashlib.sha256(data.encode()).hexdigest()[:16]
+
+    def _coerce_qty(self, raw_qty: Any) -> float:
+        """Coerce various broker qty representations to float safely.
+
+        Handles numeric types, numeric strings, and returns 0.0 for
+        None/unparseable values. Mirrors the previous ad-hoc logic used
+        in `flatten_positions` to ensure consistent behaviour.
+        """
+        if raw_qty is None:
+            return 0.0
+        try:
+            return float(raw_qty)
+        except (ValueError, TypeError):
+            return 0.0
+
+    async def _safe_metric_inc(self, metric_name: str, increment: int = 1) -> None:
+        """Best-effort async-safe metric increment helper.
+
+        Tries to call broker._metric_inc(metric_name) if provided (sync or
+        async). Falls back to incrementing `broker.metrics` dict. Swallows
+        all exceptions to ensure metrics never break runtime logic.
+        """
+        try:
+            metric_inc = getattr(self.broker, "_metric_inc", None)
+            if callable(metric_inc):
+                res = metric_inc(metric_name)
+                if inspect.isawaitable(res):
+                    await res
+                return
+            metrics = getattr(self.broker, "metrics", None)
+            if isinstance(metrics, dict):
+                metrics[metric_name] = metrics.get(metric_name, 0) + increment
+        except Exception:
+            try:
+                metrics = getattr(self.broker, "metrics", None)
+                if isinstance(metrics, dict):
+                    metrics[metric_name] = metrics.get(metric_name, 0) + increment
+            except Exception:
+                pass
+
+    async def flatten_positions(self, shutdown_session_id: str) -> dict[str, Any]:
+        """Flatten all current broker positions as part of shutdown.
+
+        This method is resilient: it attempts to submit a reduce-only intent
+        for each symbol and continues on per-symbol failure.
+
+        Args:
+            shutdown_session_id: A caller-supplied identifier that is unique per
+                shutdown attempt for this strategy. It is used to derive
+                deterministic, idempotent client order IDs via
+                :meth:`_generate_shutdown_client_order_id`. Reusing the same
+                value for multiple shutdown attempts will reuse the same
+                client order IDs at the broker; this may or may not be
+                acceptable depending on broker semantics, so callers should
+                generally provide a fresh, unique value (e.g. a UUID or
+                timestamp-based string) for each shutdown sequence.
+
+        Returns:
+            dict: A summary of the shutdown-flatten attempt with the keys:
+
+                - ``submitted``: list of per-symbol submissions that were
+                  successfully handed off to the broker/state store. Each
+                  element is a dict that includes at least ``symbol`` and
+                  ``client_order_id`` (and may contain other fields populated
+                  by the underlying submission logic).
+
+                - ``failed``: list of per-symbol failures that occurred while
+                  attempting to submit flatten orders. Each element is a dict
+                  of the form ``{"symbol": <symbol>, "error": <string>}``
+                  describing the failure for that symbol.
+
+                - ``remaining_exposure_symbols``: list of symbols for which
+                  the system still has non-flat broker positions after this
+                  method completes. This is computed by re-querying positions
+                  at the end of the routine.
+
+        Raises:
+            OrderManagerError: If broker positions cannot be queried at the
+                start of the shutdown sequence. Per-symbol submission errors
+                do *not* cause this method to raise; instead they are
+                accumulated in the ``failed`` list in the returned dict.
+
+        Notes:
+            - This coroutine is intended to be invoked as part of a single
+              orderly shutdown flow running in one event loop. It does not
+              implement additional locking and should not be called
+              concurrently for the same strategy, especially with the same
+              ``shutdown_session_id``, as that could lead to duplicate or
+              conflicting broker submissions.
+            - It is safe for the method to continue processing other symbols
+              even if individual submissions fail; such failures are captured
+              in the result summary.
+        """
+        results: dict[str, Any] = {
+            "submitted": [],
+            "failed": [],
+            "remaining_exposure_symbols": [],
+        }
+
+        # Fetch authoritative positions from broker (async-safe)
+        try:
+            maybe_positions = self.broker.get_positions()
+            positions = (
+                await maybe_positions if inspect.isawaitable(maybe_positions) else maybe_positions
+            )
+        except asyncio.CancelledError:
+            raise
+        except (
+            ConnectionError,
+            TimeoutError,
+            BrokerError,
+            BrokerTimeoutError,
+            BrokerTransientError,
+            BrokerFatalError,
+        ) as e:
+            logger.exception("Failed to query broker positions during shutdown: %s", e)
+            # Cannot proceed reliably without positions
+            raise OrderManagerError("Failed to query positions for shutdown")
+        except Exception as e:
+            # Catch-all for unexpected broker errors (e.g. RuntimeError) and
+            # wrap them as OrderManagerError per the public contract in the
+            # method docstring. Do not swallow CancelledError above.
+            logger.exception("Unexpected error querying broker positions during shutdown: %s", e)
+            raise OrderManagerError("Failed to query positions for shutdown")
+
+        for p in positions:
+            try:
+                symbol = p.get("symbol")
+                if not symbol:
+                    logger.warning("Skipping malformed position without symbol: %s", p)
+                    results["failed"].append({"symbol": None, "error": "missing_symbol"})
+                    continue
+                raw_qty = p.get("qty")
+                # Broker may return qty as string - coerce safely
+                qty_val = self._coerce_qty(raw_qty)
+
+                if qty_val == 0:
+                    logger.info("Skipping position with zero quantity during shutdown: %s", p)
+                    continue
+
+                side = "sell" if qty_val > 0 else "buy"
+                abs_qty = abs(qty_val)
+
+                client_order_id = self._generate_shutdown_client_order_id(
+                    symbol=symbol, shutdown_session_id=shutdown_session_id, action="flatten"
+                )
+
+                # Duplicate prevention: only skip when an existing intent is already
+                # submitted/terminal (or has a broker order id). Non-terminal intents
+                # (e.g. status="new" without broker_order_id) should be retried.
+                need_to_persist_intent = True
+                existing_intent = self.state_store.get_order_intent(client_order_id)
+                if existing_intent:
+                    # `get_order_intent` may return a dict-like row or a dataclass.
+                    if isinstance(existing_intent, dict):
+                        status = existing_intent.get("status")
+                        broker_order_id = existing_intent.get(
+                            "broker_order_id"
+                        ) or existing_intent.get("alpaca_order_id")
+                    else:
+                        status = getattr(existing_intent, "status", None)
+                        broker_order_id = getattr(
+                            existing_intent, "broker_order_id", None
+                        ) or getattr(existing_intent, "alpaca_order_id", None)
+                    if broker_order_id or status in (
+                        "submitted",
+                        "filled",
+                        "rejected",
+                        "cancelled",
+                        "expired",
+                    ):
+                        logger.info("Shutdown duplicate prevented: %s", client_order_id)
+                        results["submitted"].append(
+                            {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
+                        )
+                        continue
+                    else:
+                        # Intent exists but is not in a terminal/submitted state. Treat this
+                        # as a retry: reuse the existing intent and proceed to submission
+                        # without attempting to re-insert.
+                        need_to_persist_intent = False
+                        logger.info(
+                            "Retrying non-terminal shutdown intent (status=%r) for %s",
+                            status,
+                            client_order_id,
+                        )
+
+                # Persist shutdown intent BEFORE submitting when we don't already have
+                # a non-terminal intent. Handle race where another concurrent caller
+                # may have inserted the same client_order_id between the existence
+                # check and this insert.
+                if need_to_persist_intent:
+                    try:
+                        self.state_store.save_order_intent(
+                            client_order_id=client_order_id,
+                            strategy="shutdown",
+                            symbol=symbol,
+                            side=side,
+                            qty=float(abs_qty),
+                            atr=None,
+                            status="new",
+                        )
+                    except sqlite3.IntegrityError:
+                        # Another worker inserted the same client_order_id concurrently.
+                        logger.info("Shutdown duplicate prevented (race): %s", client_order_id)
+                        results["submitted"].append(
+                            {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
+                        )
+                        continue
+                    except Exception as e:
+                        logger.exception(
+                            "Failed to persist shutdown intent %s: %s", client_order_id, e
+                        )
+                        results["failed"].append({"symbol": symbol, "error": f"persist_error: {e}"})
+                        await self._safe_metric_inc("shutdown_flatten_submit_failed_total")
+                        continue
+
+                # Submit to broker. Use market order to reduce exposure; ensure
+                # side is opposite of the position so it is reduce-only in intent.
+                shutdown_order_type = "market"
+                shutdown_time_in_force = "day"
+                maybe = self.broker.submit_order(
+                    symbol=symbol,
+                    side=side,
+                    qty=float(abs_qty),
+                    client_order_id=client_order_id,
+                    order_type=shutdown_order_type,
+                    time_in_force=shutdown_time_in_force,
+                )
+                order = await maybe if inspect.isawaitable(maybe) else maybe
+
+                # Update persisted intent with broker id
+                self.state_store.update_order_intent(
+                    client_order_id=client_order_id,
+                    status="submitted",
+                    filled_qty=None,
+                    alpaca_order_id=order.get("id"),
+                )
+
+                # Invalidate caches if adapter supports it
+                try:
+                    if hasattr(self.broker, "invalidate_cache"):
+                        maybe_inv = self.broker.invalidate_cache("get_positions", "get_open_orders")
+                        if inspect.isawaitable(maybe_inv):
+                            await maybe_inv
+                except Exception:
+                    logger.debug("invalidate_cache failed after shutdown submit", exc_info=True)
+
+                logger.info(
+                    "shutdown_action=flatten symbol=%s side=%s qty=%s client_order_id=%s outcome=submitted",
+                    symbol,
+                    side,
+                    abs_qty,
+                    client_order_id,
+                )
+                # metrics (async-safe increment if broker provides helper)
+                await self._safe_metric_inc("shutdown_flatten_submit_total")
+
+                results["submitted"].append({"symbol": symbol, "client_order_id": client_order_id})
+            except Exception as e:
+                logger.exception("Failed to flatten symbol %s: %s", p.get("symbol"), e)
+                results["failed"].append({"symbol": p.get("symbol"), "error": str(e)})
+                await self._safe_metric_inc("shutdown_flatten_submit_failed_total")
+                # continue with other symbols
+        # Re-query positions to determine remaining exposure
+        try:
+            maybe_positions2 = self.broker.get_positions()
+            positions2 = (
+                await maybe_positions2
+                if inspect.isawaitable(maybe_positions2)
+                else maybe_positions2
+            )
+            for p in positions2:
+                sym = p.get("symbol")
+                q = self._coerce_qty(p.get("qty"))
+                if q != 0:
+                    if not sym:
+                        logger.warning("Skipping malformed re-query position without symbol: %s", p)
+                    else:
+                        results["remaining_exposure_symbols"].append(sym)
+        except Exception:
+            # If re-query fails, we can't determine remaining exposure reliably
+            logger.warning(
+                "Failed to re-query positions after shutdown flatten; remaining exposure unknown"
+            )
+
+        # Emit remaining metric (gauge). Do NOT call the counter helper
+        # `_metric_inc` here because that helper increments counters; this
+        # value is a gauge representing the current number of remaining
+        # exposure symbols and should be written directly into the metrics
+        # dict when available.
+        try:
+            metrics = getattr(self.broker, "metrics", None)
+            if isinstance(metrics, dict):
+                lock = getattr(self.broker, "_cache_lock", None)
+                if lock is not None:
+                    async with lock:
+                        metrics["shutdown_remaining_exposure_symbols"] = len(
+                            results["remaining_exposure_symbols"]
+                        )
+                else:
+                    metrics["shutdown_remaining_exposure_symbols"] = len(
+                        results["remaining_exposure_symbols"]
+                    )
+        except Exception:
+            try:
+                metrics = getattr(self.broker, "metrics", None)
+                if isinstance(metrics, dict):
+                    metrics["shutdown_remaining_exposure_symbols"] = len(
+                        results["remaining_exposure_symbols"]
+                    )
+            except Exception:
+                pass
+
+        return results
 
     async def submit_order(
         self,

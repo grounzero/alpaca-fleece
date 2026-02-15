@@ -31,7 +31,7 @@ def _get(row: Any, idx: int, key: str) -> Any:
             # fallback to index access
             try:
                 return row[idx]
-            except IndexError:
+            except (IndexError, TypeError):
                 return None
 
     # dict-like
@@ -48,7 +48,7 @@ def _get(row: Any, idx: int, key: str) -> Any:
 
     try:
         return row[idx]
-    except IndexError:
+    except (IndexError, TypeError):
         return None
 
 

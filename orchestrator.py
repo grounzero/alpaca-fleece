@@ -486,6 +486,15 @@ class Orchestrator:
                 position_tracker=self.position_tracker,
             )
             logger.info("   Order manager ready")
+            # Wire housekeeping with order manager and notifier for shutdown flows
+            if self.housekeeping is not None:
+                try:
+                    self.housekeeping.order_manager = self.order_manager
+                    self.housekeeping.notifier = self.notifier
+                except Exception:
+                    logger.warning(
+                        "Failed to wire order_manager/notifier into Housekeeping", exc_info=True
+                    )
 
             # Initialise exit manager
             logger.info("Initialising exit manager...")
@@ -1036,36 +1045,64 @@ class Orchestrator:
                 except Exception as e:
                     logger.error(f"Failed to cancel orders: {e}")
 
-                # Close positions
+                # Close positions: prefer `Housekeeping.graceful_shutdown` which
+                # centralises deterministic, idempotent flattening via OrderManager.
                 logger.info("Closing open positions...")
                 try:
-                    # Support both sync and async broker methods
-                    maybe_positions = self.broker.get_positions()
-                    if inspect.isawaitable(maybe_positions):
-                        positions = await maybe_positions
+                    if getattr(self, "housekeeping", None) is not None:
+                        try:
+                            # Orchestrator already cancelled open orders above;
+                            # instruct Housekeeping to skip the cancellation step
+                            await self.housekeeping.graceful_shutdown(skip_cancel=True)
+                        except Exception as he:
+                            # Housekeeping handles alerts and logging; propagate
+                            # the error to the higher-level handler so shutdown
+                            # can fail loudly if flattening did not complete.
+                            logger.exception("Housekeeping graceful_shutdown failed: %s", he)
+                            raise
                     else:
-                        positions = maybe_positions
+                        # Fallback: legacy direct broker-based flattening
+                        maybe_positions = self.broker.get_positions()
+                        if inspect.isawaitable(maybe_positions):
+                            positions = await maybe_positions
+                        else:
+                            positions = maybe_positions
 
-                    for position in positions:
-                        symbol = position["symbol"]
-                        qty = position["qty"]
-                        side = "sell" if qty > 0 else "buy"
-                        abs_qty = abs(qty)
-                        logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
-                        maybe_submit = self.broker.submit_order(symbol, abs_qty, side, "market")
-                        if inspect.isawaitable(maybe_submit):
-                            await maybe_submit
-                        # Invalidate caches after submitting close order
-                        if hasattr(self.broker, "invalidate_cache"):
+                        for position in positions:
+                            symbol = position["symbol"]
+                            # Broker qty may be numeric or string; coerce safely
                             try:
-                                maybe_invp = self.broker.invalidate_cache("get_positions")
-                                if inspect.isawaitable(maybe_invp):
-                                    await maybe_invp
+                                qty = float(position.get("qty", 0) or 0)
                             except Exception:
-                                logger.debug("invalidate_cache failed after submit", exc_info=True)
+                                try:
+                                    qty = float(str(position.get("qty")))
+                                except Exception:
+                                    qty = 0.0
 
-                    if not positions:
-                        logger.info("  No open positions to close")
+                            # Skip zero-quantity positions (nothing to close)
+                            if qty == 0:
+                                logger.debug("Skipping zero-qty position for %s", symbol)
+                                continue
+
+                            side = "sell" if qty > 0 else "buy"
+                            abs_qty = abs(qty)
+                            logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
+                            maybe_submit = self.broker.submit_order(symbol, abs_qty, side, "market")
+                            if inspect.isawaitable(maybe_submit):
+                                await maybe_submit
+                            # Invalidate caches after submitting close order
+                            if hasattr(self.broker, "invalidate_cache"):
+                                try:
+                                    maybe_invp = self.broker.invalidate_cache("get_positions")
+                                    if inspect.isawaitable(maybe_invp):
+                                        await maybe_invp
+                                except Exception:
+                                    logger.debug(
+                                        "invalidate_cache failed after submit", exc_info=True
+                                    )
+
+                        if not positions:
+                            logger.info("  No open positions to close")
                 except Exception as e:
                     logger.error(f"Failed to close positions: {e}")
 
