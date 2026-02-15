@@ -50,13 +50,7 @@ class Housekeeping:
         self.broker = broker  # type: AsyncBrokerInterface
         self.state_store = state_store
         self.running = False
-        # These may be wired after initialisation by Orchestrator
-        # `order_manager` is set later by Orchestrator; use a forward-annotated
-        # type to satisfy strict mypy without importing at runtime.
         self.order_manager: "OrderManager" | None = None
-        # `notifier` implements a lightweight protocol used by Housekeeping
-        # for async alerting. Use the protocol type to avoid runtime import
-        # dependency cycles while keeping static typing strict.
         self.notifier: AlertNotifierProtocol | None = None
 
     async def start(self) -> None:
@@ -189,12 +183,11 @@ class Housekeeping:
                         logger.exception("Shutdown flatten failed to start (critical): %s", e)
                         if self.notifier is not None:
                             try:
-                                if hasattr(self.notifier, "send_alert_async"):
-                                    await self.notifier.send_alert_async(
-                                        title="Shutdown flatten failed to start",
-                                        message=str(e),
-                                        severity="ERROR",
-                                    )
+                                await self.notifier.send_alert_async(
+                                    title="Shutdown flatten failed to start",
+                                    message=str(e),
+                                    severity="ERROR",
+                                )
                             except Exception:
                                 logger.debug(
                                     "Notifier failed while reporting flatten start failure",
@@ -206,12 +199,11 @@ class Housekeeping:
                         # Alert and continue: attempt to determine remaining exposure
                         if self.notifier is not None:
                             try:
-                                if hasattr(self.notifier, "send_alert_async"):
-                                    await self.notifier.send_alert_async(
-                                        title="Shutdown flatten failed to start",
-                                        message=str(e),
-                                        severity="ERROR",
-                                    )
+                                await self.notifier.send_alert_async(
+                                    title="Shutdown flatten failed to start",
+                                    message=str(e),
+                                    severity="ERROR",
+                                )
                             except Exception:
                                 logger.debug(
                                     "Notifier failed while reporting flatten start failure",
@@ -256,12 +248,11 @@ class Housekeeping:
                         logger.critical(msg)
                         if self.notifier is not None:
                             try:
-                                if hasattr(self.notifier, "send_alert_async"):
-                                    await self.notifier.send_alert_async(
-                                        title="CRITICAL: Shutdown left exposure",
-                                        message=msg,
-                                        severity="CRITICAL",
-                                    )
+                                await self.notifier.send_alert_async(
+                                    title="CRITICAL: Shutdown left exposure",
+                                    message=msg,
+                                    severity="CRITICAL",
+                                )
                             except Exception:
                                 logger.debug(
                                     "Notifier failed while reporting remaining exposure",
