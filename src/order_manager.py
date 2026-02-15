@@ -237,34 +237,53 @@ class OrderManager:
                     symbol=symbol, shutdown_session_id=shutdown_session_id, action="flatten"
                 )
 
-                # Duplicate prevention: if an intent exists, skip re-submit
-                if self.state_store.get_order_intent(client_order_id):
-                    logger.info("Shutdown duplicate prevented: %s", client_order_id)
-                    results["submitted"].append(
-                        {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
-                    )
-                    continue
+                # Duplicate prevention: only skip when an existing intent is already
+                # submitted/terminal (or has a broker order id). Non-terminal intents
+                # (e.g. status="new" without broker_order_id) should be retried.
+                need_to_persist_intent = True
+                existing_intent = self.state_store.get_order_intent(client_order_id)
+                if existing_intent:
+                    status = existing_intent.get("status")
+                    broker_order_id = existing_intent.get("broker_order_id")
+                    if broker_order_id or status in ("submitted", "filled", "rejected", "cancelled", "expired"):
+                        logger.info("Shutdown duplicate prevented: %s", client_order_id)
+                        results["submitted"].append(
+                            {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
+                        )
+                        continue
+                    else:
+                        # Intent exists but is not in a terminal/submitted state. Treat this
+                        # as a retry: reuse the existing intent and proceed to submission
+                        # without attempting to re-insert.
+                        need_to_persist_intent = False
+                        logger.info(
+                            "Retrying non-terminal shutdown intent (status=%r) for %s",
+                            status,
+                            client_order_id,
+                        )
 
-                # Persist shutdown intent BEFORE submitting. Handle race where
-                # another concurrent caller may have inserted the same
-                # client_order_id between the existence check and this insert.
-                try:
-                    self.state_store.save_order_intent(
-                        client_order_id=client_order_id,
-                        strategy="shutdown",
-                        symbol=symbol,
-                        side=side,
-                        qty=float(abs_qty),
-                        atr=None,
-                        status="new",
-                    )
-                except sqlite3.IntegrityError:
-                    # Another worker inserted the same client_order_id concurrently.
-                    logger.info("Shutdown duplicate prevented (race): %s", client_order_id)
-                    results["submitted"].append(
-                        {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
-                    )
-                    continue
+                # Persist shutdown intent BEFORE submitting when we don't already have
+                # a non-terminal intent. Handle race where another concurrent caller
+                # may have inserted the same client_order_id between the existence
+                # check and this insert.
+                if need_to_persist_intent:
+                    try:
+                        self.state_store.save_order_intent(
+                            client_order_id=client_order_id,
+                            strategy="shutdown",
+                            symbol=symbol,
+                            side=side,
+                            qty=float(abs_qty),
+                            atr=None,
+                            status="new",
+                        )
+                    except sqlite3.IntegrityError:
+                        # Another worker inserted the same client_order_id concurrently.
+                        logger.info("Shutdown duplicate prevented (race): %s", client_order_id)
+                        results["submitted"].append(
+                            {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
+                        )
+                        continue
                 except Exception as e:
                     logger.exception("Failed to persist shutdown intent %s: %s", client_order_id, e)
                     results["failed"].append({"symbol": symbol, "error": f"persist_error: {e}"})
