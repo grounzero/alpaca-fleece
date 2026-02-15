@@ -17,6 +17,7 @@ import pytz
 
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.state_store import StateStore
+from src.order_manager import OrderManagerError
 
 logger = logging.getLogger(__name__)
 
@@ -234,7 +235,7 @@ class Housekeeping:
                                 )
                         # raise SystemExit with non-zero to indicate failure to fully flatten
                         raise SystemExit(1)
-            except (ConnectionError, TimeoutError) as e:
+            except (ConnectionError, TimeoutError, OrderManagerError) as e:
                 logger.error(f"Failed to close positions: {e}")
 
             # Step 3: Take final equity snapshot
