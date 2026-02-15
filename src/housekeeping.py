@@ -57,7 +57,7 @@ class Housekeeping:
         # `notifier` implements a lightweight protocol used by Housekeeping
         # for async alerting. Use the protocol type to avoid runtime import
         # dependency cycles while keeping static typing strict.
-        self.notifier: Optional[AlertNotifierProtocol] = None
+        self.notifier: AlertNotifierProtocol | None = None
 
     async def start(self) -> None:
         """Start housekeeping tasks."""
