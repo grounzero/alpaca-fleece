@@ -1045,36 +1045,49 @@ class Orchestrator:
                 except Exception as e:
                     logger.error(f"Failed to cancel orders: {e}")
 
-                # Close positions
+                # Close positions: prefer `Housekeeping.graceful_shutdown` which
+                # centralises deterministic, idempotent flattening via OrderManager.
                 logger.info("Closing open positions...")
                 try:
-                    # Support both sync and async broker methods
-                    maybe_positions = self.broker.get_positions()
-                    if inspect.isawaitable(maybe_positions):
-                        positions = await maybe_positions
+                    if getattr(self, "housekeeping", None) is not None:
+                        try:
+                            await self.housekeeping.graceful_shutdown()
+                        except Exception as he:
+                            # Housekeeping handles alerts and logging; propagate
+                            # the error to the higher-level handler so shutdown
+                            # can fail loudly if flattening did not complete.
+                            logger.exception("Housekeeping graceful_shutdown failed: %s", he)
+                            raise
                     else:
-                        positions = maybe_positions
+                        # Fallback: legacy direct broker-based flattening
+                        maybe_positions = self.broker.get_positions()
+                        if inspect.isawaitable(maybe_positions):
+                            positions = await maybe_positions
+                        else:
+                            positions = maybe_positions
 
-                    for position in positions:
-                        symbol = position["symbol"]
-                        qty = position["qty"]
-                        side = "sell" if qty > 0 else "buy"
-                        abs_qty = abs(qty)
-                        logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
-                        maybe_submit = self.broker.submit_order(symbol, abs_qty, side, "market")
-                        if inspect.isawaitable(maybe_submit):
-                            await maybe_submit
-                        # Invalidate caches after submitting close order
-                        if hasattr(self.broker, "invalidate_cache"):
-                            try:
-                                maybe_invp = self.broker.invalidate_cache("get_positions")
-                                if inspect.isawaitable(maybe_invp):
-                                    await maybe_invp
-                            except Exception:
-                                logger.debug("invalidate_cache failed after submit", exc_info=True)
+                        for position in positions:
+                            symbol = position["symbol"]
+                            qty = position["qty"]
+                            side = "sell" if qty > 0 else "buy"
+                            abs_qty = abs(qty)
+                            logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
+                            maybe_submit = self.broker.submit_order(symbol, abs_qty, side, "market")
+                            if inspect.isawaitable(maybe_submit):
+                                await maybe_submit
+                            # Invalidate caches after submitting close order
+                            if hasattr(self.broker, "invalidate_cache"):
+                                try:
+                                    maybe_invp = self.broker.invalidate_cache("get_positions")
+                                    if inspect.isawaitable(maybe_invp):
+                                        await maybe_invp
+                                except Exception:
+                                    logger.debug(
+                                        "invalidate_cache failed after submit", exc_info=True
+                                    )
 
-                    if not positions:
-                        logger.info("  No open positions to close")
+                        if not positions:
+                            logger.info("  No open positions to close")
                 except Exception as e:
                     logger.error(f"Failed to close positions: {e}")
 
