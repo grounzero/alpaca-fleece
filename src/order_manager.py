@@ -403,20 +403,14 @@ class OrderManager:
             metric_inc = getattr(self.broker, "_metric_inc", None)
             metrics = getattr(self.broker, "metrics", None)
             # Prefer calling the metric helper if provided. It may be
-            # sync or async; handle both cases. If it isn't provided,
-            # fall back to updating a dict-shaped `metrics` object.
+            # sync or async; handle both cases. This helper is intended
+            # for counters, so we only pass the metric name; the gauge
+            # value is always written into the metrics dict below.
             if callable(metric_inc):
-                try:
-                    res = metric_inc(
-                        "shutdown_remaining_exposure_symbols",
-                        len(results["remaining_exposure_symbols"]),
-                    )
-                    if inspect.isawaitable(res):
-                        await res
-                except Exception:
-                    # If helper fails, fall back to metrics dict below
-                    raise
-            elif isinstance(metrics, dict):
+                res = metric_inc("shutdown_remaining_exposure_symbols")
+                if inspect.isawaitable(res):
+                    await res
+            if isinstance(metrics, dict):
                 lock = getattr(self.broker, "_cache_lock", None)
                 if lock is not None:
                     async with lock:
