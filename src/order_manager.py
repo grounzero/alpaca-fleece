@@ -246,16 +246,14 @@ class OrderManager:
                     # `get_order_intent` may return a dict-like row or a dataclass.
                     if isinstance(existing_intent, dict):
                         status = existing_intent.get("status")
-                        broker_order_id = (
-                            existing_intent.get("broker_order_id")
-                            or existing_intent.get("alpaca_order_id")
-                        )
+                        broker_order_id = existing_intent.get(
+                            "broker_order_id"
+                        ) or existing_intent.get("alpaca_order_id")
                     else:
                         status = getattr(existing_intent, "status", None)
-                        broker_order_id = (
-                            getattr(existing_intent, "broker_order_id", None)
-                            or getattr(existing_intent, "alpaca_order_id", None)
-                        )
+                        broker_order_id = getattr(
+                            existing_intent, "broker_order_id", None
+                        ) or getattr(existing_intent, "alpaca_order_id", None)
                     if broker_order_id or status in (
                         "submitted",
                         "filled",
