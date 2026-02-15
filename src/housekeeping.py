@@ -19,6 +19,7 @@ import pytz
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.order_manager import OrderManagerError
 from src.state_store import StateStore
+from src.utils import parse_optional_float
 
 if TYPE_CHECKING:
     from src.order_manager import OrderManager
@@ -227,17 +228,7 @@ class Housekeeping:
                                 else maybe_positions
                             )
                             for p in positions:
-                                raw_qty = p.get("qty")
-                                if raw_qty is None:
-                                    q = 0.0
-                                else:
-                                    try:
-                                        q = float(raw_qty)
-                                    except Exception:
-                                        try:
-                                            q = float(str(raw_qty))
-                                        except Exception:
-                                            q = 0.0
+                                q = parse_optional_float(p.get("qty")) or 0.0
                                 if q != 0:
                                     remaining.append(p.get("symbol"))
                         except Exception:
