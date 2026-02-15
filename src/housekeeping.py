@@ -122,7 +122,7 @@ class Housekeeping:
                     maybe_positions = self.broker.get_positions()
                     positions = (
                         await maybe_positions
-                        if asyncio.iscoroutine(maybe_positions)
+                        if inspect.isawaitable(maybe_positions)
                         else maybe_positions
                     )
                     for position in positions:
