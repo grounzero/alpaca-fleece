@@ -11,17 +11,17 @@ Uses float at module boundaries for API compatibility.
 
 import asyncio
 import hashlib
-import sqlite3
 import inspect
 import logging
+import sqlite3
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
 from src.async_broker_adapter import (
     AsyncBrokerInterface,
+    BrokerFatalError,
     BrokerTimeoutError,
     BrokerTransientError,
-    BrokerFatalError,
 )
 from src.broker import BrokerError
 from src.event_bus import EventBus, OrderIntentEvent, SignalEvent

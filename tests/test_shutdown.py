@@ -1,8 +1,8 @@
 import pytest
 
 from src.order_manager import OrderManager
-from src.state_store import StateStore
 from src.schema_manager import SchemaManager
+from src.state_store import StateStore
 
 
 class DummyEventBus:
