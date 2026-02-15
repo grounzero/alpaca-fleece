@@ -243,9 +243,26 @@ class OrderManager:
                 need_to_persist_intent = True
                 existing_intent = self.state_store.get_order_intent(client_order_id)
                 if existing_intent:
-                    status = existing_intent.get("status")
-                    broker_order_id = existing_intent.get("broker_order_id")
-                    if broker_order_id or status in ("submitted", "filled", "rejected", "cancelled", "expired"):
+                    # `get_order_intent` may return a dict-like row or a dataclass.
+                    if isinstance(existing_intent, dict):
+                        status = existing_intent.get("status")
+                        broker_order_id = (
+                            existing_intent.get("broker_order_id")
+                            or existing_intent.get("alpaca_order_id")
+                        )
+                    else:
+                        status = getattr(existing_intent, "status", None)
+                        broker_order_id = (
+                            getattr(existing_intent, "broker_order_id", None)
+                            or getattr(existing_intent, "alpaca_order_id", None)
+                        )
+                    if broker_order_id or status in (
+                        "submitted",
+                        "filled",
+                        "rejected",
+                        "cancelled",
+                        "expired",
+                    ):
                         logger.info("Shutdown duplicate prevented: %s", client_order_id)
                         results["submitted"].append(
                             {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
@@ -284,22 +301,33 @@ class OrderManager:
                             {"symbol": symbol, "client_order_id": client_order_id, "skipped": True}
                         )
                         continue
-                except Exception as e:
-                    logger.exception("Failed to persist shutdown intent %s: %s", client_order_id, e)
-                    results["failed"].append({"symbol": symbol, "error": f"persist_error: {e}"})
-                    try:
-                        metric_inc = getattr(self.broker, "_metric_inc", None)
-                        if callable(metric_inc):
-                            await metric_inc("shutdown_flatten_submit_failed_total")
-                        else:
-                            metrics = getattr(self.broker, "metrics", None)
-                            if isinstance(metrics, dict):
-                                metrics["shutdown_flatten_submit_failed_total"] = (
-                                    metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
-                                )
-                    except Exception:
-                        pass
-                    continue
+                    except Exception as e:
+                        logger.exception(
+                            "Failed to persist shutdown intent %s: %s", client_order_id, e
+                        )
+                        results["failed"].append({"symbol": symbol, "error": f"persist_error: {e}"})
+                        try:
+                            metric_inc = getattr(self.broker, "_metric_inc", None)
+                            if callable(metric_inc):
+                                res = metric_inc("shutdown_flatten_submit_failed_total")
+                                if inspect.isawaitable(res):
+                                    await res
+                            else:
+                                metrics = getattr(self.broker, "metrics", None)
+                                if isinstance(metrics, dict):
+                                    metrics["shutdown_flatten_submit_failed_total"] = (
+                                        metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
+                                    )
+                        except Exception:
+                            try:
+                                metrics = getattr(self.broker, "metrics", None)
+                                if isinstance(metrics, dict):
+                                    metrics["shutdown_flatten_submit_failed_total"] = (
+                                        metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
+                                    )
+                            except Exception:
+                                pass
+                        continue
 
                 # Submit to broker. Use market order to reduce exposure; ensure
                 # side is opposite of the position so it is reduce-only in intent.
