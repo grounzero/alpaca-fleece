@@ -233,8 +233,8 @@ class Housekeeping:
                                     "Notifier failed while reporting remaining exposure",
                                     exc_info=True,
                                 )
-                        # raise SystemExit with non-zero to indicate failure to fully flatten
-                        raise SystemExit(1)
+                        # raise a domain exception so the caller can decide how to handle exit codes
+                        raise OrderManagerError(msg)
             except (ConnectionError, TimeoutError, OrderManagerError) as e:
                 logger.error(f"Failed to close positions: {e}")
 
