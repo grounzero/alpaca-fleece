@@ -121,3 +121,39 @@ async def test_shutdown_idempotent_flatten_does_not_duplicate_orders_on_retry(tm
     broker.submit_calls.clear()
     await om.flatten_positions("sess-3")
     assert len(broker.submit_calls) == 0
+
+
+@pytest.mark.asyncio
+async def test_shutdown_reports_remaining_exposure_and_requeries_positions(tmp_path, config):
+    db = tmp_path / "state4.db"
+    SchemaManager.ensure_schema(str(db))
+    store = StateStore(str(db))
+
+    class RemainingExposureBroker(BrokerMock):
+        def __init__(self, positions, submit_side_behavior=None):
+            super().__init__(positions, submit_side_behavior)
+            self.get_positions_calls = 0
+
+        async def get_positions(self):
+            self.get_positions_calls += 1
+            return await super().get_positions()
+
+    # Single non-zero position that will remain open logically even after flatten attempts
+    positions = [{"symbol": "DDD", "qty": "7"}]
+    broker = RemainingExposureBroker(positions)
+    om = OrderManager(
+        broker=broker,
+        state_store=store,
+        event_bus=DummyEventBus(),
+        config=config,
+        strategy_name="teststrat",
+    )
+
+    summary = await om.flatten_positions("sess-4")
+
+    # Positions should be queried at least twice: initial check and post-flatten re-check
+    assert broker.get_positions_calls >= 2
+
+    # Any remaining non-zero positions should be reported in remaining_exposure_symbols
+    assert "remaining_exposure_symbols" in summary
+    assert "DDD" in summary["remaining_exposure_symbols"]
