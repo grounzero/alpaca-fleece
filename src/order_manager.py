@@ -329,13 +329,15 @@ class OrderManager:
 
                 # Submit to broker. Use market order to reduce exposure; ensure
                 # side is opposite of the position so it is reduce-only in intent.
+                shutdown_order_type = "market"
+                shutdown_time_in_force = "day"
                 maybe = self.broker.submit_order(
                     symbol=symbol,
                     side=side,
                     qty=float(abs_qty),
                     client_order_id=client_order_id,
-                    order_type=self.order_type,
-                    time_in_force=self.time_in_force,
+                    order_type=shutdown_order_type,
+                    time_in_force=shutdown_time_in_force,
                 )
                 order = await maybe if inspect.isawaitable(maybe) else maybe
 
