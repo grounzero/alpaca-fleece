@@ -1,6 +1,6 @@
 import pytest
 
-from src.order_manager import OrderManager
+from src.order_manager import OrderManager, OrderManagerError
 from src.schema_manager import SchemaManager
 from src.state_store import StateStore
 
@@ -157,3 +157,26 @@ async def test_shutdown_reports_remaining_exposure_and_requeries_positions(tmp_p
     # Any remaining non-zero positions should be reported in remaining_exposure_symbols
     assert "remaining_exposure_symbols" in summary
     assert "DDD" in summary["remaining_exposure_symbols"]
+
+
+@pytest.mark.asyncio
+async def test_shutdown_raises_when_get_positions_fails(tmp_path, config):
+    db = tmp_path / "state5.db"
+    SchemaManager.ensure_schema(str(db))
+    store = StateStore(str(db))
+
+    class BrokenBroker(BrokerMock):
+        async def get_positions(self):
+            raise RuntimeError("failed to get positions")
+
+    broker = BrokenBroker([])
+    om = OrderManager(
+        broker=broker,
+        state_store=store,
+        event_bus=DummyEventBus(),
+        config=config,
+        strategy_name="teststrat",
+    )
+
+    with pytest.raises(OrderManagerError):
+        await om.flatten_positions("sess-5")

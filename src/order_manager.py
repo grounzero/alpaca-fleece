@@ -121,7 +121,12 @@ class OrderManager:
         Returns:
             16-char hex string
         """
-        data = f"shutdown:{self.strategy_name}:{symbol}:{shutdown_session_id}:{action}"
+        # Use a fixed "shutdown" prefix here so the stored `strategy` field
+        # (which is set to "shutdown" when saving the intent) matches the
+        # namespace used to generate the client_order_id. Including
+        # `self.strategy_name` would create an inconsistency between the
+        # persisted `strategy` value and the client_order_id namespace.
+        data = f"shutdown:{symbol}:{shutdown_session_id}:{action}"
         return hashlib.sha256(data.encode()).hexdigest()[:16]
 
     def _coerce_qty(self, raw_qty: Any) -> float:
@@ -228,6 +233,8 @@ class OrderManager:
             positions = (
                 await maybe_positions if inspect.isawaitable(maybe_positions) else maybe_positions
             )
+        except asyncio.CancelledError:
+            raise
         except (
             ConnectionError,
             TimeoutError,
@@ -238,6 +245,12 @@ class OrderManager:
         ) as e:
             logger.exception("Failed to query broker positions during shutdown: %s", e)
             # Cannot proceed reliably without positions
+            raise OrderManagerError("Failed to query positions for shutdown")
+        except Exception as e:
+            # Catch-all for unexpected broker errors (e.g. RuntimeError) and
+            # wrap them as OrderManagerError per the public contract in the
+            # method docstring. Do not swallow CancelledError above.
+            logger.exception("Unexpected error querying broker positions during shutdown: %s", e)
             raise OrderManagerError("Failed to query positions for shutdown")
 
         for p in positions:
