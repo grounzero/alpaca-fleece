@@ -65,7 +65,7 @@ async def test_shutdown_flatten_uses_correct_broker_signature_and_client_order_i
 
 
 @pytest.mark.asyncio
-async def test_shutdown_continues_on_single_symbol_flatten_failure_and_alerts(tmp_path, config):
+async def test_shutdown_continues_on_single_symbol_flatten_failure(tmp_path, config):
     db = tmp_path / "state2.db"
     # Ensure canonical schema via SchemaManager to keep tests resilient to schema changes
     SchemaManager.ensure_schema(str(db))
