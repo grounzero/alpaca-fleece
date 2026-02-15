@@ -1070,7 +1070,20 @@ class Orchestrator:
 
                         for position in positions:
                             symbol = position["symbol"]
-                            qty = position["qty"]
+                            # Broker qty may be numeric or string; coerce safely
+                            try:
+                                qty = float(position.get("qty", 0) or 0)
+                            except Exception:
+                                try:
+                                    qty = float(str(position.get("qty")))
+                                except Exception:
+                                    qty = 0.0
+
+                            # Skip zero-quantity positions (nothing to close)
+                            if qty == 0:
+                                logger.debug("Skipping zero-qty position for %s", symbol)
+                                continue
+
                             side = "sell" if qty > 0 else "buy"
                             abs_qty = abs(qty)
                             logger.info(f"  Closing {symbol}: {abs_qty} shares via {side}")
