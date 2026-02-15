@@ -79,7 +79,7 @@ class Housekeeping:
         """Stop housekeeping tasks."""
         self.running = False
 
-    async def graceful_shutdown(self) -> None:
+    async def graceful_shutdown(self, skip_cancel: bool = False) -> None:
         """Graceful shutdown: cancel orders, close positions, save state (Tier 1).
 
         Called on SIGTERM/SIGINT to safely exit.
@@ -87,30 +87,35 @@ class Housekeeping:
         logger.info("Graceful shutdown initiated...")
 
         try:
-            # Step 1: Cancel all open orders
-            logger.info("Cancelling open orders...")
-            try:
-                maybe_orders = self.broker.get_open_orders()
-                orders = await maybe_orders if asyncio.iscoroutine(maybe_orders) else maybe_orders
-                for order in orders:
-                    order_id = order.get("id")
-                    if order_id:
-                        maybe_cancel = self.broker.cancel_order(order_id)
-                        if inspect.isawaitable(maybe_cancel):
-                            await maybe_cancel
-                        # Invalidate relevant caches after cancelling an order
-                        if hasattr(self.broker, "invalidate_cache"):
-                            try:
-                                maybe_inv = self.broker.invalidate_cache(
-                                    "get_positions", "get_open_orders"
-                                )
-                                if inspect.isawaitable(maybe_inv):
-                                    await maybe_inv
-                            except Exception:
-                                logger.debug("invalidate_cache failed after cancel", exc_info=True)
-                        logger.info(f"Cancelled order: {order_id}")
-            except (ConnectionError, TimeoutError) as e:
-                logger.error(f"Failed to cancel orders: {e}")
+            # Step 1: Cancel all open orders (skippable)
+            if not skip_cancel:
+                logger.info("Cancelling open orders...")
+                try:
+                    maybe_orders = self.broker.get_open_orders()
+                    orders = (
+                        await maybe_orders if asyncio.iscoroutine(maybe_orders) else maybe_orders
+                    )
+                    for order in orders:
+                        order_id = order.get("id")
+                        if order_id:
+                            maybe_cancel = self.broker.cancel_order(order_id)
+                            if inspect.isawaitable(maybe_cancel):
+                                await maybe_cancel
+                            # Invalidate relevant caches after cancelling an order
+                            if hasattr(self.broker, "invalidate_cache"):
+                                try:
+                                    maybe_inv = self.broker.invalidate_cache(
+                                        "get_positions", "get_open_orders"
+                                    )
+                                    if inspect.isawaitable(maybe_inv):
+                                        await maybe_inv
+                                except Exception:
+                                    logger.debug(
+                                        "invalidate_cache failed after cancel", exc_info=True
+                                    )
+                            logger.info(f"Cancelled order: {order_id}")
+                except (ConnectionError, TimeoutError) as e:
+                    logger.error(f"Failed to cancel orders: {e}")
 
             # Step 2: Close/flatten open positions via OrderManager (preferred)
             logger.info("Closing open positions (shutdown flatten)...")

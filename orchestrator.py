@@ -1051,7 +1051,9 @@ class Orchestrator:
                 try:
                     if getattr(self, "housekeeping", None) is not None:
                         try:
-                            await self.housekeeping.graceful_shutdown()
+                            # Orchestrator already cancelled open orders above;
+                            # instruct Housekeeping to skip the cancellation step
+                            await self.housekeeping.graceful_shutdown(skip_cancel=True)
                         except Exception as he:
                             # Housekeeping handles alerts and logging; propagate
                             # the error to the higher-level handler so shutdown
