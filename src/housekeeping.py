@@ -160,6 +160,24 @@ class Housekeeping:
                     shutdown_session_id = uuid.uuid4().hex
                     try:
                         summary = await self.order_manager.flatten_positions(shutdown_session_id)
+                    except OrderManagerError as e:
+                        # Critical failure starting flatten; notify and re-raise so
+                        # callers can treat this as a hard failure (e.g. set exit codes).
+                        logger.exception("Shutdown flatten failed to start (critical): %s", e)
+                        if self.notifier is not None:
+                            try:
+                                if hasattr(self.notifier, "send_alert_async"):
+                                    await self.notifier.send_alert_async(
+                                        title="Shutdown flatten failed to start",
+                                        message=str(e),
+                                        severity="ERROR",
+                                    )
+                            except Exception:
+                                logger.debug(
+                                    "Notifier failed while reporting flatten start failure",
+                                    exc_info=True,
+                                )
+                        raise
                     except Exception as e:
                         logger.exception("Shutdown flatten failed to start: %s", e)
                         # Alert and continue: attempt to determine remaining exposure

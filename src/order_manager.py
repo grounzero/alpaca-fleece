@@ -138,6 +138,31 @@ class OrderManager:
         except (ValueError, TypeError):
             return 0.0
 
+    async def _safe_metric_inc(self, metric_name: str, increment: int = 1) -> None:
+        """Best-effort async-safe metric increment helper.
+
+        Tries to call broker._metric_inc(metric_name) if provided (sync or
+        async). Falls back to incrementing `broker.metrics` dict. Swallows
+        all exceptions to ensure metrics never break runtime logic.
+        """
+        try:
+            metric_inc = getattr(self.broker, "_metric_inc", None)
+            if callable(metric_inc):
+                res = metric_inc(metric_name)
+                if inspect.isawaitable(res):
+                    await res
+                return
+            metrics = getattr(self.broker, "metrics", None)
+            if isinstance(metrics, dict):
+                metrics[metric_name] = metrics.get(metric_name, 0) + increment
+        except Exception:
+            try:
+                metrics = getattr(self.broker, "metrics", None)
+                if isinstance(metrics, dict):
+                    metrics[metric_name] = metrics.get(metric_name, 0) + increment
+            except Exception:
+                pass
+
     async def flatten_positions(self, shutdown_session_id: str) -> dict[str, Any]:
         """Flatten all current broker positions as part of shutdown.
 
@@ -304,27 +329,7 @@ class OrderManager:
                             "Failed to persist shutdown intent %s: %s", client_order_id, e
                         )
                         results["failed"].append({"symbol": symbol, "error": f"persist_error: {e}"})
-                        try:
-                            metric_inc = getattr(self.broker, "_metric_inc", None)
-                            if callable(metric_inc):
-                                res = metric_inc("shutdown_flatten_submit_failed_total")
-                                if inspect.isawaitable(res):
-                                    await res
-                            else:
-                                metrics = getattr(self.broker, "metrics", None)
-                                if isinstance(metrics, dict):
-                                    metrics["shutdown_flatten_submit_failed_total"] = (
-                                        metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
-                                    )
-                        except Exception:
-                            try:
-                                metrics = getattr(self.broker, "metrics", None)
-                                if isinstance(metrics, dict):
-                                    metrics["shutdown_flatten_submit_failed_total"] = (
-                                        metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
-                                    )
-                            except Exception:
-                                pass
+                        await self._safe_metric_inc("shutdown_flatten_submit_failed_total")
                         continue
 
                 # Submit to broker. Use market order to reduce exposure; ensure
@@ -366,62 +371,13 @@ class OrderManager:
                     client_order_id,
                 )
                 # metrics (async-safe increment if broker provides helper)
-                try:
-                    metric_inc = getattr(self.broker, "_metric_inc", None)
-                    if callable(metric_inc):
-                        try:
-                            res = metric_inc("shutdown_flatten_submit_total")
-                            if inspect.isawaitable(res):
-                                await res
-                        except Exception:
-                            # If the helper itself raises synchronously, fall through
-                            # to the fallback metrics dict below.
-                            raise
-                    else:
-                        metrics = getattr(self.broker, "metrics", None)
-                        if isinstance(metrics, dict):
-                            metrics["shutdown_flatten_submit_total"] = (
-                                metrics.get("shutdown_flatten_submit_total", 0) + 1
-                            )
-                except Exception:
-                    # Best-effort metrics; never propagate failures from metrics
-                    try:
-                        metrics = getattr(self.broker, "metrics", None)
-                        if isinstance(metrics, dict):
-                            metrics["shutdown_flatten_submit_total"] = (
-                                metrics.get("shutdown_flatten_submit_total", 0) + 1
-                            )
-                    except Exception:
-                        pass
+                await self._safe_metric_inc("shutdown_flatten_submit_total")
 
                 results["submitted"].append({"symbol": symbol, "client_order_id": client_order_id})
             except Exception as e:
                 logger.exception("Failed to flatten symbol %s: %s", p.get("symbol"), e)
                 results["failed"].append({"symbol": p.get("symbol"), "error": str(e)})
-                try:
-                    metric_inc = getattr(self.broker, "_metric_inc", None)
-                    if callable(metric_inc):
-                        try:
-                            res = metric_inc("shutdown_flatten_submit_failed_total")
-                            if inspect.isawaitable(res):
-                                await res
-                        except Exception:
-                            raise
-                    else:
-                        metrics = getattr(self.broker, "metrics", None)
-                        if isinstance(metrics, dict):
-                            metrics["shutdown_flatten_submit_failed_total"] = (
-                                metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
-                            )
-                except Exception:
-                    try:
-                        metrics = getattr(self.broker, "metrics", None)
-                        if isinstance(metrics, dict):
-                            metrics["shutdown_flatten_submit_failed_total"] = (
-                                metrics.get("shutdown_flatten_submit_failed_total", 0) + 1
-                            )
-                    except Exception:
-                        pass
+                await self._safe_metric_inc("shutdown_flatten_submit_failed_total")
                 # continue with other symbols
         # Re-query positions to determine remaining exposure
         try:
@@ -445,18 +401,13 @@ class OrderManager:
                 "Failed to re-query positions after shutdown flatten; remaining exposure unknown"
             )
 
-        # Emit remaining metric (prefer an async-safe update when available)
+        # Emit remaining metric (gauge). Do NOT call the counter helper
+        # `_metric_inc` here because that helper increments counters; this
+        # value is a gauge representing the current number of remaining
+        # exposure symbols and should be written directly into the metrics
+        # dict when available.
         try:
-            metric_inc = getattr(self.broker, "_metric_inc", None)
             metrics = getattr(self.broker, "metrics", None)
-            # Prefer calling the metric helper if provided. It may be
-            # sync or async; handle both cases. This helper is intended
-            # for counters, so we only pass the metric name; the gauge
-            # value is always written into the metrics dict below.
-            if callable(metric_inc):
-                res = metric_inc("shutdown_remaining_exposure_symbols")
-                if inspect.isawaitable(res):
-                    await res
             if isinstance(metrics, dict):
                 lock = getattr(self.broker, "_cache_lock", None)
                 if lock is not None:
