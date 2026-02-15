@@ -16,8 +16,8 @@ from datetime import datetime, timezone
 import pytz
 
 from src.async_broker_adapter import AsyncBrokerInterface
-from src.state_store import StateStore
 from src.order_manager import OrderManagerError
+from src.state_store import StateStore
 
 logger = logging.getLogger(__name__)
 
