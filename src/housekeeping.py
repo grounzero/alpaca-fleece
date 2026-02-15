@@ -25,8 +25,11 @@ if TYPE_CHECKING:
 
 
 class AlertNotifierProtocol(Protocol):
-    async def send_alert_async(self, title: str, message: str, severity: str) -> None:  # pragma: no cover - typing only
+    async def send_alert_async(
+        self, title: str, message: str, severity: str
+    ) -> None:  # pragma: no cover - typing only
         ...
+
 
 logger = logging.getLogger(__name__)
 
