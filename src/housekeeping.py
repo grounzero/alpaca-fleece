@@ -189,7 +189,11 @@ class Housekeeping:
                                 try:
                                     q = float(p.get("qty"))
                                 except Exception:
-                                    q = float(str(p.get("qty"))) if p.get("qty") is not None else 0.0
+                                    q = (
+                                        float(str(p.get("qty")))
+                                        if p.get("qty") is not None
+                                        else 0.0
+                                    )
                                 if q != 0:
                                     remaining.append(p.get("symbol"))
                         except Exception:

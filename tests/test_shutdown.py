@@ -36,7 +36,9 @@ class BrokerMock:
 
 
 @pytest.mark.asyncio
-async def test_shutdown_flatten_uses_correct_broker_signature_and_client_order_id(state_store, config):
+async def test_shutdown_flatten_uses_correct_broker_signature_and_client_order_id(
+    state_store, config
+):
     store = state_store
     positions = [{"symbol": "AAA", "qty": "10"}, {"symbol": "BBB", "qty": "-5"}]
     broker = BrokerMock(positions)

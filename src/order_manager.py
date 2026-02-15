@@ -385,9 +385,13 @@ class OrderManager:
                 else maybe_positions2
             )
             for p in positions2:
+                sym = p.get("symbol")
                 q = self._coerce_qty(p.get("qty"))
                 if q != 0:
-                    results["remaining_exposure_symbols"].append(p.get("symbol"))
+                    if not sym:
+                        logger.warning("Skipping malformed re-query position without symbol: %s", p)
+                    else:
+                        results["remaining_exposure_symbols"].append(sym)
         except Exception:
             # If re-query fails, we can't determine remaining exposure reliably
             logger.warning(

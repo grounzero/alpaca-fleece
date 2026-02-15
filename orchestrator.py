@@ -492,7 +492,9 @@ class Orchestrator:
                     self.housekeeping.order_manager = self.order_manager
                     self.housekeeping.notifier = self.notifier
                 except Exception:
-                    logger.warning("Failed to wire order_manager/notifier into Housekeeping", exc_info=True)
+                    logger.warning(
+                        "Failed to wire order_manager/notifier into Housekeeping", exc_info=True
+                    )
 
             # Initialise exit manager
             logger.info("Initialising exit manager...")
