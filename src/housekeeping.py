@@ -12,12 +12,25 @@ import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
+from typing import TYPE_CHECKING, Protocol
 
 import pytz
 
 from src.async_broker_adapter import AsyncBrokerInterface
 from src.order_manager import OrderManagerError
 from src.state_store import StateStore
+from src.utils import parse_optional_float
+
+if TYPE_CHECKING:
+    from src.order_manager import OrderManager
+
+
+class AlertNotifierProtocol(Protocol):
+    async def send_alert_async(
+        self, title: str, message: str, severity: str
+    ) -> None:  # pragma: no cover - typing only
+        ...
+
 
 logger = logging.getLogger(__name__)
 
@@ -37,9 +50,8 @@ class Housekeeping:
         self.broker = broker  # type: AsyncBrokerInterface
         self.state_store = state_store
         self.running = False
-        # These may be wired after initialisation by Orchestrator
-        self.order_manager = None
-        self.notifier = None
+        self.order_manager: "OrderManager" | None = None
+        self.notifier: AlertNotifierProtocol | None = None
 
     async def start(self) -> None:
         """Start housekeeping tasks."""
@@ -171,12 +183,11 @@ class Housekeeping:
                         logger.exception("Shutdown flatten failed to start (critical): %s", e)
                         if self.notifier is not None:
                             try:
-                                if hasattr(self.notifier, "send_alert_async"):
-                                    await self.notifier.send_alert_async(
-                                        title="Shutdown flatten failed to start",
-                                        message=str(e),
-                                        severity="ERROR",
-                                    )
+                                await self.notifier.send_alert_async(
+                                    title="Shutdown flatten failed to start",
+                                    message=str(e),
+                                    severity="ERROR",
+                                )
                             except Exception:
                                 logger.debug(
                                     "Notifier failed while reporting flatten start failure",
@@ -188,12 +199,11 @@ class Housekeeping:
                         # Alert and continue: attempt to determine remaining exposure
                         if self.notifier is not None:
                             try:
-                                if hasattr(self.notifier, "send_alert_async"):
-                                    await self.notifier.send_alert_async(
-                                        title="Shutdown flatten failed to start",
-                                        message=str(e),
-                                        severity="ERROR",
-                                    )
+                                await self.notifier.send_alert_async(
+                                    title="Shutdown flatten failed to start",
+                                    message=str(e),
+                                    severity="ERROR",
+                                )
                             except Exception:
                                 logger.debug(
                                     "Notifier failed while reporting flatten start failure",
@@ -210,14 +220,7 @@ class Housekeeping:
                                 else maybe_positions
                             )
                             for p in positions:
-                                try:
-                                    q = float(p.get("qty"))
-                                except Exception:
-                                    q = (
-                                        float(str(p.get("qty")))
-                                        if p.get("qty") is not None
-                                        else 0.0
-                                    )
+                                q = parse_optional_float(p.get("qty")) or 0.0
                                 if q != 0:
                                     remaining.append(p.get("symbol"))
                         except Exception:
@@ -245,12 +248,11 @@ class Housekeeping:
                         logger.critical(msg)
                         if self.notifier is not None:
                             try:
-                                if hasattr(self.notifier, "send_alert_async"):
-                                    await self.notifier.send_alert_async(
-                                        title="CRITICAL: Shutdown left exposure",
-                                        message=msg,
-                                        severity="CRITICAL",
-                                    )
+                                await self.notifier.send_alert_async(
+                                    title="CRITICAL: Shutdown left exposure",
+                                    message=msg,
+                                    severity="CRITICAL",
+                                )
                             except Exception:
                                 logger.debug(
                                     "Notifier failed while reporting remaining exposure",
