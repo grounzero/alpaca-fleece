@@ -12,7 +12,7 @@ import logging
 import sqlite3
 import uuid
 from datetime import datetime, timezone
-from typing import TYPE_CHECKING, Optional, Protocol
+from typing import TYPE_CHECKING, Protocol
 
 import pytz
 
