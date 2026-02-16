@@ -91,7 +91,7 @@ class TestEndToEndTrade:
             data_handler=data_handler,
             state_store=state_store,
             config={
-                "symbols": {"list": ["AAPL"], "crypto_symbols": []},
+                "symbols": {"equity_symbols": ["AAPL"], "crypto_symbols": []},
                 "trading": {"session_policy": "regular_only"},
                 "risk": {
                     "regular_hours": {
@@ -173,7 +173,7 @@ class TestEndToEndTrade:
             data_handler=Mock(),
             state_store=state_store,
             config={
-                "symbols": {"list": ["AAPL"], "crypto_symbols": []},
+                "symbols": {"equity_symbols": ["AAPL"], "crypto_symbols": []},
                 "trading": {"session_policy": "regular_only"},
                 "risk": {
                     "regular_hours": {
@@ -224,7 +224,7 @@ class TestEndToEndTrade:
             data_handler=Mock(),
             state_store=state_store,
             config={
-                "symbols": {"list": ["AAPL"], "crypto_symbols": []},
+                "symbols": {"equity_symbols": ["AAPL"], "crypto_symbols": []},
                 "trading": {"session_policy": "regular_only"},
                 "risk": {
                     "regular_hours": {
@@ -273,7 +273,7 @@ class TestEndToEndTrade:
             data_handler=Mock(),
             state_store=state_store,
             config={
-                "symbols": {"list": ["AAPL"], "crypto_symbols": []},
+                "symbols": {"equity_symbols": ["AAPL"], "crypto_symbols": []},
                 "trading": {"session_policy": "regular_only"},
                 "risk": {
                     "regular_hours": {
@@ -322,7 +322,7 @@ class TestEndToEndTrade:
             data_handler=Mock(),
             state_store=state_store,
             config={
-                "symbols": {"list": ["AAPL"], "crypto_symbols": []},
+                "symbols": {"equity_symbols": ["AAPL"], "crypto_symbols": []},
                 "trading": {"session_policy": "regular_only"},
                 "risk": {
                     "regular_hours": {
@@ -356,7 +356,3 @@ class TestEndToEndTrade:
             await risk_manager.check_signal(signal)
 
         print("✅ DAILY LOSS LIMIT TEST PASSED: Trading halted on loss limit")
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v"])

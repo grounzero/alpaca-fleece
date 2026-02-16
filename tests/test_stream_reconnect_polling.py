@@ -43,11 +43,13 @@ async def test_reconnect_wait_backoff(monkeypatch):
 
     monkeypatch.setattr("asyncio.sleep", fake_sleep)
 
-    # Make _start_market_stream raise a 429-like ValueError to exercise failure handling
+    # Make start methods raise a 429-like ValueError to exercise failure handling
     async def fake_start(symbols, batch_size=10, batch_delay=1.0):
         raise ValueError("429 Too Many Requests")
 
-    monkeypatch.setattr(s, "_start_market_stream", fake_start)
+    # Mock both stock and crypto stream starts (reconnect calls both)
+    monkeypatch.setattr(s, "_start_stock_stream", fake_start)
+    monkeypatch.setattr(s, "_start_crypto_stream", fake_start)
 
     res = await s.reconnect_market_stream(["A"])
 

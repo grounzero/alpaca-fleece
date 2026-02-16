@@ -162,9 +162,15 @@ def validate_config(env: EnvConfig, trading: dict[str, Any]) -> None:
     if mode not in ["explicit", "watchlist", "screener"]:
         raise ConfigError(f"Invalid symbols.mode: {mode}")
 
-    if mode == "explicit" and not symbols_config.get("list"):
-        raise ConfigError("symbols.mode=explicit requires symbols.list")
+    if mode == "explicit":
+        has_equity_symbols = bool(symbols_config.get("equity_symbols"))
+        has_crypto_symbols = bool(symbols_config.get("crypto_symbols"))
 
+        if not (has_equity_symbols or has_crypto_symbols):
+            raise ConfigError(
+                "symbols.mode=explicit requires at least one of symbols.equity_symbols, "
+                "symbols.crypto_symbols"
+            )
     # Validate strategy
     strategy_config = trading.get("strategy", {})
     if not strategy_config.get("name"):

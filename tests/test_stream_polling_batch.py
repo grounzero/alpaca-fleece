@@ -74,9 +74,12 @@ class TestStreamPollingBatchLogic:
     @pytest.fixture
     def mock_stream(self):
         """Create a StreamPolling instance with mocked client."""
-        with patch("src.stream_polling.StockHistoricalDataClient"):
+        with (
+            patch("src.stream_polling.StockHistoricalDataClient"),
+            patch("src.stream_polling.CryptoHistoricalDataClient"),
+        ):
             stream = StreamPolling("api_key", "secret_key", batch_size=3)
-            stream.client = MagicMock()
+            stream.stock_client = MagicMock()
             return stream
 
     @pytest.fixture
@@ -104,15 +107,15 @@ class TestStreamPollingBatchLogic:
             "MSFT": [sample_bar],
             "GOOGL": [sample_bar],
         }
-        mock_stream.client.get_stock_bars.return_value = mock_response
+        mock_stream.stock_client.get_stock_bars.return_value = mock_response
 
-        await mock_stream._poll_batch(symbols)
+        await mock_stream._poll_equity_batch(symbols)
 
         # Should make exactly one API call
-        mock_stream.client.get_stock_bars.assert_called_once()
+        mock_stream.stock_client.get_stock_bars.assert_called_once()
 
         # Verify the request was made with all symbols
-        call_args = mock_stream.client.get_stock_bars.call_args
+        call_args = mock_stream.stock_client.get_stock_bars.call_args
         request = call_args[0][0]
         assert isinstance(request, StockBarsRequest)
         assert request.symbol_or_symbols == symbols
@@ -129,12 +132,12 @@ class TestStreamPollingBatchLogic:
             "MSFT": [sample_bar],
             "GOOGL": [sample_bar],
         }
-        mock_stream.client.get_stock_bars.return_value = mock_response
+        mock_stream.stock_client.get_stock_bars.return_value = mock_response
 
         processed_symbols = []
         mock_stream.on_bar = AsyncMock(side_effect=lambda bar: processed_symbols.append(bar.symbol))
 
-        await mock_stream._poll_batch(symbols)
+        await mock_stream._poll_equity_batch(symbols)
 
         assert set(processed_symbols) == set(symbols)
         assert len(processed_symbols) == 3
@@ -151,12 +154,12 @@ class TestStreamPollingBatchLogic:
             "MSFT": [sample_bar],
             "EMPTY": [],  # No data for this symbol
         }
-        mock_stream.client.get_stock_bars.return_value = mock_response
+        mock_stream.stock_client.get_stock_bars.return_value = mock_response
 
         processed_symbols = []
         mock_stream.on_bar = AsyncMock(side_effect=lambda bar: processed_symbols.append(bar.symbol))
 
-        await mock_stream._poll_batch(symbols)
+        await mock_stream._poll_equity_batch(symbols)
 
         # Should only process symbols with data
         assert "EMPTY" not in processed_symbols
@@ -173,13 +176,13 @@ class TestStreamPollingBatchLogic:
             "AAPL": [sample_bar],
             "MSFT": [sample_bar],
         }
-        mock_stream.client.get_stock_bars.return_value = mock_response
+        mock_stream.stock_client.get_stock_bars.return_value = mock_response
 
         processed_symbols = []
         mock_stream.on_bar = AsyncMock(side_effect=lambda bar: processed_symbols.append(bar.symbol))
 
         # Should not raise error
-        await mock_stream._poll_batch(symbols)
+        await mock_stream._poll_equity_batch(symbols)
 
         assert "MISSING" not in processed_symbols
         assert len(processed_symbols) == 2
@@ -190,12 +193,12 @@ class TestStreamPollingBatchLogic:
         symbols = ["AAPL", "MSFT"]
 
         # Simulate API error
-        mock_stream.client.get_stock_bars.side_effect = Exception("API Error")
+        mock_stream.stock_client.get_stock_bars.side_effect = Exception("API Error")
 
         # Should not raise - error is logged and swallowed
-        await mock_stream._poll_batch(symbols)
+        await mock_stream._poll_equity_batch(symbols)
 
-        mock_stream.client.get_stock_bars.assert_called_once()
+        mock_stream.stock_client.get_stock_bars.assert_called_once()
 
 
 class TestStreamPollingBackwardsCompatibility:
@@ -204,9 +207,12 @@ class TestStreamPollingBackwardsCompatibility:
     @pytest.fixture
     def mock_stream(self):
         """Create a StreamPolling instance with batch_size=1."""
-        with patch("src.stream_polling.StockHistoricalDataClient"):
+        with (
+            patch("src.stream_polling.StockHistoricalDataClient"),
+            patch("src.stream_polling.CryptoHistoricalDataClient"),
+        ):
             stream = StreamPolling("api_key", "secret_key", batch_size=1)
-            stream.client = MagicMock()
+            stream.stock_client = MagicMock()
             return stream
 
     @pytest.fixture
@@ -226,7 +232,7 @@ class TestStreamPollingBackwardsCompatibility:
         """Test that _poll_symbol still works for backwards compatibility."""
         mock_response = MagicMock()
         mock_response.data = {"AAPL": [sample_bar]}
-        mock_stream.client.get_stock_bars.return_value = mock_response
+        mock_stream.stock_client.get_stock_bars.return_value = mock_response
 
         processed = []
         mock_stream.on_bar = AsyncMock(side_effect=lambda bar: processed.append(bar.symbol))
@@ -246,14 +252,14 @@ class TestStreamPollingBackwardsCompatibility:
             "MSFT": [sample_bar],
             "GOOGL": [sample_bar],
         }
-        mock_stream.client.get_stock_bars.return_value = mock_response
+        mock_stream.stock_client.get_stock_bars.return_value = mock_response
 
         # Simulate polling all symbols with batch_size=1
         for symbol in mock_stream._symbols:
-            await mock_stream._poll_batch([symbol])
+            await mock_stream._poll_equity_batch([symbol])
 
         # Should make 3 separate API calls
-        assert mock_stream.client.get_stock_bars.call_count == 3
+        assert mock_stream.stock_client.get_stock_bars.call_count == 3
 
 
 class TestStreamPollingBatchSizes:
@@ -262,9 +268,12 @@ class TestStreamPollingBatchSizes:
     @pytest.mark.asyncio
     async def test_31_symbols_with_batch_25(self):
         """Test that 31 symbols are split into 2 batches with batch_size=25."""
-        with patch("src.stream_polling.StockHistoricalDataClient"):
+        with (
+            patch("src.stream_polling.StockHistoricalDataClient"),
+            patch("src.stream_polling.CryptoHistoricalDataClient"),
+        ):
             stream = StreamPolling("api_key", "secret_key", batch_size=25)
-            stream.client = MagicMock()
+            stream.stock_client = MagicMock()
 
             symbols = [f"SYM{i}" for i in range(31)]
             stream._symbols = symbols
@@ -272,16 +281,16 @@ class TestStreamPollingBatchSizes:
             # Track number of batch calls
             batch_calls = []
 
-            async def tracking_poll_batch(batch):
+            async def tracking_poll_equity_batch(batch):
                 batch_calls.append(batch)
                 # Return empty to avoid processing
                 return None
 
-            stream._poll_batch = tracking_poll_batch
+            stream._poll_equity_batch = tracking_poll_equity_batch
 
             # Simulate one iteration of poll loop
             for batch in batch_iter(symbols, stream.batch_size):
-                await stream._poll_batch(batch)
+                await stream._poll_equity_batch(batch)
 
             # Should have 2 batches: 25 + 6
             assert len(batch_calls) == 2
@@ -291,7 +300,10 @@ class TestStreamPollingBatchSizes:
     @pytest.mark.asyncio
     async def test_500_symbols_with_batch_25(self):
         """Test that 500 symbols are split into 20 batches with batch_size=25."""
-        with patch("src.stream_polling.StockHistoricalDataClient"):
+        with (
+            patch("src.stream_polling.StockHistoricalDataClient"),
+            patch("src.stream_polling.CryptoHistoricalDataClient"),
+        ):
             stream = StreamPolling("api_key", "secret_key", batch_size=25)
 
             symbols = [f"SYM{i}" for i in range(500)]

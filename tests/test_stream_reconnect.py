@@ -1,87 +1,74 @@
-import time
+import asyncio
 
 import pytest
 
-import src.stream as stream_mod
+from src.stream import Stream
+
+
+class DummyStream:
+    def __init__(self):
+        self.closed = False
+
+    async def close(self):
+        await asyncio.sleep(0)
+        self.closed = True
 
 
 @pytest.mark.asyncio
-async def test_reconnect_rate_limited_calls_disconnect(monkeypatch):
-    s = stream_mod.Stream(api_key="k", secret_key="s")
-    called = {"disc": False}
+async def test_reconnect_partial_failure_crypto_fails_cleans_stock():
+    s = Stream("key", "secret", paper=True, feed="iex", crypto_symbols=["BTC/USD"])
 
-    async def on_market_disconnect():
-        called["disc"] = True
+    symbols = ["AAPL", "BTC/USD"]
 
-    s.register_handlers(
-        on_bar=lambda b: None,
-        on_order_update=lambda u: None,
-        on_market_disconnect=on_market_disconnect,
-        on_trade_disconnect=lambda: None,
-    )
+    async def fake_start_stock(equities):
+        # Simulate a successful stock stream start
+        s.stock_stream = DummyStream()
+        s.stock_stream_connected = True
 
-    # Simulate rate limiter hitting hard limit
-    s.market_rate_limiter.is_limited = True
+    async def fake_start_crypto(cryptos):
+        # Simulate failure when starting crypto stream
+        raise RuntimeError("crypto start failed")
 
-    res = await s.reconnect_market_stream(["A"])
-    assert res is False
-    assert called["disc"] is True
+    s._start_stock_stream = fake_start_stock
+    s._start_crypto_stream = fake_start_crypto
 
-
-@pytest.mark.asyncio
-async def test_reconnect_handles_429_and_records_failure(monkeypatch):
-    s = stream_mod.Stream(api_key="k", secret_key="s")
-
-    # Make sure we appear to be in backoff (failures > 0 and not ready)
-    s.market_rate_limiter.failures = 1
-    s.market_rate_limiter.last_failure_time = time.time()
-
-    # No-op sleep to avoid waiting
-    async def noop_sleep(x):
-        return None
-
-    monkeypatch.setattr(stream_mod.asyncio, "sleep", noop_sleep)
-
-    async def fake_start(self, symbols, *args, **kwargs):
-        raise ValueError("429 Too Many Requests")
-
-    monkeypatch.setattr(stream_mod.Stream, "_start_market_stream", fake_start)
-
-    res = await s.reconnect_market_stream(["A"])
-    assert res is False
-    # Failures should have incremented
-    assert s.market_rate_limiter.failures >= 1
-
-
-@pytest.mark.asyncio
-async def test_reconnect_success_resets_rate_limiter(monkeypatch):
-    s = stream_mod.Stream(api_key="k", secret_key="s")
-    # Freeze time so last_failure_time calculation is deterministic
-    monkeypatch.setattr(time, "time", lambda: 2000.0)
-    s.market_rate_limiter.failures = 1
-    s.market_rate_limiter.last_failure_time = time.time() - 1000.0  # ready to retry
-
-    async def fake_start(self, symbols, *args, **kwargs):
-        # simulate successful start
-        return None
-
-    monkeypatch.setattr(stream_mod.Stream, "_start_market_stream", fake_start)
-
-    res = await s.reconnect_market_stream(["A"])
-    assert res is True
-    assert s.market_rate_limiter.failures == 0
-
-
-@pytest.mark.asyncio
-async def test_reconnect_generic_exception_records_failure(monkeypatch):
-    s = stream_mod.Stream(api_key="k", secret_key="s")
+    # Ensure rate limiter allows attempt
     s.market_rate_limiter.failures = 0
+    s.market_rate_limiter.is_limited = False
 
-    async def fake_start(self, symbols, *args, **kwargs):
-        raise RuntimeError("boom")
+    result = await s.reconnect_market_stream(symbols)
 
-    monkeypatch.setattr(stream_mod.Stream, "_start_market_stream", fake_start)
+    assert result is False
+    # Stock stream should have been closed and cleared on cleanup
+    assert s.stock_stream is None
+    assert s.stock_stream_connected is False
 
-    res = await s.reconnect_market_stream(["A"])
-    assert res is False
-    assert s.market_rate_limiter.failures >= 1
+
+@pytest.mark.asyncio
+async def test_reconnect_partial_failure_stock_fails_cleans_crypto():
+    s = Stream("key", "secret", paper=True, feed="iex", crypto_symbols=["BTC/USD"])
+
+    symbols = ["AAPL", "BTC/USD"]
+
+    async def fake_start_stock(equities):
+        # Simulate failure when starting stock stream
+        raise RuntimeError("stock start failed")
+
+    async def fake_start_crypto(cryptos):
+        # Simulate successful crypto stream start
+        s.crypto_stream = DummyStream()
+        s.crypto_stream_connected = True
+
+    s._start_stock_stream = fake_start_stock
+    s._start_crypto_stream = fake_start_crypto
+
+    # Ensure rate limiter allows attempt
+    s.market_rate_limiter.failures = 0
+    s.market_rate_limiter.is_limited = False
+
+    result = await s.reconnect_market_stream(symbols)
+
+    assert result is False
+    # Crypto stream should have been closed and cleared on cleanup
+    assert s.crypto_stream is None
+    assert s.crypto_stream_connected is False

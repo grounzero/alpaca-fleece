@@ -27,7 +27,7 @@ def risk_manager_config():
                 "max_concurrent_positions": 20,
             },
         },
-        "symbols": {"crypto_symbols": ["BTCUSD", "ETHUSD"]},
+        "symbols": {"crypto_symbols": ["BTC/USD", "ETH/USD"]},
         "filters": {},
     }
 
@@ -52,10 +52,10 @@ class TestSessionDetection:
 
     def test_crypto_symbol_returns_extended_hours(self, risk_manager):
         """Crypto symbols always return 'extended' session."""
-        session = risk_manager._get_session_type("BTCUSD")
+        session = risk_manager._get_session_type("BTC/USD")
         assert session == "extended"
 
-        session = risk_manager._get_session_type("ETHUSD")
+        session = risk_manager._get_session_type("ETH/USD")
         assert session == "extended"
 
     def test_regular_equity_at_930am_returns_regular(self, risk_manager):

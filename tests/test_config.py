@@ -21,7 +21,7 @@ def test_validate_config_requires_api_key():
     }
 
     trading = {
-        "symbols": {"mode": "explicit", "list": ["AAPL"]},
+        "symbols": {"mode": "explicit", "equity_symbols": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
         "strategy": {"name": "sma_crossover"},
         "risk": {"max_position_pct": 0.1},
@@ -48,7 +48,7 @@ def test_validate_config_requires_secret_key():
     }
 
     trading = {
-        "symbols": {"mode": "explicit", "list": ["AAPL"]},
+        "symbols": {"mode": "explicit", "equity_symbols": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
         "strategy": {"name": "sma_crossover"},
         "risk": {"max_position_pct": 0.1},
@@ -75,7 +75,7 @@ def test_validate_config_live_trading_requires_dual_gates():
     }
 
     trading = {
-        "symbols": {"mode": "explicit", "list": ["AAPL"]},
+        "symbols": {"mode": "explicit", "equity_symbols": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
         "strategy": {"name": "sma_crossover"},
         "risk": {"max_position_pct": 0.1},
@@ -102,7 +102,7 @@ def test_validate_config_detects_kill_switch():
     }
 
     trading = {
-        "symbols": {"mode": "explicit", "list": ["AAPL"]},
+        "symbols": {"mode": "explicit", "equity_symbols": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
         "strategy": {"name": "sma_crossover"},
         "risk": {"max_position_pct": 0.1},
@@ -129,7 +129,7 @@ def test_validate_config_valid_passes():
     }
 
     trading = {
-        "symbols": {"mode": "explicit", "list": ["AAPL"]},
+        "symbols": {"mode": "explicit", "equity_symbols": ["AAPL"]},
         "trading": {"session_policy": "regular_only"},
         "strategy": {"name": "sma_crossover"},
         "risk": {"max_position_pct": 0.1},

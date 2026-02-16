@@ -12,8 +12,8 @@ def risk_manager_hybrid(state_store, mock_broker, config):
     # Ensure config has hybrid setup
     hybrid_config = config.copy()
     hybrid_config["symbols"] = {
-        "list": ["AAPL", "MSFT", "SPY", "BTCUSD", "ETHUSD"],
-        "crypto_symbols": ["BTCUSD", "ETHUSD"],
+        "equity_symbols": ["AAPL", "MSFT", "SPY"],
+        "crypto_symbols": ["BTC/USD", "ETH/USD"],
     }
     hybrid_config["trading"] = {
         "session_policy": "include_extended",
@@ -47,10 +47,10 @@ class TestSessionDetection:
 
     def test_crypto_detected_as_extended(self, risk_manager_hybrid):
         """Crypto symbols should use extended session limits."""
-        session = risk_manager_hybrid._get_session_type("BTCUSD")
+        session = risk_manager_hybrid._get_session_type("BTC/USD")
         assert session == "extended"
 
-        session = risk_manager_hybrid._get_session_type("ETHUSD")
+        session = risk_manager_hybrid._get_session_type("ETH/USD")
         assert session == "extended"
 
     def test_equity_detected_as_regular_or_extended(self, risk_manager_hybrid):
@@ -63,8 +63,8 @@ class TestSessionDetection:
 
     def test_crypto_symbols_from_config(self, risk_manager_hybrid):
         """Risk manager should load crypto symbols from config."""
-        assert "BTCUSD" in risk_manager_hybrid.crypto_symbols
-        assert "ETHUSD" in risk_manager_hybrid.crypto_symbols
+        assert "BTC/USD" in risk_manager_hybrid.crypto_symbols
+        assert "ETH/USD" in risk_manager_hybrid.crypto_symbols
 
 
 class TestSessionAwareLimits:
@@ -90,7 +90,7 @@ class TestSessionAwareLimits:
 
     def test_get_limits_for_crypto(self, risk_manager_hybrid):
         """Crypto should get extended limits."""
-        limits = risk_manager_hybrid._get_limits("BTCUSD")
+        limits = risk_manager_hybrid._get_limits("BTC/USD")
 
         assert limits.get("max_position_pct") == 0.05
         assert limits.get("max_daily_loss_pct") == 0.03
@@ -115,12 +115,12 @@ class TestCryptoSymbolList:
         # If crypto symbols exist, validate structure
         if crypto_symbols:
             assert len(crypto_symbols) >= 2
-            assert "BTCUSD" in crypto_symbols or len(crypto_symbols) > 0
+            assert "BTC/USD" in crypto_symbols or len(crypto_symbols) > 0
 
     def test_hybrid_symbol_list(self, config):
         """Symbol list should contain equities."""
         symbols_config = config.get("symbols", {})
-        all_symbols = symbols_config.get("list", [])
+        all_symbols = symbols_config.get("equity_symbols", [])
 
         # Should have at least some symbols
         assert len(all_symbols) > 0
@@ -132,19 +132,19 @@ class TestStrategyWithCrypto:
 
     def test_strategy_accepts_crypto_symbols(self, state_store):
         """Strategy should accept crypto symbols parameter."""
-        crypto_symbols = ["BTCUSD", "ETHUSD"]
+        crypto_symbols = ["BTC/USD", "ETH/USD"]
         strategy = SMACrossover(crypto_symbols=crypto_symbols)
 
         assert strategy.crypto_symbols == crypto_symbols
 
     def test_strategy_warmup_same_for_all(self, state_store):
         """Warmup period should be same for crypto and equities."""
-        crypto_symbols = ["BTCUSD", "ETHUSD"]
+        crypto_symbols = ["BTC/USD", "ETH/USD"]
         strategy = SMACrossover(crypto_symbols=crypto_symbols)
 
         # All symbols need same warmup
-        warmup_btc = strategy.get_required_history("BTCUSD")
-        warmup_eth = strategy.get_required_history("ETHUSD")
+        warmup_btc = strategy.get_required_history("BTC/USD")
+        warmup_eth = strategy.get_required_history("ETH/USD")
         warmup_aapl = strategy.get_required_history("AAPL")
 
         assert warmup_btc == 51
@@ -177,7 +177,7 @@ class TestLimitEnforcement:
 
     def test_crypto_uses_tighter_loss_limit(self, risk_manager_hybrid):
         """Crypto should use tighter daily loss limit."""
-        limits_btc = risk_manager_hybrid._get_limits("BTCUSD")
+        limits_btc = risk_manager_hybrid._get_limits("BTC/USD")
         limits_aapl = risk_manager_hybrid._get_limits("AAPL")
 
         # Extended limits should be tighter (if crypto)
@@ -189,7 +189,7 @@ class TestLimitEnforcement:
 
     def test_crypto_uses_smaller_position_size(self, risk_manager_hybrid):
         """Crypto should use smaller position sizing."""
-        limits_btc = risk_manager_hybrid._get_limits("BTCUSD")
+        limits_btc = risk_manager_hybrid._get_limits("BTC/USD")
         limits_aapl = risk_manager_hybrid._get_limits("AAPL")
 
         pos_btc = limits_btc.get("max_position_pct", 0.10)
@@ -222,7 +222,7 @@ def config_old_format():
     """Old config format (single limits, not session-aware)."""
     return {
         "symbols": {
-            "list": ["AAPL", "MSFT"],
+            "equity_symbols": ["AAPL", "MSFT"],
             "crypto_symbols": [],
         },
         "trading": {

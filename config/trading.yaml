@@ -3,9 +3,8 @@
 # =============================================================================
 symbols:
   mode: explicit  # explicit | watchlist | screener
-  # 31 equities (crypto ready but requires correct Alpaca symbol format)
-  list: [AAPL, MSFT, GOOGL, NVDA, QQQ, SPY, TSLA, AMD, AMZN, META, NFLX, UBER, COIN, MSTR, ARKK, IWM, EEM, GLD, TLT, USO, RTX, LMT, NOC, BA, GD, GOLD, SLV, PAAS, HL, SCCO, FCX]
-  crypto_symbols: []  # Disabled for now (requires BTC/USD format research)
+  equity_symbols: [AAPL, MSFT, GOOGL, NVDA, QQQ, SPY, TSLA, AMD, AMZN, META, NFLX, UBER, COIN, MSTR, ARKK, IWM, EEM, GLD, TLT, USO, RTX, LMT, NOC, BA, GD, GOLD, SLV, PAAS, HL, SCCO, FCX]
+  crypto_symbols: [BTC/USD, ETH/USD, SOL/USD]
   watchlist_name: my-targets
   screener:
     min_price: 10.0

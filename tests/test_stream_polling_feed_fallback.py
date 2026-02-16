@@ -5,7 +5,7 @@ Tests cover:
 - SIP config with valid subscription works normally
 - IEX config skips validation
 - Non-subscription errors are raised, not caught
-- Runtime fallback behavior in _poll_batch
+- Runtime fallback behavior in _poll_equity_batch
 """
 
 from datetime import datetime, timezone
@@ -24,17 +24,23 @@ class TestFeedFallback:
     @pytest.fixture
     def mock_stream_sip(self):
         """Create a StreamPolling instance with SIP feed and mocked client."""
-        with patch("src.stream_polling.StockHistoricalDataClient"):
+        with (
+            patch("src.stream_polling.StockHistoricalDataClient"),
+            patch("src.stream_polling.CryptoHistoricalDataClient"),
+        ):
             stream = StreamPolling("api_key", "secret_key", feed="sip")
-            stream.client = MagicMock()
+            stream.stock_client = MagicMock()
             return stream
 
     @pytest.fixture
     def mock_stream_iex(self):
         """Create a StreamPolling instance with IEX feed and mocked client."""
-        with patch("src.stream_polling.StockHistoricalDataClient"):
+        with (
+            patch("src.stream_polling.StockHistoricalDataClient"),
+            patch("src.stream_polling.CryptoHistoricalDataClient"),
+        ):
             stream = StreamPolling("api_key", "secret_key", feed="iex")
-            stream.client = MagicMock()
+            stream.stock_client = MagicMock()
             return stream
 
     @pytest.fixture
@@ -54,7 +60,7 @@ class TestFeedFallback:
     async def test_sip_without_subscription_fallback(self, mock_stream_sip, caplog):
         """SIP config + subscription error → falls back to IEX."""
         # Mock: SIP returns error with "subscription does not permit" message
-        mock_stream_sip.client.get_stock_bars.side_effect = Exception(
+        mock_stream_sip.stock_client.get_stock_bars.side_effect = Exception(
             "subscription does not permit access"
         )
 
@@ -75,7 +81,7 @@ class TestFeedFallback:
         # Mock: SIP returns valid bars
         mock_response = MagicMock()
         mock_response.data = {"AAPL": [sample_bar]}
-        mock_stream_sip.client.get_stock_bars.return_value = mock_response
+        mock_stream_sip.stock_client.get_stock_bars.return_value = mock_response
 
         with caplog.at_level("INFO"):
             await mock_stream_sip._validate_feed()
@@ -97,7 +103,7 @@ class TestFeedFallback:
         assert mock_stream_iex._use_fallback is False
 
         # Assert: No API call was made for validation
-        mock_stream_iex.client.get_stock_bars.assert_not_called()
+        mock_stream_iex.stock_client.get_stock_bars.assert_not_called()
 
         # Assert: Info log: "Using IEX feed"
         assert "Using IEX feed" in caplog.text
@@ -106,7 +112,7 @@ class TestFeedFallback:
     async def test_non_subscription_error_raises(self, mock_stream_sip):
         """API error (not subscription) → raises normally."""
         # Mock: SIP returns 500 server error
-        mock_stream_sip.client.get_stock_bars.side_effect = Exception("Internal Server Error")
+        mock_stream_sip.stock_client.get_stock_bars.side_effect = Exception("Internal Server Error")
 
         # Assert: Exception raised, not caught as fallback
         with pytest.raises(Exception, match="Internal Server Error"):
@@ -117,21 +123,21 @@ class TestFeedFallback:
 
     @pytest.mark.asyncio
     async def test_runtime_uses_fallback_when_set(self, mock_stream_sip, sample_bar, caplog):
-        """_poll_batch uses IEX when _use_fallback is True."""
+        """_poll_equity_batch uses IEX when _use_fallback is True."""
         # Set _use_fallback = True
         mock_stream_sip._use_fallback = True
 
         mock_response = MagicMock()
         mock_response.data = {"AAPL": [sample_bar]}
-        mock_stream_sip.client.get_stock_bars.return_value = mock_response
+        mock_stream_sip.stock_client.get_stock_bars.return_value = mock_response
 
         mock_stream_sip.on_bar = AsyncMock()
 
         with caplog.at_level("INFO"):
-            await mock_stream_sip._poll_batch(["AAPL"])
+            await mock_stream_sip._poll_equity_batch(["AAPL"])
 
         # Assert: All requests use feed="iex" regardless of config
-        call_args = mock_stream_sip.client.get_stock_bars.call_args
+        call_args = mock_stream_sip.stock_client.get_stock_bars.call_args
         request = call_args[0][0]
         assert isinstance(request, StockBarsRequest)
         assert request.feed == DataFeed.IEX
@@ -141,20 +147,20 @@ class TestFeedFallback:
 
     @pytest.mark.asyncio
     async def test_runtime_uses_config_when_no_fallback(self, mock_stream_sip, sample_bar):
-        """_poll_batch uses config feed when no fallback needed."""
+        """_poll_equity_batch uses config feed when no fallback needed."""
         # Set _use_fallback = False, config = "sip"
         mock_stream_sip._use_fallback = False
 
         mock_response = MagicMock()
         mock_response.data = {"AAPL": [sample_bar]}
-        mock_stream_sip.client.get_stock_bars.return_value = mock_response
+        mock_stream_sip.stock_client.get_stock_bars.return_value = mock_response
 
         mock_stream_sip.on_bar = AsyncMock()
 
-        await mock_stream_sip._poll_batch(["AAPL"])
+        await mock_stream_sip._poll_equity_batch(["AAPL"])
 
         # Assert: Requests use feed="sip"
-        call_args = mock_stream_sip.client.get_stock_bars.call_args
+        call_args = mock_stream_sip.stock_client.get_stock_bars.call_args
         request = call_args[0][0]
         assert isinstance(request, StockBarsRequest)
         assert request.feed == DataFeed.SIP
@@ -167,15 +173,15 @@ class TestFeedFallback:
 
         mock_response = MagicMock()
         mock_response.data = {"AAPL": [sample_bar]}
-        mock_stream_sip.client.get_stock_bars.return_value = mock_response
+        mock_stream_sip.stock_client.get_stock_bars.return_value = mock_response
 
         mock_stream_sip.on_bar = AsyncMock()
 
         with caplog.at_level("INFO"):
             # First call should log
-            await mock_stream_sip._poll_batch(["AAPL"])
+            await mock_stream_sip._poll_equity_batch(["AAPL"])
             # Second call should not log again
-            await mock_stream_sip._poll_batch(["AAPL"])
+            await mock_stream_sip._poll_equity_batch(["AAPL"])
 
         # Should only see the fallback message once
         assert caplog.text.count("Using IEX fallback feed") == 1
@@ -205,7 +211,7 @@ class TestFeedFallback:
         ]
 
         for error_msg in test_cases:
-            mock_stream_sip.client.get_stock_bars.side_effect = Exception(error_msg)
+            mock_stream_sip.stock_client.get_stock_bars.side_effect = Exception(error_msg)
             mock_stream_sip._use_fallback = False
 
             await mock_stream_sip._validate_feed()
@@ -225,4 +231,4 @@ class TestFeedFallback:
         assert mock_stream_iex._use_fallback is False
 
         # Assert: No API call was made for validation
-        mock_stream_iex.client.get_stock_bars.assert_not_called()
+        mock_stream_iex.stock_client.get_stock_bars.assert_not_called()
