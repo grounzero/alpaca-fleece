@@ -308,7 +308,7 @@ class Stream:
                 if getattr(self, "crypto_stream", None) is not None:
                     close_method = getattr(self.crypto_stream, "close", None)
                     if callable(close_method):
-                        close_method()
+                        await close_method()
             except Exception as close_exc:
                 logger.warning(
                     "Error while closing crypto stream after failed subscription: %s",
