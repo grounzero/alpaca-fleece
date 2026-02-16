@@ -166,10 +166,11 @@ def mock_market_data_client():
 @pytest.fixture
 def config():
     """Base trading config for tests."""
+    symbols_list = ["AAPL", "MSFT"]
     return {
         "symbols": {
             "mode": "explicit",
-            "list": ["AAPL", "MSFT"],
+            "equity_symbols": symbols_list,
         },
         "trading": {
             "session_policy": "regular_only",

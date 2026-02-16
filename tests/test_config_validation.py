@@ -1,8 +1,71 @@
-"""Tests for config validation."""
-
 import pytest
 
-from src.config import ConfigError, validate_exit_config
+from src.config import ConfigError, validate_config, validate_exit_config
+
+
+def _base_env() -> dict:
+    return {
+        "ALPACA_API_KEY": "test-key",
+        "ALPACA_SECRET_KEY": "test-secret",
+        "ALPACA_PAPER": True,
+        "ALLOW_LIVE_TRADING": False,
+        "KILL_SWITCH": False,
+        "CIRCUIT_BREAKER_RESET": False,
+        "DRY_RUN": False,
+        "LOG_LEVEL": "INFO",
+        "DATABASE_PATH": "data/trades.db",
+        "CONFIG_PATH": "config/trading.yaml",
+    }
+
+
+def _base_trading(symbols_section: dict) -> dict:
+    return {
+        "symbols": symbols_section,
+        "trading": {"session_policy": "regular_only"},
+        "strategy": {"name": "sma"},
+        "risk": {},
+        "execution": {},
+        "exits": {
+            "stop_loss_pct": 0.01,
+            "profit_target_pct": 0.02,
+            "trailing_stop_activation_pct": 0.01,
+            "trailing_stop_trail_pct": 0.004,
+        },
+    }
+
+
+def test_config_with_only_equity_symbols_passes():
+    env = _base_env()
+    trading = _base_trading({"mode": "explicit", "equity_symbols": ["AAPL"]})
+
+    # Should not raise
+    validate_config(env, trading)
+
+
+def test_config_with_only_crypto_symbols_passes():
+    env = _base_env()
+    trading = _base_trading({"mode": "explicit", "crypto_symbols": ["BTC/USD"]})
+
+    # Should not raise
+    validate_config(env, trading)
+
+
+def test_config_with_both_equity_and_crypto_symbols_passes():
+    env = _base_env()
+    trading = _base_trading(
+        {"mode": "explicit", "equity_symbols": ["AAPL"], "crypto_symbols": ["BTC/USD"]}
+    )
+
+    # Should not raise
+    validate_config(env, trading)
+
+
+def test_config_with_no_symbols_fails():
+    env = _base_env()
+    trading = _base_trading({"mode": "explicit"})
+
+    with pytest.raises(ConfigError, match=r"symbols.mode=explicit requires at least one"):
+        validate_config(env, trading)
 
 
 class TestValidateExitConfig:

@@ -29,7 +29,7 @@ def test_register_handlers_sets_callbacks():
 
 
 @pytest.mark.asyncio
-async def test_start_market_stream_subscribes_in_batches(monkeypatch):
+async def test_start_stock_stream_subscribes_in_batches(monkeypatch):
     # Dummy StockDataStream to capture subscribe_bars calls
     class DummyStockDataStream:
         def __init__(self, api_key, secret_key, feed):
@@ -72,12 +72,12 @@ async def test_start_market_stream_subscribes_in_batches(monkeypatch):
         on_trade_disconnect=lambda: None,
     )
 
-    # Run start market stream with 3 symbols, batch_size=2
-    await s._start_market_stream(["A", "B", "C"], batch_size=2, batch_delay=0)
+    # Run start stock stream with 3 symbols, batch_size=2
+    await s._start_stock_stream(["A", "B", "C"], batch_size=2, batch_delay=0)
 
-    assert s.market_connected is True
+    assert s.stock_stream_connected is True
     # Two batches expected: (A,B) and (C,)
-    subs = s.market_data_stream.subscriptions
+    subs = s.stock_stream.subscriptions
     assert len(subs) == 2
     assert subs[0][1] == ("A", "B")
     assert subs[1][1] == ("C",)

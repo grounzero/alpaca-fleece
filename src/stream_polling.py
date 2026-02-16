@@ -12,8 +12,8 @@ from datetime import datetime, timedelta, timezone
 from typing import Any, Callable, List, Optional
 
 from alpaca.data.enums import DataFeed
-from alpaca.data.historical import StockHistoricalDataClient
-from alpaca.data.requests import StockBarsRequest
+from alpaca.data.historical import CryptoHistoricalDataClient, StockHistoricalDataClient
+from alpaca.data.requests import CryptoBarsRequest, StockBarsRequest
 from alpaca.data.timeframe import TimeFrame
 from alpaca.trading.client import TradingClient
 
@@ -146,6 +146,7 @@ class StreamPolling:
         batch_size: int = 25,
         order_polling_concurrency: int = 10,
         db_path: Optional[str] = None,
+        crypto_symbols: Optional[List[str]] = None,
     ) -> None:
         """Initialise polling stream.
 
@@ -157,6 +158,7 @@ class StreamPolling:
             batch_size: Number of symbols per batch request (default: 25)
             order_polling_concurrency: Maximum concurrent Alpaca order requests during polling
                 (default: 10)
+            crypto_symbols: List of crypto symbols (e.g., ['BTC/USD', 'ETH/USD'])
         """
         self.api_key = api_key
         self.secret_key = secret_key
@@ -169,8 +171,12 @@ class StreamPolling:
             raise ValueError(f"Invalid data feed '{self.feed}'. Expected 'iex' or 'sip'.") from exc
         self.batch_size = batch_size
 
-        # Historical data client for polling
-        self.client = StockHistoricalDataClient(api_key, secret_key)
+        # Historical data clients for polling (separate for equity and crypto)
+        self.stock_client = StockHistoricalDataClient(api_key, secret_key)
+        self.crypto_client = CryptoHistoricalDataClient(api_key, secret_key)
+
+        # Store crypto symbols list for symbol separation
+        self._crypto_symbols_config: List[str] = crypto_symbols or []
 
         # Trading client for order status queries
         paper_url = PAPER_API_URL if paper else LIVE_API_URL
@@ -189,6 +195,8 @@ class StreamPolling:
         self._polling_task: Optional[asyncio.Task[None]] = None
         self._order_polling_task: Optional[asyncio.Task[None]] = None
         self._symbols: list[str] = []
+        self._equity_symbols: list[str] = []  # Equity symbols (routed to stock client)
+        self._crypto_symbols: list[str] = []  # Crypto symbols (routed to crypto client)
         self._use_fallback: bool = False  # Set to True if SIP feed requires subscription
         self._fallback_logged: bool = False  # Track if we already logged fallback message
         self._symbols_with_data: set[str] = set()  # Track which symbols have received data
@@ -249,6 +257,19 @@ class StreamPolling:
             symbols: List of symbols to poll
         """
         self._symbols = symbols
+
+        # Separate symbols into equity and crypto based on config.
+        # Use exact matches only — do not manipulate symbol strings.
+        crypto_set = set(self._crypto_symbols_config)
+        self._equity_symbols = [s for s in symbols if s not in crypto_set]
+        self._crypto_symbols = [s for s in symbols if s in crypto_set]
+
+        if self._crypto_symbols:
+            logger.info(
+                f"Symbol routing: {len(self._equity_symbols)} equity, "
+                f"{len(self._crypto_symbols)} crypto ({', '.join(self._crypto_symbols)})"
+            )
+
         self.market_connected = True
         self.trade_connected = True
 
@@ -263,20 +284,37 @@ class StreamPolling:
         await self._validate_feed()
 
         effective_batch = self._effective_batch_size
-        num_batches = (len(symbols) + effective_batch - 1) // effective_batch
 
-        if effective_batch != self.batch_size:
-            active_feed = "iex" if self._use_fallback else self.feed
-            logger.info(
-                f"Polling stream started for {len(symbols)} symbols "
-                f"in {num_batches} batch(es) of {effective_batch} "
-                f"(configured: {self.batch_size}, reduced for {active_feed} feed) "
-                f"(1-min polling)"
-            )
+        # Compute batch counts separately for equity and crypto so logs are
+        # accurate when symbols are split and have different effective batch sizes.
+        equity_count = len(self._equity_symbols)
+        crypto_count = len(self._crypto_symbols)
+        equity_batches = (
+            (equity_count + effective_batch - 1) // effective_batch if equity_count else 0
+        )
+        crypto_batches = (
+            (crypto_count + self.batch_size - 1) // self.batch_size if crypto_count else 0
+        )
+
+        if crypto_count:
+            # When both equities and crypto are present, report separate batch counts
+            if effective_batch != self.batch_size:
+                active_feed = "iex" if self._use_fallback else self.feed
+                logger.info(
+                    f"Polling stream started: {equity_count} equity in {equity_batches} batch(es) of {effective_batch} "
+                    f"and {crypto_count} crypto in {crypto_batches} batch(es) of {self.batch_size} "
+                    f"(configured: {self.batch_size}, reduced for {active_feed} feed) (1-min polling)"
+                )
+            else:
+                logger.info(
+                    f"Polling stream started: {equity_count} equity in {equity_batches} batch(es) of {effective_batch} "
+                    f"and {crypto_count} crypto in {crypto_batches} batch(es) of {self.batch_size} (1-min polling)"
+                )
         else:
+            # Only equities (or none) - use the precomputed equity_batches value
             logger.info(
-                f"Polling stream started for {len(symbols)} symbols "
-                f"in {num_batches} batch(es) of {effective_batch} (1-min polling)"
+                f"Polling stream started for {len(self._equity_symbols)} equity symbols "
+                f"in {equity_batches} batch(es) of {effective_batch} (1-min polling)"
             )
 
         # Start polling tasks
@@ -310,7 +348,7 @@ class StreamPolling:
                 limit=1,
                 feed=self._data_feed,
             )
-            await asyncio.to_thread(self.client.get_stock_bars, request)
+            await asyncio.to_thread(self.stock_client.get_stock_bars, request)
             # Test passed - SIP is available
             logger.info(f"Using {self._data_feed.value.upper()} feed")
             self._use_fallback = False
@@ -340,8 +378,17 @@ class StreamPolling:
                 try:
                     # Poll symbols in batches (use effective batch size based on feed)
                     effective_batch = self._effective_batch_size
-                    for batch in batch_iter(self._symbols, effective_batch):
-                        await self._poll_batch(batch)
+
+                    # Poll equity symbols with stock client
+                    for batch in batch_iter(self._equity_symbols, effective_batch):
+                        await self._poll_equity_batch(batch)
+
+                    # Poll crypto symbols with crypto client (no batch size limits for crypto)
+                    # Use `self.batch_size` for crypto batching so crypto polling is not
+                    # throttled by the IEX workaround used for equities (effective_batch).
+                    if self._crypto_symbols:
+                        for batch in batch_iter(self._crypto_symbols, self.batch_size):
+                            await self._poll_crypto_batch(batch)
 
                     # Periodic report on symbol coverage (every 5 iterations)
                     if iteration % 5 == 0 and self._symbols:
@@ -716,11 +763,11 @@ class StreamPolling:
         # Use module-level wrapper classes (defined once, not per-call)
         return OrderUpdateWrapper(alpaca_order)
 
-    async def _poll_batch(self, symbols: List[str]) -> None:
-        """Poll for latest bars for a batch of symbols.
+    async def _poll_equity_batch(self, symbols: List[str]) -> None:
+        """Poll for latest equity bars for a batch of symbols.
 
         Args:
-            symbols: List of symbols to poll in a single batch request
+            symbols: List of equity symbols to poll in a single batch request
         """
         try:
             # Determine which feed to use
@@ -751,7 +798,7 @@ class StreamPolling:
                 feed=active_feed,
             )
 
-            bars_by_symbol = await asyncio.to_thread(self.client.get_stock_bars, request)
+            bars_by_symbol = await asyncio.to_thread(self.stock_client.get_stock_bars, request)
 
             # Process each symbol's bars
             # BarSet.data is a dict: {symbol: [bar1, bar2, ...]}
@@ -773,6 +820,52 @@ class StreamPolling:
 
         except Exception as e:
             logger.warning(f"Batch polling error for {symbols}: {e}")
+            # Don't re-raise - let the loop continue with other batches
+
+    async def _poll_crypto_batch(self, symbols: List[str]) -> None:
+        """Poll for latest crypto bars for a batch of symbols.
+
+        Args:
+            symbols: List of crypto symbols to poll in a single batch request
+        """
+        try:
+            # Get bars from last 5 minutes to ensure fresh data
+            start_time = datetime.now(timezone.utc) - timedelta(minutes=5)
+            end_time = datetime.now(timezone.utc)
+
+            logger.debug(f"Polling crypto batch of {len(symbols)} symbols: {symbols}")
+
+            # Crypto uses CryptoBarsRequest (no feed parameter needed)
+            request = CryptoBarsRequest(
+                symbol_or_symbols=symbols,
+                timeframe=TimeFrame.Minute,
+                start=start_time,
+                end=end_time,
+                limit=5,  # Request a few bars and pick the newest explicitly
+            )
+
+            bars_by_symbol = await asyncio.to_thread(self.crypto_client.get_crypto_bars, request)
+
+            # Process each symbol's bars
+            # BarSet.data is a dict: {symbol: [bar1, bar2, ...]}
+            bars_data = getattr(bars_by_symbol, "data", {})
+
+            # Log which symbols returned data vs which didn't
+            returned_symbols = set(bars_data.keys())
+            requested_symbols = set(symbols)
+            missing_symbols = requested_symbols - returned_symbols
+
+            if missing_symbols:
+                logger.debug(f"No crypto bar data returned for symbols: {sorted(missing_symbols)}")
+            logger.debug(
+                f"Received crypto bar data for {len(returned_symbols)}/{len(symbols)} symbols: {sorted(returned_symbols)}"
+            )
+
+            for symbol, bar_list in bars_data.items():
+                await self._process_bar_list(symbol, bar_list)
+
+        except Exception as e:
+            logger.warning(f"Crypto batch polling error for {symbols}: {e}")
             # Don't re-raise - let the loop continue with other batches
 
     async def _process_bar_list(self, symbol: str, bar_list: list[Any]) -> None:
@@ -820,12 +913,16 @@ class StreamPolling:
         """Poll for latest bar for a single symbol.
 
         This method is kept for backwards compatibility and testing.
-        For batch operations, use _poll_batch().
+        For batch operations, use _poll_equity_batch() or _poll_crypto_batch().
 
         Args:
             symbol: The symbol to poll
         """
-        await self._poll_batch([symbol])
+        # Route to appropriate client based on symbol type
+        if symbol in self._crypto_symbols_config:
+            await self._poll_crypto_batch([symbol])
+        else:
+            await self._poll_equity_batch([symbol])
 
     async def stop(self) -> None:
         """Stop polling stream."""

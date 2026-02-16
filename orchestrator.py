@@ -18,6 +18,7 @@ from typing import Optional
 from src import __version__ as version
 from src.alpaca_api.assets import AssetsClient
 from src.alpaca_api.market_data import MarketDataClient
+from src.alpaca_api.base import AlpacaDataClientError
 from src.async_broker_adapter import AsyncBrokerAdapter
 from src.broker import Broker
 from src.config import load_env, load_trading_config, validate_config
@@ -83,6 +84,7 @@ class Orchestrator:
 
         # Phase 4: Runtime state
         self.symbols: list[str] = []
+        self.equity_symbols: list[str] = []
         self._shutdown_event = asyncio.Event()
         self._tasks: list[asyncio.Task] = []
 
@@ -291,7 +293,14 @@ class Orchestrator:
                 },
                 "config": {
                     "strategy": strategy_name,
-                    "symbols": self.trading_config.get("symbols", {}).get("list", []),
+                    "symbols": {
+                        "equity_symbols": self.trading_config.get("symbols", {}).get(
+                            "equity_symbols", []
+                        ),
+                        "crypto_symbols": self.trading_config.get("symbols", {}).get(
+                            "crypto_symbols", []
+                        ),
+                    },
                     "risk": {
                         "kill_switch": risk_config.get("kill_switch", False),
                         "circuit_breaker_limit": risk_config.get("circuit_breaker_limit", 5),
@@ -342,12 +351,15 @@ class Orchestrator:
             # Start stream manager (using polling for consistency)
             logger.info("Preparing stream (polling mode)...")
             stream_cfg = self.trading_config.get("trading", {})
+            symbols_config = self.trading_config.get("symbols", {})
+            crypto_symbols = symbols_config.get("crypto_symbols", [])
             self.stream = StreamPolling(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
                 paper=self.env["ALPACA_PAPER"],
                 feed=stream_cfg.get("stream_feed", "iex"),
                 order_polling_concurrency=stream_cfg.get("order_polling_concurrency", 10),
+                crypto_symbols=crypto_symbols,
             )
             logger.info("   Stream ready (HTTP polling)")
 
@@ -405,7 +417,7 @@ class Orchestrator:
             dict: Trading logic status
         """
         logger.info("=" * 60)
-        logger.info("PHASE 3: Trading Logic Initialization")
+        logger.info("PHASE 3: Trading Logic Initialisation")
         logger.info("=" * 60)
 
         try:
@@ -415,16 +427,89 @@ class Orchestrator:
             mode = symbols_config.get("mode", "explicit")
 
             if mode == "explicit":
-                self.symbols = symbols_config.get("list", [])
+                equity_symbols = symbols_config.get("equity_symbols", [])
+                crypto_symbols = symbols_config.get("crypto_symbols", [])
+
+                # Validate equity symbols via Alpaca Assets API
+                self.equity_symbols = self.assets_client.validate_symbols(equity_symbols)
+
+                # Validate crypto symbols against Alpaca's assets (if supported).
+                # AssetsClient.get_assets supports an `asset_class` filter so we
+                # can fetch crypto assets and validate exact symbol matches.
+                validated_crypto: list[str] = []
+                invalid_crypto: list[str] = []
+                # Track whether crypto symbols were actually validated against
+                # the Assets API (True) or accepted as-is due to errors/fallbacks (False)
+                crypto_validated_exact: bool = True
+                try:
+                    crypto_assets = self.assets_client.get_assets(
+                        status="active", asset_class="crypto"
+                    )
+                    # If the Assets API returns no crypto assets while crypto symbols are configured,
+                    # treat this as a validation failure and leave symbols unvalidated rather than
+                    # marking all of them as invalid.
+                    if crypto_symbols and not crypto_assets:
+                        logger.warning(
+                            "Assets API returned no crypto assets while crypto symbols are configured; "
+                            "leaving crypto symbols unvalidated"
+                        )
+                        validated_crypto = crypto_symbols
+                        crypto_validated_exact = False
+                        invalid_crypto = []
+                    else:
+                        crypto_map = {a["symbol"]: a for a in crypto_assets}
+                        for s in crypto_symbols:
+                            if s in crypto_map:
+                                validated_crypto.append(s)
+                            else:
+                                invalid_crypto.append(s)
+                except AlpacaDataClientError as e:
+                    # AssetsClient raised a known AlpacaDataClientError (network/SDK/API)
+                    logger.warning(
+                        "Failed to validate crypto symbols via Assets API: %s; leaving unvalidated",
+                        e,
+                    )
+                    validated_crypto = crypto_symbols
+                    crypto_validated_exact = False
+                except Exception as e:
+                    # Catch-all for unexpected errors (kept narrow and logged)
+                    logger.warning(
+                        "Unexpected error validating crypto symbols; treating as unvalidated: %s",
+                        e,
+                        exc_info=True,
+                    )
+                    validated_crypto = crypto_symbols
+                    crypto_validated_exact = False
+
+                # Combine validated equity + validated crypto (exact matches only)
+                combined = list(dict.fromkeys(self.equity_symbols + validated_crypto))
+                self.symbols = combined
+
+                if invalid_crypto:
+                    logger.warning(
+                        "Some crypto symbols from config are not recognised by Alpaca and will be ignored: %s",
+                        ", ".join(invalid_crypto),
+                    )
+
+                if crypto_validated_exact:
+                    logger.info(
+                        f"   Validated {len(self.equity_symbols)} equity symbols, "
+                        f"added {len(validated_crypto)} crypto symbols (validated)"
+                    )
+                else:
+                    logger.info(
+                        f"   Validated {len(self.equity_symbols)} equity symbols, "
+                        f"added {len(validated_crypto)} crypto symbols (accepted without Assets validation)"
+                    )
             elif mode == "watchlist":
+                # Watchlist mode only supports equities
                 self.symbols = self.assets_client.get_watchlist(
                     symbols_config.get("watchlist_name")
                 )
+                self.symbols = self.assets_client.validate_symbols(self.symbols)
             else:
                 raise ValueError(f"Symbol mode {mode} not yet implemented")
 
-            # Validate all symbols are US equities
-            self.symbols = self.assets_client.validate_symbols(self.symbols)
             logger.info(f"   Trading symbols: {self.symbols}")
 
             # Initialise strategy

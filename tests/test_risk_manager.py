@@ -312,10 +312,10 @@ async def test_check_exit_order_skips_spread_filter(mock_broker, state_store, co
 async def test_check_exit_order_validates_during_extended_hours(mock_broker, state_store, config):
     """Exit order validation works during extended hours for crypto."""
     # Add crypto symbol to config
-    config["symbols"]["crypto_symbols"] = ["BTCUSD"]
+    config["symbols"]["crypto_symbols"] = ["BTC/USD"]
 
     data_handler = MagicMock(spec=DataHandler)
     risk_mgr = RiskManager(mock_broker, data_handler, state_store, config)
 
-    result = await risk_mgr.check_exit_order("BTCUSD", "sell", 0.5)
+    result = await risk_mgr.check_exit_order("BTC/USD", "sell", 0.5)
     assert result is True

@@ -87,9 +87,11 @@ class RiskManager:
             }
             self.extended_limits = self.regular_limits  # Same limits for backward compat
 
-        # Crypto symbols for session detection
+        # Crypto symbols for session detection. Use exact symbols as provided
+        # in config — do not manipulate symbol strings.
         symbols_config = config.get("symbols", {})
-        self.crypto_symbols = symbols_config.get("crypto_symbols", [])
+        raw_crypto = symbols_config.get("crypto_symbols", [])
+        self.crypto_symbols = list(raw_crypto)
 
         # Filters from config
         filters_config = config.get("filters", {})
@@ -172,7 +174,7 @@ class RiskManager:
             RiskManagerError if safety check fails (hard refuse)
         """
         # SAFETY TIER (must pass - hard refuse)
-        await self._check_safety_tier()
+        await self._check_safety_tier(signal.symbol)
 
         # RISK TIER (must pass - hard refuse)
         await self._check_risk_tier(signal.symbol, signal.signal_type)
@@ -194,8 +196,12 @@ class RiskManager:
 
         return True
 
-    async def _check_safety_tier(self) -> None:
-        """Check safety gates (kill-switch, circuit breaker, market open)."""
+    async def _check_safety_tier(self, symbol: str) -> None:
+        """Check safety gates (kill-switch, circuit breaker, market open).
+
+        If `symbol` is a crypto symbol (configured in `symbols.crypto_symbols`)
+        then the market-open check is skipped to allow 24/5 crypto trading.
+        """
         # Kill-switch
         kill_switch = self.state_store.get_state("kill_switch") == "true"
         if kill_switch:
@@ -206,24 +212,25 @@ class RiskManager:
         if cb_state == "tripped":
             raise RiskManagerError("Circuit breaker tripped")
 
-        # Market open (fresh clock call)
-        try:
-            maybe = self.broker.get_clock()
-            clock = await maybe if inspect.isawaitable(maybe) else maybe
-            if not clock["is_open"]:
-                raise RiskManagerError("Market not open")
-        except RiskManagerError:
-            # Propagate intentional risk-manager domain errors unchanged
-            raise
-        except asyncio.CancelledError:
-            # Preserve task cancellation semantics
-            raise
-        except BrokerFatalError:
-            # Fatal broker errors should be handled by callers (do not wrap)
-            raise
-        except (BrokerTimeoutError, BrokerTransientError, ConnectionError, TimeoutError) as e:
-            # Expected operational failures -> translate to domain error
-            raise RiskManagerError(f"Clock fetch failed: {e}") from e
+        # Market open (fresh clock call) - skip for crypto symbols (24/5)
+        if symbol not in self.crypto_symbols:
+            try:
+                maybe = self.broker.get_clock()
+                clock = await maybe if inspect.isawaitable(maybe) else maybe
+                if not clock["is_open"]:
+                    raise RiskManagerError("Market not open")
+            except RiskManagerError:
+                # Propagate intentional risk-manager domain errors unchanged
+                raise
+            except asyncio.CancelledError:
+                # Preserve task cancellation semantics
+                raise
+            except BrokerFatalError:
+                # Fatal broker errors should be handled by callers (do not wrap)
+                raise
+            except (BrokerTimeoutError, BrokerTransientError, ConnectionError, TimeoutError) as e:
+                # Expected operational failures -> translate to domain error
+                raise RiskManagerError(f"Clock fetch failed: {e}") from e
 
     async def _check_risk_tier(self, symbol: str, side: str) -> None:
         """Check risk limits (daily loss, trade count, position size, concurrent positions).
@@ -370,22 +377,23 @@ class RiskManager:
         if kill_switch:
             raise RiskManagerError("Kill-switch active - exit blocked")
 
-        # Market open check (fresh clock call)
-        try:
-            maybe = self.broker.get_clock()
-            clock = await maybe if inspect.isawaitable(maybe) else maybe
-            if not clock["is_open"]:
-                raise RiskManagerError("Market not open - exit blocked")
-        except RiskManagerError:
-            raise
-        except asyncio.CancelledError:
-            raise
-        except BrokerFatalError:
-            # Let fatal broker errors propagate to callers
-            raise
-        except (BrokerTimeoutError, BrokerTransientError, ConnectionError, TimeoutError) as e:
-            # Expected operational failures -> translate to domain error
-            raise RiskManagerError(f"Clock fetch failed - exit blocked: {e}") from e
+        # Skip market-open check for crypto symbols so exits can run 24/5
+        if symbol not in self.crypto_symbols:
+            try:
+                maybe = self.broker.get_clock()
+                clock = await maybe if inspect.isawaitable(maybe) else maybe
+                if not clock["is_open"]:
+                    raise RiskManagerError("Market not open - exit blocked")
+            except RiskManagerError:
+                raise
+            except asyncio.CancelledError:
+                raise
+            except BrokerFatalError:
+                # Let fatal broker errors propagate to callers
+                raise
+            except (BrokerTimeoutError, BrokerTransientError, ConnectionError, TimeoutError) as e:
+                # Expected operational failures -> translate to domain error
+                raise RiskManagerError(f"Clock fetch failed - exit blocked: {e}") from e
 
         logger.debug(f"Exit order validated: {symbol} {side} {qty}")
         return True

@@ -16,7 +16,7 @@ async def test_phase1_autosync_success(monkeypatch, tmp_path):
         "DATABASE_PATH": str(tmp_path / "data" / "trades.db"),
     }
 
-    trading_config = {"strategy": {"name": "sma"}, "symbols": {"list": []}, "risk": {}}
+    trading_config = {"strategy": {"name": "sma"}, "symbols": {"equity_symbols": []}, "risk": {}}
 
     monkeypatch.setattr(orchestrator, "load_env", lambda: env)
     monkeypatch.setattr(orchestrator, "load_trading_config", lambda p: trading_config)
@@ -74,7 +74,7 @@ async def test_phase1_autosync_failure(monkeypatch, tmp_path):
         "DATABASE_PATH": str(tmp_path / "data" / "trades.db"),
     }
 
-    trading_config = {"strategy": {"name": "sma"}, "symbols": {"list": []}, "risk": {}}
+    trading_config = {"strategy": {"name": "sma"}, "symbols": {"equity_symbols": []}, "risk": {}}
 
     monkeypatch.setattr(orchestrator, "load_env", lambda: env)
     monkeypatch.setattr(orchestrator, "load_trading_config", lambda p: trading_config)
