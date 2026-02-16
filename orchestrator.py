@@ -465,21 +465,25 @@ class Orchestrator:
                                 invalid_crypto.append(s)
                 except AlpacaDataClientError as e:
                     # AssetsClient raised a known AlpacaDataClientError (network/SDK/API)
-                    logger.warning(
-                        "Failed to validate crypto symbols via Assets API: %s; leaving unvalidated",
+                    logger.error(
+                        "Failed to validate crypto symbols via Assets API: %s; aborting initialisation",
                         e,
                     )
-                    validated_crypto = crypto_symbols
-                    crypto_validated_exact = False
+                    # Fail fast to avoid accepting potentially invalid crypto symbols.
+                    raise RuntimeError(
+                        "Crypto symbol validation failed due to Alpaca Assets API error"
+                    ) from e
                 except Exception as e:
                     # Catch-all for unexpected errors (kept narrow and logged)
-                    logger.warning(
-                        "Unexpected error validating crypto symbols; treating as unvalidated: %s",
+                    logger.error(
+                        "Unexpected error validating crypto symbols; aborting initialisation: %s",
                         e,
                         exc_info=True,
                     )
-                    validated_crypto = crypto_symbols
-                    crypto_validated_exact = False
+                    # Fail fast rather than proceeding with unvalidated crypto symbols.
+                    raise RuntimeError(
+                        "Crypto symbol validation failed due to an unexpected error"
+                    ) from e
 
                 # Combine validated equity + validated crypto (exact matches only)
                 combined = list(dict.fromkeys(self.equity_symbols + validated_crypto))
