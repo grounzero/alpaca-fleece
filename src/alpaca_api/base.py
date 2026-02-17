@@ -4,6 +4,8 @@ Provides low-level access to Alpaca data endpoints including historical bars,
 snapshots, and other market data. All client classes inherit from this base.
 """
 
+from typing import Any
+
 from alpaca.data.historical import StockHistoricalDataClient
 
 
@@ -40,7 +42,10 @@ class AlpacaDataClient:
 
         self.api_key: str = api_key
         self.secret_key: str = secret_key
-        self.client: StockHistoricalDataClient = StockHistoricalDataClient(
+        # The concrete SDK client may expose different methods depending on
+        # installed alpaca-py version (crypto vs stocks). Annotate as Any to
+        # avoid static type mismatches while still constructing the SDK client.
+        self.client: Any = StockHistoricalDataClient(
             api_key=api_key,
             secret_key=secret_key,
         )

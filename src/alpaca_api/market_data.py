@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import pandas as pd
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.requests import CryptoLatestQuoteRequest, StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from .base import AlpacaDataClient, AlpacaDataClientError
@@ -12,6 +12,12 @@ from .base import AlpacaDataClient, AlpacaDataClientError
 
 class MarketDataClient(AlpacaDataClient):
     """Fetch market data: bars, snapshots."""
+
+    def __init__(
+        self, api_key: str, secret_key: str, trading_config: Optional[dict[str, Any]] = None
+    ) -> None:
+        super().__init__(api_key, secret_key)
+        self.trading_config: dict[str, Any] = trading_config or {}
 
     def get_bars(
         self,
@@ -70,14 +76,31 @@ class MarketDataClient(AlpacaDataClient):
         """Fetch latest snapshot (bid/ask for spread calculation).
 
         Args:
-            symbol: Stock symbol
+            symbol: Stock symbol (e.g., "AAPL" for equities, "BTC/USD" for crypto)
 
         Returns:
             Dict with keys: bid, ask, bid_size, ask_size, last_quote_time
         """
         try:
-            request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
-            quote = self.client.get_stock_latest_quote(request)
+            # Use injected trading_config when available. Keep legacy fallback
+            # to the "contains '/'" heuristic when no configured crypto list.
+            cfg = self.trading_config or {}
+            symbols_cfg = cfg.get("symbols", {}) if isinstance(cfg, dict) else {}
+            crypto_list = (
+                [str(s) for s in symbols_cfg.get("crypto_symbols", [])] if symbols_cfg else []
+            )
+
+            if crypto_list:
+                is_crypto = symbol in crypto_list
+            else:
+                is_crypto = "/" in symbol
+
+            if is_crypto:
+                crypto_request = CryptoLatestQuoteRequest(symbol_or_symbols=symbol)
+                quote = self.client.get_crypto_latest_quote(crypto_request)
+            else:
+                stock_request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+                quote = self.client.get_stock_latest_quote(stock_request)
 
             if symbol not in quote:
                 return {}

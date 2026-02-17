@@ -13,15 +13,108 @@ import logging
 import sqlite3
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, cast
+from typing import Any, Dict, List
 
 from src.adapters.persistence.mappers import position_snapshot_from_row
+from src.broker import OrderInfo
 from src.models.order_state import OrderState
-from src.models.persistence import OrderIntent, PositionSnapshot
+from src.models.persistence import OrderIntent, PositionInfo, PositionSnapshot
 from src.state_store import StateStore
 from src.utils import parse_optional_float
 
 logger = logging.getLogger(__name__)
+
+
+def _to_orderinfo(o: Any) -> OrderInfo:
+    """Coerce a broker order (dict/object/OrderInfo) into an OrderInfo dataclass.
+
+    This helper is defensive and handles dicts, OrderInfo, and SDK objects with
+    attribute accessors. It avoids direct attribute access on None values to
+    satisfy static type checkers.
+    """
+    if isinstance(o, OrderInfo):
+        return o
+    if isinstance(o, dict):
+        return OrderInfo(
+            id=str(o.get("id", "")),
+            client_order_id=str(o.get("client_order_id", "")),
+            symbol=str(o.get("symbol", "")) if o.get("symbol") is not None else "",
+            side=o.get("side"),
+            qty=parse_optional_float(o.get("qty")),
+            status=o.get("status"),
+            filled_qty=parse_optional_float(o.get("filled_qty")),
+            filled_avg_price=parse_optional_float(o.get("filled_avg_price")),
+            created_at=o.get("created_at"),
+        )
+
+    # SDK/object fallback: inspect attributes safely
+    id_attr = getattr(o, "id", None)
+    client_attr = getattr(o, "client_order_id", None)
+    symbol_attr = getattr(o, "symbol", None)
+
+    side_attr = getattr(o, "side", None)
+    if side_attr is not None and hasattr(side_attr, "value"):
+        side_val = side_attr.value
+    else:
+        side_val = side_attr
+
+    qty_attr = getattr(o, "qty", None)
+    qty_val: float | None
+    if qty_attr is None:
+        qty_val = None
+    elif isinstance(qty_attr, (int, float)):
+        qty_val = float(qty_attr)
+    else:
+        try:
+            qty_val = float(qty_attr)
+        except Exception:
+            qty_val = None
+
+    status_attr = getattr(o, "status", None)
+    if status_attr is not None and hasattr(status_attr, "value"):
+        status_val = status_attr.value
+    else:
+        status_val = status_attr
+
+    filled_qty_val = parse_optional_float(getattr(o, "filled_qty", None))
+    filled_avg_val = parse_optional_float(getattr(o, "filled_avg_price", None))
+
+    created_attr = getattr(o, "created_at", None)
+    if created_attr is not None and hasattr(created_attr, "isoformat"):
+        created_val = created_attr.isoformat()
+    else:
+        created_val = created_attr
+
+    return OrderInfo(
+        id=str(id_attr or ""),
+        client_order_id=str(client_attr or ""),
+        symbol=str(symbol_attr or ""),
+        side=side_val,
+        qty=qty_val,
+        status=status_val,
+        filled_qty=filled_qty_val,
+        filled_avg_price=filled_avg_val,
+        created_at=created_val,
+    )
+
+
+def _to_positioninfo(p: Any) -> PositionInfo:
+    """Coerce a broker position (dict/object/PositionInfo) into PositionInfo dataclass."""
+    if isinstance(p, PositionInfo):
+        return p
+    if isinstance(p, dict):
+        return PositionInfo(
+            symbol=str(p.get("symbol", "")),
+            qty=float(p.get("qty", 0) or 0),
+            avg_entry_price=parse_optional_float(p.get("avg_entry_price")),
+            current_price=parse_optional_float(p.get("current_price")),
+        )
+    return PositionInfo(
+        symbol=str(getattr(p, "symbol", "") or ""),
+        qty=(float(getattr(p, "qty", 0)) if getattr(p, "qty", None) is not None else 0.0),
+        avg_entry_price=parse_optional_float(getattr(p, "avg_entry_price", None)),
+        current_price=parse_optional_float(getattr(p, "current_price", None)),
+    )
 
 
 class ReconciliationError(Exception):
@@ -31,7 +124,7 @@ class ReconciliationError(Exception):
 
 
 def compare_order_states(
-    sqlite_orders: List[OrderIntent], alpaca_orders: List[Dict[str, Any]]
+    sqlite_orders: List[OrderIntent], alpaca_orders: List[Any]
 ) -> tuple[list[dict[str, object]], int]:
     """Compare SQLite vs Alpaca orders.
 
@@ -41,19 +134,21 @@ def compare_order_states(
     """
     discrepancies: list[dict[str, object]] = []
     safe_updates = 0
-    alpaca_order_ids: dict[str, Any] = {o["client_order_id"]: o for o in alpaca_orders}
+    # Ensure we are working with OrderInfo dataclasses
+    alpaca_orders = [_to_orderinfo(o) for o in alpaca_orders]
+    alpaca_order_ids: dict[str, OrderInfo] = {o.client_order_id: o for o in alpaca_orders}
 
     # Rule 1: Alpaca has order terminal, SQLite has non-terminal → UPDATE SQLite (safe)
     # Count these as safe updates
     for order in alpaca_orders:
-        client_id = order["client_order_id"]
-        alpaca_status = order["status"]
+        client_id = order.client_order_id
+        alpaca_status = order.status
 
         if client_id in {o.client_order_id for o in sqlite_orders}:
             sqlite_order: Any = next(o for o in sqlite_orders if o.client_order_id == client_id)
             sqlite_status = str(getattr(sqlite_order, "status", None) or "unknown")
-            sqlite_state = OrderState.from_alpaca(sqlite_status)
-            alpaca_state = OrderState.from_alpaca(alpaca_status)
+            sqlite_state = OrderState.from_alpaca(str(sqlite_status or ""))
+            alpaca_state = OrderState.from_alpaca(str(alpaca_status or ""))
 
             if alpaca_state.is_terminal and sqlite_state.has_fill_potential:
                 safe_updates += 1
@@ -69,7 +164,7 @@ def compare_order_states(
                 # Order is terminal locally, not in Alpaca (possible timeout/already cleared)
                 continue
 
-            alpaca_status_from_ids: str = alpaca_order_ids[client_id].get("status") or ""
+            alpaca_status_from_ids: str = alpaca_order_ids[client_id].status or ""
             alpaca_state_from_ids = OrderState.from_alpaca(alpaca_status_from_ids)
             if alpaca_state_from_ids.has_fill_potential:
                 discrepancies.append(
@@ -84,12 +179,17 @@ def compare_order_states(
     # Rule 3: Alpaca has open orders not in SQLite → DISCREPANCY
     sqlite_client_ids = {o.client_order_id for o in sqlite_orders}
     for order in alpaca_orders:
-        if order["client_order_id"] not in sqlite_client_ids:
+        if order.client_order_id not in sqlite_client_ids:
             discrepancies.append(
                 {
                     "type": "order_not_in_sqlite",
-                    "client_order_id": order["client_order_id"],
-                    "alpaca_details": order,
+                    "client_order_id": order.client_order_id,
+                    "alpaca_details": {
+                        "id": order.id,
+                        "client_order_id": order.client_order_id,
+                        "symbol": order.symbol,
+                        "status": order.status,
+                    },
                 }
             )
 
@@ -99,22 +199,24 @@ def compare_order_states(
 def apply_safe_order_updates(
     state_store: StateStore,
     sqlite_orders: List[OrderIntent],
-    alpaca_orders: List[Dict[str, Any]],
+    alpaca_orders: List[Any],
 ) -> int:
     """Apply Rule 1 updates (Alpaca terminal → SQLite).
 
     Returns: Count of orders updated
     """
     updated = 0
+    # Coerce any dict-shaped orders into OrderInfo dataclasses
+    alpaca_orders = [_to_orderinfo(o) for o in alpaca_orders]
     for order in alpaca_orders:
-        client_id = order["client_order_id"]
-        alpaca_status = order["status"]
+        client_id = order.client_order_id
+        alpaca_status = order.status
 
         if client_id in {o.client_order_id for o in sqlite_orders}:
             sqlite_order: Any = next(o for o in sqlite_orders if o.client_order_id == client_id)
             sqlite_status = str(getattr(sqlite_order, "status", None) or "unknown")
-            sqlite_state = OrderState.from_alpaca(sqlite_status)
-            alpaca_state = OrderState.from_alpaca(alpaca_status)
+            sqlite_state = OrderState.from_alpaca(str(sqlite_status or ""))
+            alpaca_state = OrderState.from_alpaca(str(alpaca_status or ""))
 
             if alpaca_state.is_terminal and sqlite_state.has_fill_potential:
                 # Update SQLite to match Alpaca (Alpaca is authoritative for terminal states)
@@ -122,8 +224,8 @@ def apply_safe_order_updates(
                 state_store.update_order_intent(
                     client_order_id=client_id,
                     status=alpaca_status or "unknown",
-                    filled_qty=parse_optional_float(order.get("filled_qty")),
-                    alpaca_order_id=order.get("id"),
+                    filled_qty=parse_optional_float(order.filled_qty),
+                    alpaca_order_id=order.id,
                 )
                 updated += 1
 
@@ -131,14 +233,16 @@ def apply_safe_order_updates(
 
 
 def compare_positions(
-    sqlite_positions: Dict[str, PositionSnapshot], alpaca_positions: List[Dict[str, Any]]
+    sqlite_positions: Dict[str, PositionSnapshot], alpaca_positions: List[Any]
 ) -> list[dict[str, object]]:
     """Compare SQLite vs Alpaca positions (Rule 4).
 
     Returns: List of position mismatches
     """
     discrepancies: list[dict[str, object]] = []
-    alpaca_position_map = {p["symbol"]: p["qty"] for p in alpaca_positions}
+    # Ensure PositionInfo dataclasses
+    alpaca_positions = [_to_positioninfo(p) for p in alpaca_positions]
+    alpaca_position_map = {p.symbol: p.qty for p in alpaca_positions}
 
     for symbol, sqlite_snapshot in sqlite_positions.items():
         alpaca_qty = alpaca_position_map.get(symbol, 0)
@@ -178,9 +282,13 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
     """
     # Get state from both sources (await async broker methods)
     try:
-        alpaca_orders = cast(List[Dict[str, Any]], await broker.get_open_orders())
-        alpaca_positions = cast(List[Dict[str, Any]], await broker.get_positions())
+        alpaca_orders: List[OrderInfo] = await broker.get_open_orders()
+        alpaca_positions: List[PositionInfo] = await broker.get_positions()
         sqlite_orders = state_store.get_all_order_intents()
+
+        # Coerce broker-returned structures into our dataclasses for consistent handling
+        alpaca_orders = [_to_orderinfo(o) for o in (alpaca_orders or [])]
+        alpaca_positions = [_to_positioninfo(p) for p in (alpaca_positions or [])]
 
         logger.info(
             f"Reconciling: {len(alpaca_orders)} open orders in Alpaca, {len(sqlite_orders)} in SQLite"
@@ -220,7 +328,7 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
         report = {
             "timestamp": datetime.now(timezone.utc).isoformat(),
             "discrepancies": discrepancies,
-            "alpaca_orders": alpaca_orders,
+            "alpaca_orders": [o.__dict__ for o in alpaca_orders],
             "sqlite_orders": [o.to_dict() for o in sqlite_orders],
         }
 
@@ -247,9 +355,9 @@ async def reconcile(broker: Any, state_store: StateStore) -> None:
                    VALUES (?, ?, ?, ?)""",
                 (
                     now_utc,
-                    position["symbol"],
-                    position["qty"],
-                    position["avg_entry_price"] or 0.0,
+                    position.symbol,
+                    position.qty,
+                    position.avg_entry_price or 0.0,
                 ),
             )
 
@@ -299,15 +407,17 @@ async def reconcile_fills(
 
         # Fetch all open orders from broker
         try:
-            broker_orders = cast(List[Dict[str, Any]], await broker.get_open_orders())
+            broker_orders: List[OrderInfo] = await broker.get_open_orders()
+            # Coerce any dict-shaped orders into OrderInfo dataclasses
+            broker_orders = [_to_orderinfo(o) for o in broker_orders]
         except Exception as e:
             logger.error("Fill reconciliation: failed to fetch broker orders: %s", e)
             return 0
 
-        broker_order_map: Dict[str, Dict[str, Any]] = {}
+        broker_order_map: Dict[str, OrderInfo] = {}
         for bo in broker_orders:
-            cid = bo.get("client_order_id")
-            aid = bo.get("id")
+            cid = bo.client_order_id
+            aid = bo.id
             if cid:
                 broker_order_map[cid] = bo
             if aid:
@@ -329,7 +439,8 @@ async def reconcile_fills(
                         get_order = getattr(broker, "get_order")
                         if callable(get_order):
                             try:
-                                broker_order = cast(Dict[str, Any], await get_order(fetch_id))
+                                fetched_order: OrderInfo = await get_order(fetch_id)
+                                broker_order = _to_orderinfo(fetched_order)
                             except Exception as fetch_err:
                                 logger.warning(
                                     "Fill reconciliation: failed to fetch order %s from broker: %s",
@@ -344,9 +455,9 @@ async def reconcile_fills(
                     )
                     continue
 
-                broker_filled_qty = parse_optional_float(broker_order.get("filled_qty")) or 0.0
-                broker_avg_price = parse_optional_float(broker_order.get("filled_avg_price"))
-                broker_status = str(broker_order.get("status", "unknown")).lower()
+                broker_filled_qty = parse_optional_float(broker_order.filled_qty) or 0.0
+                broker_avg_price = parse_optional_float(broker_order.filled_avg_price)
+                broker_status = str(broker_order.status or "unknown").lower()
 
                 if broker_filled_qty > db_filled_qty + 1e-9:
                     logger.warning(

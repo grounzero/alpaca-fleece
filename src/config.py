@@ -56,16 +56,51 @@ class ExitConfig:
         )
 
 
+def _validate_api_key(key: str, value: str) -> None:
+    """Validate API key is not empty or placeholder.
+
+    Args:
+        key: Config key name (for error messages)
+        value: API key value to validate
+
+    Raises:
+        ConfigError: If value is empty or placeholder
+    """
+    placeholders = ("", "YOUR_API_KEY_HERE", "YOUR_SECRET_KEY_HERE", "placeholder", "xxx")
+    if not value or value.strip() in placeholders:
+        raise ConfigError(
+            f"{key} is not set or contains placeholder value. "
+            f"Set a valid API key via .env file or environment variable. "
+            f"Current value: '{value[:20]}...' if value else 'EMPTY'"
+        )
+
+
 def load_env() -> EnvConfig:
     """Load environment variables from .env file and environment.
 
+    Environment variables take precedence over .env file (standard Docker behavior).
+    Validates API keys are not placeholders.
+
     Returns:
         EnvConfig with all environment settings
+
+    Raises:
+        ConfigError: If API keys are missing or contain placeholder values
     """
-    load_dotenv()
+    # Load .env file - env vars override file (standard behavior)
+    load_dotenv(override=True)
+
+    # Get values from environment (either from shell or .env file)
+    api_key = os.getenv("ALPACA_API_KEY", "").strip()
+    secret_key = os.getenv("ALPACA_SECRET_KEY", "").strip()
+
+    # Validate API keys are not placeholders
+    _validate_api_key("ALPACA_API_KEY", api_key)
+    _validate_api_key("ALPACA_SECRET_KEY", secret_key)
+
     return EnvConfig(
-        ALPACA_API_KEY=os.getenv("ALPACA_API_KEY", ""),
-        ALPACA_SECRET_KEY=os.getenv("ALPACA_SECRET_KEY", ""),
+        ALPACA_API_KEY=api_key,
+        ALPACA_SECRET_KEY=secret_key,
         ALPACA_PAPER=os.getenv("ALPACA_PAPER", "true").lower() == "true",
         ALLOW_LIVE_TRADING=os.getenv("ALLOW_LIVE_TRADING", "false").lower() == "true",
         KILL_SWITCH=os.getenv("KILL_SWITCH", "false").lower() == "true",
@@ -97,41 +132,60 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
     """Validate exit manager configuration.
 
     Args:
-        exit_config: Dictionary containing exit configuration values
+        exit_config: Exit configuration dict
 
     Raises:
-        ConfigError: If any exit configuration value is invalid
+        ConfigError: If configuration is invalid
     """
-    # Validate that exit_config is a mapping
-    if not isinstance(exit_config, dict):
-        raise ConfigError(
-            f"trading.exits (exit_config) must be a mapping/dict, got {type(exit_config).__name__}"
-        )
-
-    # Coerce and validate numeric fields, raising ConfigError on bad types
-    try:
-        stop_loss = float(exit_config.get("stop_loss_pct", 0.01))
-        profit_target = float(exit_config.get("profit_target_pct", 0.02))
-        trailing_activation = float(exit_config.get("trailing_stop_activation_pct", 0.01))
-        trailing_trail = float(exit_config.get("trailing_stop_trail_pct", 0.005))
-    except (TypeError, ValueError) as e:
-        raise ConfigError(f"Exit config numeric fields must be numbers: {e}") from e
-
-    if not 0 < stop_loss < 1:
+    # Validate stop_loss_pct - must be strictly between 0 and 1
+    stop_loss = exit_config.get("stop_loss_pct", 0.01)
+    if not isinstance(stop_loss, (int, float)) or stop_loss <= 0 or stop_loss >= 1:
         raise ConfigError(f"stop_loss_pct must be between 0 and 1, got {stop_loss}")
-    if not 0 < profit_target < 1:
+
+    # Validate profit_target_pct - must be strictly between 0 and 1
+    profit_target = exit_config.get("profit_target_pct", 0.02)
+    if not isinstance(profit_target, (int, float)) or profit_target <= 0 or profit_target >= 1:
         raise ConfigError(f"profit_target_pct must be between 0 and 1, got {profit_target}")
-    if trailing_trail >= stop_loss:
+
+    # Validate trailing_stop settings
+    activation = exit_config.get("trailing_stop_activation_pct", 0.01)
+    if not isinstance(activation, (int, float)) or activation <= 0:
+        raise ConfigError(f"trailing_stop_activation_pct must be positive, got {activation}")
+
+    trail = exit_config.get("trailing_stop_trail_pct", 0.005)
+    if not isinstance(trail, (int, float)) or trail <= 0:
+        raise ConfigError(f"trailing_stop_trail_pct must be positive, got {trail}")
+
+    # Validate trailing trail is less than stop loss
+    if trail >= stop_loss:
         raise ConfigError(
-            f"trailing_stop_trail_pct ({trailing_trail}) must be less than stop_loss_pct ({stop_loss})"
+            f"trailing_stop_trail_pct ({trail}) must be less than stop_loss_pct ({stop_loss})"
         )
-    if trailing_activation <= 0:
-        raise ConfigError("trailing_stop_activation_pct must be positive")
+
+
+def load_config(config_path: str = "config/trading.yaml") -> dict[str, Any]:
+    """Load and validate full trading configuration.
+
+    Args:
+        config_path: Path to YAML config file
+
+    Returns:
+        Validated configuration dict
+
+    Raises:
+        ConfigError: If configuration is invalid
+    """
+    config = load_trading_config(config_path)
+
+    # Validate exit config if present
+    if "exit" in config:
+        validate_exit_config(config["exit"])
+
+    return config
 
 
 def validate_config(env: EnvConfig, trading: dict[str, Any]) -> None:
     """Validate configuration for safety gates and consistency."""
-
     # Safety gates
     if not env["ALPACA_API_KEY"]:
         raise ConfigError("ALPACA_API_KEY not set")
@@ -171,6 +225,7 @@ def validate_config(env: EnvConfig, trading: dict[str, Any]) -> None:
                 "symbols.mode=explicit requires at least one of symbols.equity_symbols, "
                 "symbols.crypto_symbols"
             )
+
     # Validate strategy
     strategy_config = trading.get("strategy", {})
     if not strategy_config.get("name"):
@@ -185,6 +240,3 @@ def validate_config(env: EnvConfig, trading: dict[str, Any]) -> None:
     # Validate exit configuration
     exits_config = trading.get("exits", {})
     validate_exit_config(exits_config)
-
-    # Validate asset scope (US equities only)
-    # This will be checked at runtime when symbols are resolved

@@ -338,7 +338,7 @@ class Orchestrator:
             dict: Data layer status
         """
         logger.info("=" * 60)
-        logger.info("PHASE 2: Data Layer Initialization")
+        logger.info("PHASE 2: Data Layer Initialisation")
         logger.info("=" * 60)
 
         try:
@@ -368,6 +368,7 @@ class Orchestrator:
             self.market_data_client = MarketDataClient(
                 api_key=self.env["ALPACA_API_KEY"],
                 secret_key=self.env["ALPACA_SECRET_KEY"],
+                trading_config=self.trading_config,
             )
             self.assets_client = AssetsClient(
                 api_key=self.env["ALPACA_API_KEY"],
@@ -543,7 +544,7 @@ class Orchestrator:
             )
             logger.info("   Risk manager ready")
 
-            # Defer order manager initialization until position tracker is
+            # Defer order manager initialisation until position tracker is
             # initialised and reconciled. This prevents the OrderManager from
             # operating with a None/stale tracker during startup.
             logger.info("Deferring order manager initialisation until position tracker ready")
