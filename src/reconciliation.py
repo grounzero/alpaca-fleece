@@ -132,8 +132,9 @@ def _to_positioninfo(p: Any) -> PositionInfo:
             avg_entry_price=parse_optional_float(p.get("avg_entry_price")),
             current_price=parse_optional_float(p.get("current_price")),
         )
+    symbol_val = getattr(p, "symbol", None)
     return PositionInfo(
-        symbol=str(getattr(p, "symbol", "") or ""),
+        symbol=str(symbol_val) if symbol_val is not None else "",
         qty=(float(getattr(p, "qty", 0)) if getattr(p, "qty", None) is not None else 0.0),
         avg_entry_price=parse_optional_float(getattr(p, "avg_entry_price", None)),
         current_price=parse_optional_float(getattr(p, "current_price", None)),
