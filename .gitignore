@@ -90,3 +90,5 @@ docs/
 # Scripts directory (local utilities)
 scripts/
 
+systemd
+
