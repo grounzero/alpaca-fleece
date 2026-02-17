@@ -71,7 +71,7 @@ def _validate_api_key(key: str, value: str) -> None:
         raise ConfigError(
             f"{key} is not set or contains placeholder value. "
             f"Set a valid API key via .env file or environment variable. "
-            f"Current value: '{value[:20]}...' if value else 'EMPTY'"
+            f"Current value: '{(value[:20] + '...') if value else 'EMPTY'}'"
         )
 
 
