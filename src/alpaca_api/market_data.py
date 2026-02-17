@@ -82,25 +82,25 @@ class MarketDataClient(AlpacaDataClient):
             Dict with keys: bid, ask, bid_size, ask_size, last_quote_time
         """
         try:
-            # Use injected trading_config when available. Keep legacy fallback
-            # to the "contains '/'" heuristic when no configured crypto list.
             cfg = self.trading_config or {}
             symbols_cfg = cfg.get("symbols", {}) if isinstance(cfg, dict) else {}
             crypto_list = (
                 [str(s) for s in symbols_cfg.get("crypto_symbols", [])] if symbols_cfg else []
             )
+            equity_list = (
+                [str(s) for s in symbols_cfg.get("equity_symbols", [])] if symbols_cfg else []
+            )
 
-            if crypto_list:
-                is_crypto = symbol in crypto_list
-            else:
-                is_crypto = "/" in symbol
-
-            if is_crypto:
+            if symbol in crypto_list:
                 crypto_request = CryptoLatestQuoteRequest(symbol_or_symbols=symbol)
                 quote = self.client.get_crypto_latest_quote(crypto_request)
-            else:
+            elif symbol in equity_list:
                 stock_request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
                 quote = self.client.get_stock_latest_quote(stock_request)
+            else:
+                raise AlpacaDataClientError(
+                    f"Symbol '{symbol}' not listed in trading_config 'crypto_symbols' or 'equity_symbols'"
+                )
 
             if symbol not in quote:
                 return {}
