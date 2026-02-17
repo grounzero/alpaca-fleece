@@ -86,7 +86,7 @@ class AlpacaDataClient:
             crypto_list = []
             equity_list = []
 
-        if equity_list and StockHistoricalDataClient is not None:
+        if equity_list:
             try:
                 self.stock_client = StockHistoricalDataClient(
                     api_key=api_key,
