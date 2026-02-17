@@ -109,8 +109,8 @@ def _to_orderinfo(o: Any) -> OrderInfo:
         created_val = created_attr
 
     return OrderInfo(
-        id=str(id_attr or ""),
-        client_order_id=str(client_attr or ""),
+        id=str(id_attr) if id_attr is not None else "",
+        client_order_id=str(client_attr) if client_attr is not None else "",
         symbol=str(symbol_attr or ""),
         side=side_val,
         qty=qty_val,
