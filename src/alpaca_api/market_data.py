@@ -16,7 +16,9 @@ class MarketDataClient(AlpacaDataClient):
     def __init__(
         self, api_key: str, secret_key: str, trading_config: Optional[dict[str, Any]] = None
     ) -> None:
-        super().__init__(api_key, secret_key)
+        # Pass trading_config to base which will decide whether to create
+        # a crypto client based on configured symbols and SDK availability.
+        super().__init__(api_key, secret_key, trading_config=trading_config)
         self.trading_config: dict[str, Any] = trading_config or {}
 
     def get_bars(
@@ -56,7 +58,7 @@ class MarketDataClient(AlpacaDataClient):
                 end=end,
                 limit=limit,
             )
-            bars = self.client.get_stock_bars(request)
+            bars = self.stock_client.get_stock_bars(request)
 
             if symbol not in bars:
                 return pd.DataFrame()
@@ -93,10 +95,10 @@ class MarketDataClient(AlpacaDataClient):
 
             if symbol in crypto_list:
                 crypto_request = CryptoLatestQuoteRequest(symbol_or_symbols=symbol)
-                quote = self.client.get_crypto_latest_quote(crypto_request)
+                quote = self.crypto_client.get_crypto_latest_quote(crypto_request)
             elif symbol in equity_list:
                 stock_request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
-                quote = self.client.get_stock_latest_quote(stock_request)
+                quote = self.stock_client.get_stock_latest_quote(stock_request)
             else:
                 raise AlpacaDataClientError(
                     f"Symbol '{symbol}' not listed in trading_config 'crypto_symbols' or 'equity_symbols'"

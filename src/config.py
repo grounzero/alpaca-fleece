@@ -137,6 +137,12 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
     Raises:
         ConfigError: If configuration is invalid
     """
+    # Ensure we received a mapping/dict from YAML; YAML may contain `null`
+    # or other types which would cause AttributeError on `.get(...)` below.
+    if not isinstance(exit_config, dict):
+        raise ConfigError(
+            f"exit configuration must be a mapping/dict, got {type(exit_config).__name__}"
+        )
     # Validate stop_loss_pct - must be strictly between 0 and 1
     stop_loss = exit_config.get("stop_loss_pct", 0.01)
     if not isinstance(stop_loss, (int, float)) or stop_loss <= 0 or stop_loss >= 1:
