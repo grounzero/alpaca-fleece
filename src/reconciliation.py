@@ -35,16 +35,39 @@ def _to_orderinfo(o: Any) -> OrderInfo:
     if isinstance(o, OrderInfo):
         return o
     if isinstance(o, dict):
+        # Dict branch: mirror the normalisation logic of the object-attribute branch.
+        raw_id = o.get("id")
+        raw_client_id = o.get("client_order_id")
+        raw_symbol = o.get("symbol")
+
+        raw_side = o.get("side")
+        if raw_side is not None and hasattr(raw_side, "value"):
+            side_val = raw_side.value
+        else:
+            side_val = raw_side
+
+        raw_status = o.get("status")
+        if raw_status is not None and hasattr(raw_status, "value"):
+            status_val = raw_status.value
+        else:
+            status_val = raw_status
+
+        raw_created = o.get("created_at")
+        if raw_created is not None and hasattr(raw_created, "isoformat"):
+            created_val = raw_created.isoformat()
+        else:
+            created_val = raw_created
+
         return OrderInfo(
-            id=str(o.get("id", "")),
-            client_order_id=str(o.get("client_order_id", "")),
-            symbol=str(o.get("symbol", "")) if o.get("symbol") is not None else "",
-            side=o.get("side"),
+            id=str(raw_id or ""),
+            client_order_id=str(raw_client_id or ""),
+            symbol=str(raw_symbol) if raw_symbol is not None else "",
+            side=side_val,
             qty=parse_optional_float(o.get("qty")),
-            status=o.get("status"),
+            status=status_val,
             filled_qty=parse_optional_float(o.get("filled_qty")),
             filled_avg_price=parse_optional_float(o.get("filled_avg_price")),
-            created_at=o.get("created_at"),
+            created_at=created_val,
         )
 
     # SDK/object fallback: inspect attributes safely
