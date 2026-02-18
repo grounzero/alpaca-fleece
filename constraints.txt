@@ -11,7 +11,7 @@ pytz==2025.2
 # Dev tooling (optional / pin for CI reproducibility)
 black==26.1.0
 isort==7.0.0
-ruff==0.15.0
+ruff==0.15.1
 mypy==1.19.1
 pytest==9.0.2
 pytest-asyncio==1.3.0
