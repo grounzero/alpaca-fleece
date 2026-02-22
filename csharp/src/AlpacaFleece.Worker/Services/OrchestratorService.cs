@@ -33,6 +33,11 @@ public sealed class OrchestratorService(
     {
         logger.LogInformation("Phase 1: Infrastructure - Starting schema and reconciliation");
 
+        // Ensure database is created before proceeding
+        using var scope = serviceProvider.CreateScope();
+        var dbContext = scope.ServiceProvider.GetRequiredService<TradingDbContext>();
+        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+
         // Rehydrate PositionTracker from DB before the trading loop begins.
         // Mirrors Python's PositionTracker._load_from_db() so a worker restart does not
         // lose open-position metadata (entry price, ATR, trailing stop).

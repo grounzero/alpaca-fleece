@@ -17,6 +17,9 @@ public static class StateRepositoryExtensions
         services.AddDbContext<TradingDbContext>(options =>
             options.UseSqlite(connectionString));
 
+        services.AddPooledDbContextFactory<TradingDbContext>(options =>
+            options.UseSqlite(connectionString));
+
         services.AddScoped<IStateRepository, StateRepository>();
 
         return services;
