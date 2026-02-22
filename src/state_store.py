@@ -101,7 +101,7 @@ class StateStore:
     ) -> bool:
         """Atomically try to accept an entry signal for (strategy, symbol, action).
 
-        Non-force behavior: perform a monotonic upsert so older timestamps cannot
+        Non-force behaviour: perform a monotonic upsert so older timestamps cannot
         overwrite newer ones. Returns True only when the stored row contains the
         new `now_utc` value after the operation.
 
@@ -173,7 +173,7 @@ class StateStore:
                 # Monotonic upsert SQL: only overwrite the stored `last_accepted_ts_utc`
                 # when the incoming `excluded.last_accepted_ts_utc` is newer (greater).
                 #
-                # Note for maintainers/tests: this behavior is subtle and should be
+                # Note for maintainers/tests: this behaviour is subtle and should be
                 # covered by a unit test. A good test would:
                 # 1) call `gate_try_accept` with `now_utc = t2` and assert it returns True
                 #    and stores `t2`.

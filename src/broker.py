@@ -147,8 +147,8 @@ class Broker:
 
         This implementation is intentionally synchronous and simple. The
         centralized `AsyncBrokerAdapter` provides the real concurrency,
-        timeouts and retry behavior at runtime. Tests can patch this method
-        to simulate timeouts or other behaviors.
+        timeouts and retry behaviour at runtime. Tests can patch this method
+        to simulate timeouts or other behaviours.
         """
         # If an executor is present, use it so tests can inject fake executors
         # to simulate timeouts. Otherwise call synchronously.

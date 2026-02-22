@@ -135,7 +135,7 @@ class Housekeeping:
                 if self.order_manager is None:
                     # No order manager wired - fall back to direct broker submits (legacy)
                     logger.warning(
-                        "OrderManager not wired into Housekeeping; using legacy submit behavior"
+                        "OrderManager not wired into Housekeeping; using legacy submit behaviour"
                     )
                     maybe_positions = self.broker.get_positions()
                     positions = (

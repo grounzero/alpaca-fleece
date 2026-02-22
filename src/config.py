@@ -78,7 +78,7 @@ def _validate_api_key(key: str, value: str) -> None:
 def load_env() -> EnvConfig:
     """Load environment variables from .env file and environment.
 
-    Environment variables take precedence over .env file (standard Docker behavior).
+    Environment variables take precedence over .env file (standard Docker behaviour).
     Validates API keys are not placeholders.
 
     Returns:
@@ -87,7 +87,7 @@ def load_env() -> EnvConfig:
     Raises:
         ConfigError: If API keys are missing or contain placeholder values
     """
-    # Load .env file - env vars override file (standard behavior)
+    # Load .env file - env vars override file (standard behaviour)
     load_dotenv(override=True)
 
     # Get values from environment (either from shell or .env file)
