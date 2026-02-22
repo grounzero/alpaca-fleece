@@ -156,15 +156,11 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
     # Validate trailing_stop settings
     activation = exit_config.get("trailing_stop_activation_pct", 0.01)
     if not isinstance(activation, (int, float)) or activation <= 0 or activation >= 1:
-        raise ConfigError(
-            f"trailing_stop_activation_pct must be between 0 and 1, got {activation}"
-        )
+        raise ConfigError(f"trailing_stop_activation_pct must be between 0 and 1, got {activation}")
 
     trail = exit_config.get("trailing_stop_trail_pct", 0.005)
     if not isinstance(trail, (int, float)) or trail <= 0 or trail >= 1:
-        raise ConfigError(
-            f"trailing_stop_trail_pct must be between 0 and 1, got {trail}"
-        )
+        raise ConfigError(f"trailing_stop_trail_pct must be between 0 and 1, got {trail}")
 
     # Validate trailing trail is less than stop loss
     if trail >= stop_loss:

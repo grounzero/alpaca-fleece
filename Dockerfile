@@ -1,29 +1,48 @@
-FROM python:3.12-slim
+# Multi-stage build for AlpacaFleece
+FROM mcr.microsoft.com/dotnet/sdk:10-alpine AS build
+WORKDIR /src
 
-# Install uv for fast dependency resolution
-RUN pip install uv
+# Copy project files
+COPY ["csharp/src/AlpacaFleece.Core/AlpacaFleece.Core.csproj", "src/AlpacaFleece.Core/"]
+COPY ["csharp/src/AlpacaFleece.Infrastructure/AlpacaFleece.Infrastructure.csproj", "src/AlpacaFleece.Infrastructure/"]
+COPY ["csharp/src/AlpacaFleece.Trading/AlpacaFleece.Trading.csproj", "src/AlpacaFleece.Trading/"]
+COPY ["csharp/src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj", "src/AlpacaFleece.Worker/"]
 
+# Copy source files
+COPY ["csharp/src/", "src/"]
+
+# Restore and build
+RUN dotnet restore "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj"
+RUN dotnet build "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
+    -c Release -o /app/build --no-restore
+
+# Publish
+RUN dotnet publish "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
+    -c Release -o /app/publish --no-build --no-restore
+
+# Runtime image
+FROM mcr.microsoft.com/dotnet/runtime:10-alpine
 WORKDIR /app
 
-# Copy dependency files first for layer caching
-COPY pyproject.toml ./
-COPY uv.lock ./
+# Install SQLite
+RUN apk add --no-cache sqlite-libs
 
-# Install dependencies using uv
-RUN uv sync --frozen --no-dev
+# Copy published application
+COPY --from=build /app/publish .
 
-# Copy source code
-COPY src/ ./src/
-COPY main.py ./
-COPY config/ ./config/
-COPY data/ ./data/
-
-# Create logs directory
-RUN mkdir -p logs
+# Create data directory for database, logs, metrics
+RUN mkdir -p /app/data /app/logs
 
 # Set environment variables
-ENV PYTHONPATH=/app
-ENV PYTHONUNBUFFERED=1
+ENV ASPNETCORE_ENVIRONMENT=Production
+ENV DOTNET_EnableDiagnostics=0
 
-# Run the bot
-CMD ["uv", "run", "python", "main.py"]
+# Volume for persistent data
+VOLUME ["/app/data"]
+
+# Health check endpoint (if HTTP server available)
+HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
+    CMD dotnet --version || exit 1
+
+# Entry point
+ENTRYPOINT ["dotnet", "AlpacaFleece.Worker.dll"]

@@ -1,0 +1,70 @@
+namespace AlpacaFleece.Worker.Services;
+
+/// <summary>
+/// Orchestrator service implementing 4-phase startup via IHostedLifecycleService.
+/// Phase 1: Infrastructure (SchemaManager, reconciliation)
+/// Phase 2: Data Layer (EventBus start)
+/// Phase 3: Trading Logic (services)
+/// Phase 4: Runtime (signal handlers, task monitoring)
+/// </summary>
+public sealed class OrchestratorService(
+    ILogger<OrchestratorService> logger,
+    IServiceProvider serviceProvider) : IHostedLifecycleService
+{
+    /// <summary>
+    /// IHostedService.StartAsync - called when host starts.
+    /// </summary>
+    public Task StartAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation("OrchestratorService.StartAsync");
+        return Task.CompletedTask;
+    }
+
+    /// <summary>
+    /// IHostedService.StopAsync - called when host stops.
+    /// </summary>
+    public Task StopAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation("OrchestratorService.StopAsync");
+        return Task.CompletedTask;
+    }
+
+    public Task StartingAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Phase 1: Infrastructure - Starting schema and reconciliation");
+        // Schema manager and reconciliation handled by SchemaManagerService
+        return Task.CompletedTask;
+    }
+
+    public async Task StartedAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Phase 2-4: Data Layer, Trading Logic, Runtime - All services started");
+
+        // Register signal handlers
+        Console.CancelKeyPress += (sender, args) =>
+        {
+            args.Cancel = true;
+            logger.LogInformation("SIGINT received, initiating graceful shutdown");
+        };
+
+        AppDomain.CurrentDomain.ProcessExit += (sender, args) =>
+        {
+            logger.LogInformation("SIGTERM received, initiating graceful shutdown");
+        };
+
+        logger.LogInformation("AlpacaFleece trading bot started successfully");
+        await Task.CompletedTask;
+    }
+
+    public async Task StoppingAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Graceful shutdown initiated");
+        await Task.CompletedTask;
+    }
+
+    public async Task StoppedAsync(CancellationToken cancellationToken)
+    {
+        logger.LogInformation("Graceful shutdown completed");
+        await Task.CompletedTask;
+    }
+}

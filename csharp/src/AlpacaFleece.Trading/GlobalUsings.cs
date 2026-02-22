@@ -1,0 +1,17 @@
+global using System;
+global using System.Collections.Generic;
+global using System.Linq;
+global using System.Threading;
+global using System.Threading.Tasks;
+global using Microsoft.Extensions.DependencyInjection;
+global using Microsoft.Extensions.Logging;
+global using Microsoft.Extensions.Options;
+global using AlpacaFleece.Core.Events;
+global using AlpacaFleece.Core.Exceptions;
+global using AlpacaFleece.Core.Interfaces;
+global using AlpacaFleece.Core.Models;
+global using AlpacaFleece.Trading.Config;
+global using AlpacaFleece.Trading.Exits;
+global using AlpacaFleece.Trading.Orders;
+global using AlpacaFleece.Trading.Positions;
+global using Serilog;

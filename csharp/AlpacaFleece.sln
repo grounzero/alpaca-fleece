@@ -1,0 +1,42 @@
+Microsoft Visual Studio Solution File, Format Version 12.00
+# Visual Studio Version 17
+VisualStudioVersion = 17.0.31919.166
+MinimumVisualStudioVersion = 10.0.40219.1
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AlpacaFleece.Core", "src\AlpacaFleece.Core\AlpacaFleece.Core.csproj", "{00000001-0001-0001-0001-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AlpacaFleece.Infrastructure", "src\AlpacaFleece.Infrastructure\AlpacaFleece.Infrastructure.csproj", "{00000002-0001-0001-0001-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AlpacaFleece.Trading", "src\AlpacaFleece.Trading\AlpacaFleece.Trading.csproj", "{00000003-0001-0001-0001-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AlpacaFleece.Worker", "src\AlpacaFleece.Worker\AlpacaFleece.Worker.csproj", "{00000004-0001-0001-0001-000000000001}"
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "AlpacaFleece.Tests", "tests\AlpacaFleece.Tests\AlpacaFleece.Tests.csproj", "{00000005-0001-0001-0001-000000000001}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Any CPU = Debug|Any CPU
+		Release|Any CPU = Release|Any CPU
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{00000001-0001-0001-0001-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00000001-0001-0001-0001-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00000001-0001-0001-0001-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00000001-0001-0001-0001-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00000002-0001-0001-0001-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00000002-0001-0001-0001-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00000002-0001-0001-0001-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00000002-0001-0001-0001-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00000003-0001-0001-0001-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00000003-0001-0001-0001-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00000003-0001-0001-0001-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00000003-0001-0001-0001-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00000004-0001-0001-0001-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00000004-0001-0001-0001-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00000004-0001-0001-0001-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00000004-0001-0001-0001-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+		{00000005-0001-0001-0001-000000000001}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{00000005-0001-0001-0001-000000000001}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{00000005-0001-0001-0001-000000000001}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{00000005-0001-0001-0001-000000000001}.Release|Any CPU.Build.0 = Release|Any CPU
+	EndGlobalSection
+EndGlobal
