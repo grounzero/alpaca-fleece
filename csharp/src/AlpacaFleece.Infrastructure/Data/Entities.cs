@@ -16,7 +16,7 @@ public sealed class OrderIntentEntity
     public string Side { get; set; } = string.Empty;
     public int Quantity { get; set; }
     public decimal LimitPrice { get; set; }
-    public string Status { get; set; } = string.Empty; // serialized OrderState
+    public string Status { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
 }

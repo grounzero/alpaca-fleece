@@ -1,3 +1,5 @@
+using Alpaca.Markets;
+
 namespace AlpacaFleece.Infrastructure.Broker;
 
 /// <summary>
@@ -6,7 +8,7 @@ namespace AlpacaFleece.Infrastructure.Broker;
 public static class BrokerExtensions
 {
     /// <summary>
-    /// Registers broker services.
+    /// Registers broker services and creates the Alpaca trading client.
     /// </summary>
     public static IServiceCollection AddBrokerServices(
         this IServiceCollection services,
@@ -14,7 +16,12 @@ public static class BrokerExtensions
     {
         options.Validate();
 
+        var environment = options.IsPaperTrading ? Environments.Paper : Environments.Live;
+        var secretKey = new SecretKey(options.ApiKey, options.SecretKey);
+        var tradingClient = environment.GetAlpacaTradingClient(secretKey);
+
         services.AddSingleton(options);
+        services.AddSingleton(tradingClient);
         services.AddSingleton<IBrokerService, AlpacaBrokerService>();
 
         return services;

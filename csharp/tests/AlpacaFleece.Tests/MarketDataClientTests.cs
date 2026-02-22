@@ -1,21 +1,35 @@
+using Alpaca.Markets;
+
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// Tests for MarketDataClient (quote mapping, equity/crypto detection).
+/// Tests for MarketDataClient (quote mapping, equity/crypto detection, API routing).
 /// </summary>
 public sealed class MarketDataClientTests
 {
+    private static MarketDataClient CreateClient(
+        IAlpacaDataClient? equityClient = null,
+        IAlpacaCryptoDataClient? cryptoClient = null)
+    {
+        equityClient ??= Substitute.For<IAlpacaDataClient>();
+        cryptoClient ??= Substitute.For<IAlpacaCryptoDataClient>();
+        var logger = Substitute.For<ILogger<MarketDataClient>>();
+        return new MarketDataClient(equityClient, cryptoClient, logger);
+    }
+
     [Fact]
     public async Task GetBarsAsync_ReturnsEmptyList_WhenNoData()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var mockEquityClient = Substitute.For<IAlpacaDataClient>();
+        var mockPage = Substitute.For<IPage<IBar>>();
+        mockPage.Items.Returns(new List<IBar>().AsReadOnly());
+        mockEquityClient
+            .ListHistoricalBarsAsync(Arg.Any<HistoricalBarsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(mockPage);
 
-        // Act
-        var result = await client.GetBarsAsync("AAPL", "1m", 50);
+        var client = CreateClient(equityClient: mockEquityClient);
+        var result = await client.GetBarsAsync("AAPL", "1Min", 50);
 
-        // Assert
         Assert.NotNull(result);
         Assert.Empty(result);
     }
@@ -23,40 +37,31 @@ public sealed class MarketDataClientTests
     [Fact]
     public async Task GetBarsAsync_ThrowsException_WhenSymbolEmpty()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
-            async () => await client.GetBarsAsync("", "1m", 50));
+            async () => await client.GetBarsAsync("", "1Min", 50));
     }
 
     [Fact]
     public async Task GetBarsAsync_ThrowsException_WhenLimitOutOfRange()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
-
-        // Act & Assert
-        await Assert.ThrowsAsync<ArgumentException>(
-            async () => await client.GetBarsAsync("AAPL", "1m", 0));
+        var client = CreateClient();
 
         await Assert.ThrowsAsync<ArgumentException>(
-            async () => await client.GetBarsAsync("AAPL", "1m", 10001));
+            async () => await client.GetBarsAsync("AAPL", "1Min", 0));
+
+        await Assert.ThrowsAsync<ArgumentException>(
+            async () => await client.GetBarsAsync("AAPL", "1Min", 10001));
     }
 
     [Fact]
     public async Task GetBarsAsync_WrapsExceptionInMarketDataException()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         var ex = await Assert.ThrowsAsync<MarketDataException>(
-            async () => await client.GetBarsAsync("INVALID@SYMBOL", "1m", 50));
+            async () => await client.GetBarsAsync("INVALID@SYMBOL", "1Min", 50));
 
         Assert.NotNull(ex.InnerException);
     }
@@ -64,26 +69,30 @@ public sealed class MarketDataClientTests
     [Fact]
     public async Task GetSnapshotAsync_ReturnsSnapshot()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var mockEquityClient = Substitute.For<IAlpacaDataClient>();
+        var mockQuote = Substitute.For<IQuote>();
+        mockQuote.BidPrice.Returns(149m);
+        mockQuote.AskPrice.Returns(151m);
+        mockQuote.BidSize.Returns(100u);
+        mockQuote.AskSize.Returns(100u);
+        mockEquityClient
+            .GetLatestQuoteAsync(Arg.Any<LatestMarketDataRequest>(), Arg.Any<CancellationToken>())
+            .Returns(mockQuote);
 
-        // Act
+        var client = CreateClient(equityClient: mockEquityClient);
         var result = await client.GetSnapshotAsync("AAPL");
 
-        // Assert
         Assert.NotNull(result);
         Assert.Equal("AAPL", result.Symbol);
+        Assert.Equal(149m, result.Bid);
+        Assert.Equal(151m, result.Ask);
     }
 
     [Fact]
     public async Task GetSnapshotAsync_ThrowsException_WhenSymbolEmpty()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         await Assert.ThrowsAsync<ArgumentException>(
             async () => await client.GetSnapshotAsync(""));
     }
@@ -91,11 +100,8 @@ public sealed class MarketDataClientTests
     [Fact]
     public void IsEquity_ReturnsTrueForStockSymbols()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         Assert.True(client.IsEquity("AAPL"));
         Assert.True(client.IsEquity("MSFT"));
         Assert.True(client.IsEquity("GOOG"));
@@ -104,11 +110,8 @@ public sealed class MarketDataClientTests
     [Fact]
     public void IsEquity_ReturnsFalseForCryptoSymbols()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         Assert.False(client.IsEquity("BTCUSD"));
         Assert.False(client.IsEquity("ETHUSD"));
         Assert.False(client.IsEquity("BTCUSDT"));
@@ -118,11 +121,8 @@ public sealed class MarketDataClientTests
     [Fact]
     public void IsCrypto_ReturnsTrueForCryptoSymbols()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         Assert.True(client.IsCrypto("BTCUSD"));
         Assert.True(client.IsCrypto("ETHUSD"));
     }
@@ -130,11 +130,8 @@ public sealed class MarketDataClientTests
     [Fact]
     public void IsCrypto_ReturnsFalseForStockSymbols()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
 
-        // Act & Assert
         Assert.False(client.IsCrypto("AAPL"));
         Assert.False(client.IsCrypto("MSFT"));
     }
@@ -142,15 +139,11 @@ public sealed class MarketDataClientTests
     [Fact]
     public void NormalizeQuote_CreatesQuoteWithCorrectValues()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
         var timestamp = DateTimeOffset.UtcNow;
 
-        // Act
         var quote = client.NormalizeQuote("AAPL", 150m, 152m, 148m, 151m, 1000000, timestamp);
 
-        // Assert
         Assert.NotNull(quote);
         Assert.Equal("AAPL", quote.Symbol);
         Assert.Equal(150m, quote.Open);
@@ -163,15 +156,12 @@ public sealed class MarketDataClientTests
     [Fact]
     public void NormalizeQuote_LogsWarning_WhenHighLessThanLow()
     {
-        // Arrange
-        var logger = Substitute.For<ILogger<MarketDataClient>>();
-        var client = new MarketDataClient(logger);
+        var client = CreateClient();
         var timestamp = DateTimeOffset.UtcNow;
 
-        // Act
+        // Should still return quote but log warning
         var quote = client.NormalizeQuote("AAPL", 150m, 148m, 152m, 151m, 1000000, timestamp);
 
-        // Assert - should still return quote but log warning
         Assert.NotNull(quote);
         Assert.Equal("AAPL", quote.Symbol);
     }
@@ -179,41 +169,25 @@ public sealed class MarketDataClientTests
     [Fact]
     public void BidAskSpread_CalculatesSpreadPercentCorrectly()
     {
-        // Arrange
         var spread = new BidAskSpread("AAPL", 150m, 150.5m, 1000, 1000, DateTimeOffset.UtcNow);
 
-        // Act
-        var spreadPercent = spread.SpreadPercent;
-
-        // Assert
-        Assert.Equal(0.333333m, spreadPercent, 5); // (150.5 - 150) / 150 * 100
+        Assert.Equal(0.333333m, spread.SpreadPercent, 5); // (150.5 - 150) / 150 * 100
     }
 
     [Fact]
     public void BidAskSpread_CalculatesMidPrice()
     {
-        // Arrange
         var spread = new BidAskSpread("AAPL", 150m, 151m, 1000, 1000, DateTimeOffset.UtcNow);
 
-        // Act
-        var midPrice = spread.MidPrice;
-
-        // Assert
-        Assert.Equal(150.5m, midPrice);
+        Assert.Equal(150.5m, spread.MidPrice);
     }
 
     [Fact]
     public void BidAskSpread_HandlesZeroBidAsk()
     {
-        // Arrange
         var spread = new BidAskSpread("AAPL", 0m, 0m, 0, 0, DateTimeOffset.UtcNow);
 
-        // Act
-        var spreadPercent = spread.SpreadPercent;
-        var midPrice = spread.MidPrice;
-
-        // Assert
-        Assert.Equal(0m, spreadPercent);
-        Assert.Equal(0m, midPrice);
+        Assert.Equal(0m, spread.SpreadPercent);
+        Assert.Equal(0m, spread.MidPrice);
     }
 }

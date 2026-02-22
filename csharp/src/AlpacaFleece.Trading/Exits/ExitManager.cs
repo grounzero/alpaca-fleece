@@ -2,8 +2,19 @@ namespace AlpacaFleece.Trading.Exits;
 
 /// <summary>
 /// Exit manager: checks positions every 30s for stop loss, trailing stop, profit target.
-/// Uses 5-rule priority system with ATR-based dynamic levels.
+/// Uses a 3-rule priority system with ATR-based dynamic levels (mutual exclusion with fixed-%):
+///
+///   Rule 1: ATR stop loss     — entry - (ATR × AtrStopLossMultiplier)
+///   Rule 2: ATR profit target — entry + (ATR × AtrProfitTargetMultiplier)
+///   Rule 4: Trailing stop     — TrailingStopPrice (always active)
+///
+/// ATR mutual exclusion (atr_computed): when valid ATR levels exist, fixed-percentage rules
+/// (3 and 5) are skipped entirely. The early ATR-validity guard ensures we never reach the
+/// fixed-% checks when ATR is valid, so fixed-% rules are effectively disabled in production
+/// (ATR is required to open a position).
+///
 /// Publishes ExitSignalEvent to unbounded event bus (never dropped).
+/// PendingExit flag is set AFTER successful publish to avoid phantom locks on bus failures.
 /// </summary>
 public class ExitManager(
     IPositionTracker positionTracker,
@@ -12,15 +23,17 @@ public class ExitManager(
     IEventBus eventBus,
     IStateRepository stateRepository,
     ILogger<ExitManager> logger,
-    IOptions<ExitOptions> options)
+    IOptions<TradingOptions> options)
 {
     // Protected no-arg constructor for NSubstitute proxy creation
-    protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new ExitOptions())) { }
+    protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions())) { }
 
-    private readonly ExitOptions _options = options.Value;
+    private readonly ExitOptions _options = options.Value.Exit;
+    private readonly HashSet<string> _cryptoSymbols =
+        new(options.Value.Symbols.CryptoSymbols, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
-    /// Main execution loop - run this in a hosted service background task.
+    /// Main execution loop — run this in a hosted service background task.
     /// </summary>
     public virtual async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -39,7 +52,16 @@ public class ExitManager(
                     var exitSignals = await CheckPositionsAsync(stoppingToken);
                     foreach (var signal in exitSignals)
                     {
+                        // Publish FIRST, then set PendingExit so a bus failure doesn't phantom-lock position
                         _ = await eventBus.PublishAsync(signal, stoppingToken);
+
+                        var pos = positionTracker.GetPosition(signal.Symbol);
+                        if (pos != null)
+                        {
+                            pos.PendingExit = true;
+                            await RecordExitAttemptAsync(signal.Symbol, stoppingToken);
+                        }
+
                         logger.LogInformation(
                             "Published exit signal: {symbol} {reason} @ {price}",
                             signal.Symbol, signal.ExitReason, signal.ExitPrice);
@@ -59,21 +81,19 @@ public class ExitManager(
         {
             logger.LogInformation("ExitManager stopped");
         }
-        finally
-        {
-            timer.Dispose();
-        }
     }
 
     /// <summary>
-    /// Checks all positions for exit conditions (5-rule priority).
-    /// Priority: stop loss → trailing stop → profit target.
+    /// Checks all positions for exit conditions.
+    ///
+    /// Skips positions with invalid ATR (cannot safely compute risk levels).
+    /// ATR-based rules take full priority: when ATR is valid, fixed-% rules (3/5) are not evaluated.
+    /// PendingExit is NOT set here — the caller (ExecuteAsync) sets it after successful publish.
     /// </summary>
     public async ValueTask<List<ExitSignalEvent>> CheckPositionsAsync(CancellationToken ct)
     {
         var signals = new List<ExitSignalEvent>();
 
-        // Get current market clock
         var clock = await brokerService.GetClockAsync(ct);
         var positions = positionTracker.GetAllPositions();
 
@@ -81,94 +101,61 @@ public class ExitManager(
         {
             try
             {
-                // Skip check if market closed (except crypto 24/5)
+                // Skip check if market closed (except 24/5 crypto)
                 if (!clock.IsOpen && !IsCrypto24h(symbol))
                 {
                     continue;
                 }
 
                 // Skip if pending exit or in backoff
-                var backoffSeconds = await stateRepository.GetExitBackoffSecondsAsync(
-                    symbol, ct);
+                var backoffSeconds = await stateRepository.GetExitBackoffSecondsAsync(symbol, ct);
                 if (posData.PendingExit && backoffSeconds > 0)
                 {
                     continue;
                 }
 
-                // Skip position if ATR is invalid (cannot safely compute risk levels)
+                // Skip position if ATR is invalid — cannot safely compute risk levels
                 if (posData.AtrValue <= 0 || !ValidateAtr(posData.AtrValue))
                 {
-                    logger.LogWarning("Invalid ATR for {symbol}: {atr}, skipping exit checks", symbol, posData.AtrValue);
+                    logger.LogWarning(
+                        "Invalid ATR for {symbol}: {atr}, skipping exit checks",
+                        symbol, posData.AtrValue);
                     continue;
                 }
 
-                // Get current price (simplified: would fetch from market data)
                 var currentPrice = await GetCurrentPriceAsync(symbol, ct);
                 if (currentPrice <= 0)
                 {
                     continue;
                 }
 
-                // Calculate P&L percentage
-                var pnlPct = (currentPrice - posData.EntryPrice) / posData.EntryPrice;
+                // ATR levels are valid — compute once (atr_computed = true).
+                // Fixed-% fallbacks (Rules 3 & 5) are mutually excluded when ATR is valid.
+                var atrStop = posData.EntryPrice - (posData.AtrValue * _options.AtrStopLossMultiplier);
+                var atrTarget = posData.EntryPrice + (posData.AtrValue * _options.AtrProfitTargetMultiplier);
 
-                // Rule 1: ATR-based stop loss
-                if (posData.AtrValue > 0 && ValidateAtr(posData.AtrValue))
+                // Rule 1: ATR-based stop loss (highest priority)
+                if (currentPrice <= atrStop)
                 {
-                    var atrStop = posData.EntryPrice - (posData.AtrValue * _options.AtrStopLossMultiplier);
-                    if (currentPrice <= atrStop)
-                    {
-                        signals.Add(new ExitSignalEvent(
-                            symbol, "ATR_STOP_LOSS", currentPrice, DateTimeOffset.UtcNow));
-                        posData.PendingExit = true;
-                        await RecordExitAttemptAsync(symbol, ct);
-                        continue;
-                    }
+                    signals.Add(new ExitSignalEvent(symbol, "ATR_STOP_LOSS", currentPrice, DateTimeOffset.UtcNow));
+                    continue;
                 }
 
                 // Rule 2: ATR-based profit target
-                if (posData.AtrValue > 0 && ValidateAtr(posData.AtrValue))
+                if (currentPrice >= atrTarget)
                 {
-                    var atrTarget = posData.EntryPrice + (posData.AtrValue * _options.AtrProfitTargetMultiplier);
-                    if (currentPrice >= atrTarget)
-                    {
-                        signals.Add(new ExitSignalEvent(
-                            symbol, "ATR_PROFIT_TARGET", currentPrice, DateTimeOffset.UtcNow));
-                        posData.PendingExit = true;
-                        await RecordExitAttemptAsync(symbol, ct);
-                        continue;
-                    }
-                }
-
-                // Rule 3: Fixed % stop loss
-                if (pnlPct <= -_options.StopLossPercentage)
-                {
-                    signals.Add(new ExitSignalEvent(
-                        symbol, "FIXED_STOP_LOSS", currentPrice, DateTimeOffset.UtcNow));
-                    posData.PendingExit = true;
-                    await RecordExitAttemptAsync(symbol, ct);
+                    signals.Add(new ExitSignalEvent(symbol, "ATR_PROFIT_TARGET", currentPrice, DateTimeOffset.UtcNow));
                     continue;
                 }
 
-                // Rule 4: Trailing stop
+                // Rule 4: Trailing stop (independent of ATR — always active when set)
                 if (posData.TrailingStopPrice > 0 && currentPrice <= posData.TrailingStopPrice)
                 {
-                    signals.Add(new ExitSignalEvent(
-                        symbol, "TRAILING_STOP", currentPrice, DateTimeOffset.UtcNow));
-                    posData.PendingExit = true;
-                    await RecordExitAttemptAsync(symbol, ct);
+                    signals.Add(new ExitSignalEvent(symbol, "TRAILING_STOP", currentPrice, DateTimeOffset.UtcNow));
                     continue;
                 }
 
-                // Rule 5: Fixed % profit target
-                if (pnlPct >= _options.ProfitTargetPercentage)
-                {
-                    signals.Add(new ExitSignalEvent(
-                        symbol, "FIXED_PROFIT_TARGET", currentPrice, DateTimeOffset.UtcNow));
-                    posData.PendingExit = true;
-                    await RecordExitAttemptAsync(symbol, ct);
-                    continue;
-                }
+                // Rules 3 & 5 (fixed-% stop/profit) intentionally omitted when ATR is valid.
             }
             catch (Exception ex)
             {
@@ -184,13 +171,11 @@ public class ExitManager(
     /// </summary>
     public async ValueTask HandleOrderUpdateAsync(OrderUpdateEvent orderUpdate, CancellationToken ct)
     {
-        // Check if terminal failure
         var terminalFailureStates = new[]
         {
             OrderState.Canceled,
             OrderState.Expired,
             OrderState.Rejected,
-            OrderState.PartiallyFilled
         };
 
         if (!terminalFailureStates.Contains(orderUpdate.Status))
@@ -198,7 +183,6 @@ public class ExitManager(
             return;
         }
 
-        // Find position by symbol (extract from order or metadata)
         var positions = positionTracker.GetAllPositions();
         foreach (var (symbol, posData) in positions)
         {
@@ -215,26 +199,19 @@ public class ExitManager(
     }
 
     /// <summary>
+    /// Returns true if the symbol trades 24/5 (crypto — exempt from market-hours check).
+    /// Uses the configured CryptoSymbols list from TradingOptions.
+    /// </summary>
+    private bool IsCrypto24h(string symbol) => _cryptoSymbols.Contains(symbol);
+
+    /// <summary>
     /// Validates ATR is a finite positive number.
     /// </summary>
-    private static bool ValidateAtr(decimal atr)
-    {
-        // Check for positive and not NaN
-        return atr > 0 && atr != decimal.MinValue && atr != decimal.MaxValue;
-    }
+    private static bool ValidateAtr(decimal atr) =>
+        atr > 0 && atr != decimal.MinValue && atr != decimal.MaxValue;
 
     /// <summary>
-    /// Checks if symbol is 24h crypto (simplified).
-    /// </summary>
-    private static bool IsCrypto24h(string symbol)
-    {
-        // In production, check against known crypto symbols or market category
-        return symbol.EndsWith("USDT") || symbol.EndsWith("BUSD");
-    }
-
-    /// <summary>
-    /// Gets current price for symbol from market data snapshot.
-    /// Uses mid-price from bid/ask spread.
+    /// Gets current mid-price for symbol from market data snapshot.
     /// </summary>
     private async ValueTask<decimal> GetCurrentPriceAsync(string symbol, CancellationToken ct)
     {
@@ -250,9 +227,6 @@ public class ExitManager(
         }
     }
 
-    /// <summary>
-    /// Records exit attempt in exit_attempts table (for backoff tracking).
-    /// </summary>
     private async ValueTask RecordExitAttemptAsync(string symbol, CancellationToken ct)
     {
         try
@@ -265,9 +239,6 @@ public class ExitManager(
         }
     }
 
-    /// <summary>
-    /// Records failed exit attempt for backoff calculation.
-    /// </summary>
     private async ValueTask RecordExitAttemptFailureAsync(string symbol, CancellationToken ct)
     {
         try

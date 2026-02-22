@@ -10,7 +10,7 @@ public static class TradingExtensions
     /// </summary>
     public static IServiceCollection AddExitManager(
         this IServiceCollection services,
-        IOptions<ExitOptions> options)
+        IOptions<TradingOptions> options)
     {
         services.AddSingleton(sp =>
             new ExitManager(

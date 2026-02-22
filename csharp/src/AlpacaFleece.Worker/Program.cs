@@ -42,20 +42,20 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddEventBus();
 
         // Phase 2: Market Data Client
-        services.AddMarketDataServices();
+        services.AddMarketDataServices(brokerOptions);
 
         // Trading (Phase 3: Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);
         services.AddScoped<IStrategy, SmaCrossoverStrategy>();
         services.AddScoped<IRiskManager, RiskManager>();
         services.AddScoped<IOrderManager, OrderManager>();
-        services.AddScoped<PositionTracker>();
+        services.AddSingleton<PositionTracker>();
 
         // Phase 2: Data Handling
         services.AddSingleton<IDataHandler, DataHandler>();
 
-        // Phase 4: Exit Manager
-        services.AddExitManager(Options.Create(exitOptions));
+        // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
+        services.AddExitManager(Options.Create(tradingOptions));
 
         // Phase 5: Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();

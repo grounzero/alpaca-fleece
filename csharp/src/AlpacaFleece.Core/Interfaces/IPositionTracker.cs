@@ -30,4 +30,11 @@ public interface IPositionTracker
     /// Updates trailing stop for a position.
     /// </summary>
     void UpdateTrailingStop(string symbol, decimal newTrailingStop);
+
+    /// <summary>
+    /// Rehydrates in-memory positions from the database.
+    /// Must be called once at startup before the main trading loop begins.
+    /// Mirrors Python's PositionTracker._load_from_db().
+    /// </summary>
+    ValueTask InitialiseFromDbAsync(CancellationToken ct = default);
 }

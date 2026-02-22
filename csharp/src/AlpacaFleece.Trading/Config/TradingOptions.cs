@@ -20,6 +20,12 @@ public sealed class SymbolsOptions
 {
     public List<string> Symbols { get; set; } = new();
     public int MinVolume { get; set; } = 1000000;
+
+    /// <summary>
+    /// Crypto symbols that trade 24/5 (exempt from market-hours checks).
+    /// Defaults to common Alpaca crypto pairs.
+    /// </summary>
+    public List<string> CryptoSymbols { get; set; } = ["BTC/USD", "ETH/USD", "LTC/USD"];
 }
 
 /// <summary>
@@ -41,6 +47,23 @@ public sealed class RiskLimits
     public decimal MaxTradeRisk { get; set; } = 100m;
     public int MaxTradesPerDay { get; set; } = 5;
     public int MaxConcurrentPositions { get; set; } = 2;
+
+    /// <summary>
+    /// Maximum fraction of equity risked per trade (e.g., 0.01 = 1%).
+    /// Used in the risk-based position sizing formula.
+    /// </summary>
+    public decimal MaxRiskPerTradePct { get; set; } = 0.01m;
+
+    /// <summary>
+    /// Expected stop-loss as a fraction of price (e.g., 0.02 = 2%).
+    /// Used in the risk-based position sizing formula: qty = equity * riskPct / (price * stopPct).
+    /// </summary>
+    public decimal StopLossPct { get; set; } = 0.02m;
+
+    /// <summary>
+    /// Minimum signal confidence threshold (0-1). Signals below this are soft-skipped (FILTER tier).
+    /// </summary>
+    public decimal MinSignalConfidence { get; set; } = 0.5m;
 }
 
 /// <summary>
@@ -91,4 +114,10 @@ public sealed class FiltersOptions
     public long MinBarVolume { get; set; } = 100000;
     public int MinMinutesAfterOpen { get; set; } = 5;
     public int MinMinutesBeforeClose { get; set; } = 10;
+
+    /// <summary>
+    /// Maximum allowed bid/ask spread as a fraction of bid price (e.g. 0.005 = 0.5%).
+    /// Signals with a wider spread are soft-skipped (FILTER tier).
+    /// </summary>
+    public decimal MaxSpreadPct { get; set; } = 0.005m;
 }

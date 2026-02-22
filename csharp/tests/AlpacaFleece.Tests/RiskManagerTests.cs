@@ -360,6 +360,42 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
         Assert.IsType<RiskCheckResult>(result);
     }
 
+    [Fact]
+    public async Task CheckSignalAsync_RejectsWideSpread()
+    {
+        // Feature 4: spread = (101-100)/100 = 1% > MaxSpreadPct = 0.5% → FILTER rejection
+        var marketDataClient = Substitute.For<IMarketDataClient>();
+        marketDataClient.GetSnapshotAsync("AAPL", Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<BidAskSpread>(
+                new BidAskSpread("AAPL", 100m, 101m, 100, 100, DateTimeOffset.UtcNow)));
+
+        _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(true, DateTimeOffset.UtcNow.AddDays(1), DateTimeOffset.UtcNow.AddHours(7), DateTimeOffset.UtcNow));
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new AccountInfo("test", 50000m, 0m, 100000m, 0m, true, false, DateTimeOffset.UtcNow));
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+
+        var options = new TradingOptions
+        {
+            RiskLimits = new RiskLimits { MaxDailyLoss = 500m, MaxTradesPerDay = 10, MaxConcurrentPositions = 5, MinSignalConfidence = 0.5m },
+            Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0, MaxSpreadPct = 0.005m },
+            Session = new SessionOptions { TimeZone = "UTC", MarketOpenTime = TimeSpan.Zero, MarketCloseTime = new TimeSpan(23, 59, 59) }
+        };
+
+        var riskManager = new RiskManager(_brokerMock, fixture.StateRepository, options, _logger, marketDataClient);
+
+        var signal = CreateSignal("AAPL", "BUY");
+
+        // Act
+        var result = await riskManager.CheckSignalAsync(signal);
+
+        // Assert: FILTER tier rejects the signal due to wide spread
+        Assert.False(result.AllowsSignal);
+        Assert.Equal("FILTER", result.RiskTier);
+        Assert.Contains("Spread", result.Reason, StringComparison.OrdinalIgnoreCase);
+    }
+
     // SAFETY/RISK/FILTER PASSING
 
     [Fact]

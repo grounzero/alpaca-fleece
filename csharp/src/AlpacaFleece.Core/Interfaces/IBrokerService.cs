@@ -42,4 +42,9 @@ public interface IBrokerService
     /// Fetches all open orders (with Polly retry).
     /// </summary>
     ValueTask<IReadOnlyList<OrderInfo>> GetOpenOrdersAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Fetches a single order by Alpaca order ID. Returns null if not found.
+    /// </summary>
+    ValueTask<OrderInfo?> GetOrderByIdAsync(string alpacaOrderId, CancellationToken ct = default);
 }

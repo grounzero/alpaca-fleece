@@ -4,15 +4,20 @@ namespace AlpacaFleece.Trading.Risk;
 /// Risk manager with 3-tier checks: Safety, Risk, Filters.
 /// TIER 1 (Safety): Kill switch, circuit breaker, market clock
 /// TIER 2 (Risk): Daily loss limit, trade count, position limits
-/// TIER 3 (Filter): Spread, volume, time-of-day (soft skip)
+/// TIER 3 (Filter): Confidence, regime bars, time-of-day (soft skip)
+///
+/// Crypto symbols (from options.Symbols.CryptoSymbols) are exempt from market-hours checks.
 /// </summary>
 public sealed class RiskManager(
     IBrokerService broker,
     IStateRepository stateRepository,
     TradingOptions options,
-    ILogger<RiskManager> logger) : IRiskManager
+    ILogger<RiskManager> logger,
+    IMarketDataClient? marketDataClient = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
+    private readonly HashSet<string> _cryptoSymbols =
+        new(options.Symbols.CryptoSymbols, StringComparer.OrdinalIgnoreCase);
 
     /// <summary>
     /// Checks if a signal should be allowed based on risk rules (3-tier).
@@ -91,7 +96,7 @@ public sealed class RiskManager(
                 RiskTier: "SAFETY");
         }
 
-        // Market hours check (crypto 24/5 exempt)
+        // Market hours check (crypto exempt — trades 24/5)
         if (!IsCrypto(signal.Symbol))
         {
             var clock = await broker.GetClockAsync(ct);
@@ -159,8 +164,7 @@ public sealed class RiskManager(
             }
         }
 
-        // Max position size check (#36 fix)
-        // Calculate max qty based on max_position_pct
+        // Max position size check
         const decimal defaultMaxPositionPct = 0.05m; // 5% of account per position
         var maxQty = (account.PortfolioValue * defaultMaxPositionPct) / signal.Metadata.CurrentPrice;
         if (maxQty < 1)
@@ -178,14 +182,24 @@ public sealed class RiskManager(
     }
 
     /// <summary>
-    /// TIER 3: Filter checks (spread, volume, time-of-day).
+    /// TIER 3: Filter checks (confidence, regime bars, time-of-day, spread).
     /// Returns false on failure (soft skip, not an exception).
     /// </summary>
     private async ValueTask<RiskCheckResult> CheckFilterTierAsync(
         SignalEvent signal,
         CancellationToken ct = default)
     {
-        // Bar volume filter
+        // Confidence filter: reject low-quality signals
+        var minConfidence = options.RiskLimits.MinSignalConfidence;
+        if (signal.Metadata.Confidence < minConfidence)
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: $"Signal confidence too low: {signal.Metadata.Confidence:F2} < {minConfidence:F2}",
+                RiskTier: "FILTER");
+        }
+
+        // Bar volume / regime filter
         if (signal.Metadata.BarsInRegime == 0 || signal.Metadata.BarsInRegime < 10)
         {
             return new RiskCheckResult(
@@ -194,7 +208,7 @@ public sealed class RiskManager(
                 RiskTier: "FILTER");
         }
 
-        // Time of day filter (skip first 5 minutes or last 10 minutes of session)
+        // Time of day filter (skip first N minutes after open and last M minutes before close)
         if (!IsCrypto(signal.Symbol))
         {
             var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).TimeOfDay;
@@ -222,6 +236,30 @@ public sealed class RiskManager(
             }
         }
 
+        // Spread filter: skip if bid/ask spread is too wide
+        if (marketDataClient != null)
+        {
+            try
+            {
+                var snapshot = await marketDataClient.GetSnapshotAsync(signal.Symbol, ct);
+                if (snapshot != null && snapshot.Bid > 0 && snapshot.Ask > 0)
+                {
+                    var spread = (snapshot.Ask - snapshot.Bid) / snapshot.Bid;
+                    if (spread > options.Filters.MaxSpreadPct)
+                    {
+                        return new RiskCheckResult(
+                            AllowsSignal: false,
+                            Reason: $"Spread too wide: {spread:P2} > {options.Filters.MaxSpreadPct:P2}",
+                            RiskTier: "FILTER");
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to check spread for {symbol}, skipping spread filter", signal.Symbol);
+            }
+        }
+
         return new RiskCheckResult(
             AllowsSignal: true,
             Reason: "Filter tier passed",
@@ -229,13 +267,8 @@ public sealed class RiskManager(
     }
 
     /// <summary>
-    /// Check if a symbol is a crypto asset (24/5, no market hours check).
-    /// Crypto symbols typically end with "/USD" or are BTC, ETH, etc.
+    /// Returns true if the symbol is a crypto asset (trades 24/5, exempt from market-hours checks).
+    /// Uses the configured CryptoSymbols list from TradingOptions.
     /// </summary>
-    private static bool IsCrypto(string symbol)
-    {
-        return symbol.EndsWith("/USD", StringComparison.OrdinalIgnoreCase) ||
-               symbol.Equals("BTC", StringComparison.OrdinalIgnoreCase) ||
-               symbol.Equals("ETH", StringComparison.OrdinalIgnoreCase);
-    }
+    private bool IsCrypto(string symbol) => _cryptoSymbols.Contains(symbol);
 }

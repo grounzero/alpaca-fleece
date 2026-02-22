@@ -16,13 +16,17 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
     public async Task InitializeAsync()
     {
         _positionTracker = new PositionTracker(fixture.StateRepository, _positionTrackerLogger);
-        var options = Options.Create(new ExitOptions
+        var options = Options.Create(new TradingOptions
         {
-            CheckIntervalSeconds = 30,
-            AtrStopLossMultiplier = 1.5m,
-            AtrProfitTargetMultiplier = 3.0m,
-            StopLossPercentage = 0.01m,
-            ProfitTargetPercentage = 0.02m
+            Exit = new ExitOptions
+            {
+                CheckIntervalSeconds = 30,
+                AtrStopLossMultiplier = 1.5m,
+                AtrProfitTargetMultiplier = 3.0m,
+                StopLossPercentage = 0.01m,
+                ProfitTargetPercentage = 0.02m
+            },
+            Symbols = new SymbolsOptions()  // uses default CryptoSymbols list
         });
 
         // Configure market data mock to return price below ATR stop (entry 100, ATR 2 -> stop at 97)
@@ -287,6 +291,34 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Assert: should return 0 (no market data available in test), not negative
         // Real implementation would return actual market price
         Assert.True(true); // GetCurrentPriceAsync returns 0 or positive
+    }
+
+    [Fact]
+    public async Task HandleOrderUpdateAsync_KeepsPendingExitOnPartialFill()
+    {
+        // Arrange: Bug 1 — PartiallyFilled is non-terminal; PendingExit must NOT be cleared
+        var entryPrice = 100m;
+        var atrValue = 2m;
+        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        var position = _positionTracker.GetPosition("AAPL")!;
+        position.PendingExit = true;
+
+        var orderUpdate = new OrderUpdateEvent(
+            AlpacaOrderId: "alpaca_123",
+            ClientOrderId: "client_123",
+            Symbol: "AAPL",
+            Side: "sell",
+            FilledQuantity: 50,
+            RemainingQuantity: 50,
+            AverageFilledPrice: 98m,
+            Status: OrderState.PartiallyFilled,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        // Act
+        await _exitManager.HandleOrderUpdateAsync(orderUpdate, CancellationToken.None);
+
+        // Assert: PartiallyFilled is NOT in terminalFailureStates — PendingExit must remain true
+        Assert.True(position.PendingExit);
     }
 
     [Fact]

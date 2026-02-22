@@ -30,4 +30,10 @@
     <ProjectReference Include="..\AlpacaFleece.Trading\AlpacaFleece.Trading.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <AssemblyAttribute Include="System.Runtime.CompilerServices.InternalsVisibleToAttribute">
+      <_Parameter1>AlpacaFleece.Tests</_Parameter1>
+    </AssemblyAttribute>
+  </ItemGroup>
+
 </Project>

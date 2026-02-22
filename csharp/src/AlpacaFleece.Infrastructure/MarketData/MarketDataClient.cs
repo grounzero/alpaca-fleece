@@ -1,16 +1,21 @@
+using Alpaca.Markets;
+
 namespace AlpacaFleece.Infrastructure.MarketData;
 
 /// <summary>
 /// Wrapper for Alpaca market data API.
-/// Provides bar history and snapshot data with quote normalization.
+/// Routes equity bars/quotes to IAlpacaDataClient and crypto to IAlpacaCryptoDataClient.
 /// </summary>
-public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarketDataClient
+public sealed class MarketDataClient(
+    IAlpacaDataClient equityDataClient,
+    IAlpacaCryptoDataClient cryptoDataClient,
+    ILogger<MarketDataClient> logger) : IMarketDataClient
 {
     private const int RequestTimeoutMs = 10000;
 
     /// <summary>
-    /// Fetches bars for a symbol (stock or crypto detected automatically).
-    /// Returns IReadOnlyList of quotes with OHLCV data.
+    /// Fetches the most recent <paramref name="limit"/> bars for a symbol.
+    /// Detects equity vs crypto automatically. Returns bars in ascending chronological order.
     /// </summary>
     public ValueTask<IReadOnlyList<Quote>> GetBarsAsync(
         string symbol,
@@ -27,7 +32,6 @@ public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarket
         int limit,
         CancellationToken ct)
     {
-        // Validate inputs - these throw ArgumentException and are not caught
         if (string.IsNullOrWhiteSpace(symbol))
             throw new ArgumentException("Symbol cannot be empty", nameof(symbol));
 
@@ -36,37 +40,72 @@ public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarket
 
         try
         {
-            // Validate symbol format (invalid chars like @ cause API errors)
+            // Validate symbol format (invalid chars like @ cause API errors); wrapped as MarketDataException.
             if (!System.Text.RegularExpressions.Regex.IsMatch(symbol, @"^[A-Za-z0-9/\-\.]+$"))
                 throw new InvalidOperationException($"Symbol '{symbol}' contains invalid characters");
 
-            // Placeholder: In production, this will call Alpaca REST API
-            // For now, return empty list to prevent errors in Phase 2 development
-            var quotes = new List<Quote>();
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(RequestTimeoutMs);
+
+            var timeFrame = MapTimeFrame(timeframe);
+            var into = DateTime.UtcNow;
+
+            IReadOnlyList<IBar> items;
+
+            if (IsEquity(symbol))
+            {
+                // 5 calendar days covers any weekend/holiday gap; page size 1000 fits
+                // up to ~780 bars (2 full trading days × 390 min/day) in one request.
+                var from = into.AddDays(-5);
+                var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
+                    .WithPageSize(1000);
+                var page = await equityDataClient.ListHistoricalBarsAsync(request, cts.Token);
+                items = page.Items;
+            }
+            else
+            {
+                // Crypto trades 24/7; limit×2 minutes back is always sufficient.
+                var from = into.AddMinutes(-(limit * 2 + 30));
+                var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
+                    .WithPageSize((uint)(limit * 2 + 30));
+                var page = await cryptoDataClient.ListHistoricalBarsAsync(request, cts.Token);
+                items = page.Items;
+            }
+
+            // Bars are returned ascending (oldest first); take the tail to get the most recent limit.
+            var bars = items
+                .TakeLast(limit)
+                .Select(bar => NormalizeQuote(
+                    symbol,
+                    bar.Open,
+                    bar.High,
+                    bar.Low,
+                    bar.Close,
+                    (long)bar.Volume,
+                    new DateTimeOffset(bar.TimeUtc, TimeSpan.Zero)))
+                .ToList()
+                .AsReadOnly();
 
             logger.LogDebug(
-                "Fetched {count} bars for {symbol} at {timeframe}",
-                quotes.Count,
-                symbol,
-                timeframe);
+                "Fetched {Count} bars for {Symbol} at {Timeframe} (requested {Limit})",
+                bars.Count, symbol, timeframe, limit);
 
-            return quotes.AsReadOnly();
+            return bars;
         }
         catch (OperationCanceledException)
         {
-            logger.LogWarning("GetBars cancelled for {symbol}", symbol);
+            logger.LogWarning("GetBars cancelled for {Symbol}", symbol);
             throw;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to fetch bars for {symbol}", symbol);
+            logger.LogError(ex, "Failed to fetch bars for {Symbol}", symbol);
             throw new MarketDataException($"Failed to fetch bars for {symbol}", ex);
         }
     }
 
     /// <summary>
-    /// Fetches bid/ask snapshot for a symbol.
-    /// Detects equity vs crypto and returns BidAskSpread.
+    /// Fetches bid/ask snapshot for a symbol. Detects equity vs crypto automatically.
     /// </summary>
     public ValueTask<BidAskSpread> GetSnapshotAsync(
         string symbol,
@@ -75,53 +114,72 @@ public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarket
         return GetSnapshotAsyncImpl(symbol, ct);
     }
 
-    private async ValueTask<BidAskSpread> GetSnapshotAsyncImpl(
-        string symbol,
-        CancellationToken ct)
+    private async ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
     {
-        // Validate inputs - these throw ArgumentException and are not caught
         if (string.IsNullOrWhiteSpace(symbol))
             throw new ArgumentException("Symbol cannot be empty", nameof(symbol));
 
         try
         {
-            // Placeholder: Will call actual Alpaca snapshot API
+            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            cts.CancelAfter(RequestTimeoutMs);
+
+            IQuote? quote;
+            if (IsEquity(symbol))
+            {
+                quote = await equityDataClient.GetLatestQuoteAsync(
+                    new LatestMarketDataRequest(symbol), cts.Token);
+            }
+            else
+            {
+                // Single-symbol crypto methods are obsolete in v7; use the list variant.
+                var quotes = await cryptoDataClient.ListLatestQuotesAsync(
+                    new LatestDataListRequest(new[] { symbol }), cts.Token);
+                quotes.TryGetValue(symbol, out quote);
+            }
+
+            if (quote is null)
+            {
+                logger.LogWarning("No quote returned for {Symbol}; returning zero spread", symbol);
+                return new BidAskSpread(Symbol: symbol, Bid: 0m, Ask: 0m,
+                    BidSize: 0, AskSize: 0, FetchedAt: DateTimeOffset.UtcNow);
+            }
+
             var spread = new BidAskSpread(
                 Symbol: symbol,
-                Bid: 0m,
-                Ask: 0m,
-                BidSize: 0,
-                AskSize: 0,
+                Bid: quote.BidPrice,
+                Ask: quote.AskPrice,
+                BidSize: (long)quote.BidSize,
+                AskSize: (long)quote.AskSize,
                 FetchedAt: DateTimeOffset.UtcNow);
 
-            logger.LogDebug("Fetched snapshot for {symbol}: bid={bid} ask={ask}",
-                symbol, spread.Bid, spread.Ask);
+            logger.LogDebug(
+                "Fetched snapshot for {Symbol}: bid={Bid} ask={Ask} spread={Spread:P2}",
+                symbol, spread.Bid, spread.Ask, spread.SpreadPercent / 100m);
 
             return spread;
         }
         catch (OperationCanceledException)
         {
-            logger.LogWarning("GetSnapshot cancelled for {symbol}", symbol);
+            logger.LogWarning("GetSnapshot cancelled for {Symbol}", symbol);
             throw;
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to fetch snapshot for {symbol}", symbol);
+            logger.LogError(ex, "Failed to fetch snapshot for {Symbol}", symbol);
             throw new MarketDataException($"Failed to fetch snapshot for {symbol}", ex);
         }
     }
 
     /// <summary>
-    /// Detects if a symbol is equity (NYSE/NASDAQ) or crypto.
+    /// Detects if a symbol is equity (not crypto).
     /// </summary>
     public bool IsEquity(string symbol)
     {
-        // Crypto symbols typically end with USDT, USD, or are short uppercase
         if (symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase) ||
             symbol.EndsWith("USD", StringComparison.OrdinalIgnoreCase))
             return false;
 
-        // Check for known crypto patterns
         var cryptoPatterns = new[] { "BTC", "ETH", "XRP", "ADA", "DOGE", "SHIB" };
         if (cryptoPatterns.Any(p => symbol.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
             return false;
@@ -135,7 +193,7 @@ public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarket
     public bool IsCrypto(string symbol) => !IsEquity(symbol);
 
     /// <summary>
-    /// Normalizes quote from Alpaca SDK format to Skender Quote format.
+    /// Normalises quote from Alpaca SDK format to internal Quote format.
     /// </summary>
     public Quote NormalizeQuote(
         string symbol,
@@ -146,15 +204,14 @@ public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarket
         long volume,
         DateTimeOffset timestamp)
     {
-        // Validate OHLC
         if (high < low)
-            logger.LogWarning("Invalid quote for {symbol}: high < low", symbol);
+            logger.LogWarning("Invalid quote for {Symbol}: high < low", symbol);
 
         if (close < 0 || open < 0)
-            logger.LogWarning("Invalid quote for {symbol}: negative close/open", symbol);
+            logger.LogWarning("Invalid quote for {Symbol}: negative close/open", symbol);
 
         if (volume < 0)
-            logger.LogWarning("Invalid quote for {symbol}: negative volume", symbol);
+            logger.LogWarning("Invalid quote for {Symbol}: negative volume", symbol);
 
         return new Quote(
             Symbol: symbol,
@@ -165,11 +222,25 @@ public sealed class MarketDataClient(ILogger<MarketDataClient> logger) : IMarket
             Close: close,
             Volume: volume);
     }
+
+    /// <summary>
+    /// Maps timeframe string (e.g. "1Min") to Alpaca SDK BarTimeFrame.
+    /// </summary>
+    private static BarTimeFrame MapTimeFrame(string timeframe) =>
+        timeframe.ToUpperInvariant() switch
+        {
+            "1MIN" or "1MINUTE" or "MINUTE" => BarTimeFrame.Minute,
+            "5MIN" or "5MINUTE"             => new BarTimeFrame(5, BarTimeFrameUnit.Minute),
+            "15MIN" or "15MINUTE"           => new BarTimeFrame(15, BarTimeFrameUnit.Minute),
+            "30MIN" or "30MINUTE"           => new BarTimeFrame(30, BarTimeFrameUnit.Minute),
+            "1HOUR" or "1H" or "HOUR"       => BarTimeFrame.Hour,
+            "1DAY" or "1D" or "DAY"         => BarTimeFrame.Day,
+            _                               => BarTimeFrame.Minute,
+        };
 }
 
 /// <summary>
-/// Market data specific exceptions.
+/// Market data specific exception.
 /// </summary>
 public sealed class MarketDataException(string message, Exception? innerException = null)
     : Exception(message, innerException);
-

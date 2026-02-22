@@ -29,11 +29,15 @@ public sealed class OrchestratorService(
         return Task.CompletedTask;
     }
 
-    public Task StartingAsync(CancellationToken cancellationToken)
+    public async Task StartingAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Phase 1: Infrastructure - Starting schema and reconciliation");
-        // Schema manager and reconciliation handled by SchemaManagerService
-        return Task.CompletedTask;
+
+        // Rehydrate PositionTracker from DB before the trading loop begins.
+        // Mirrors Python's PositionTracker._load_from_db() so a worker restart does not
+        // lose open-position metadata (entry price, ATR, trailing stop).
+        var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
+        await positionTracker.InitialiseFromDbAsync(cancellationToken);
     }
 
     public async Task StartedAsync(CancellationToken cancellationToken)

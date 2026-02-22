@@ -48,7 +48,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _riskManager = new RiskManager(_brokerMock, fixture.StateRepository, tradingOptions, _riskManagerLogger);
         _orderManager = new OrderManager(_brokerMock, _riskManager, fixture.StateRepository, fixture.EventBus, tradingOptions, _orderManagerLogger);
 
-        var exitOptions = Options.Create(new ExitOptions());
+        var exitOptions = Options.Create(new TradingOptions { Exit = new ExitOptions(), Symbols = new SymbolsOptions() });
         _exitManager = new ExitManager(
             _positionTracker,
             _brokerMock,
@@ -110,22 +110,35 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
     [Fact]
     public async Task TestVector1_BarToOrderFlow()
     {
-        // Arrange
-        var bar = new BarEvent(
+        // Arrange: use a mock event bus to capture signals published by the strategy.
+        // 50 flat bars at 100m establish history; previous SMA pair state starts at (0, 0).
+        // Bar 51 at 200m → SMA5=120, SMA15≈106.7.
+        // isCrossoverUp = (prevFast=0 <= prevSlow=0) && (120 > 106.7) = true → BUY signal emitted.
+        var mockEventBus = Substitute.For<IEventBus>();
+        var strategy = new SmaCrossoverStrategy(mockEventBus, _strategyLogger);
+
+        for (var i = 0; i < 50; i++)
+        {
+            var flatBar = new BarEvent(
+                Symbol: "AAPL",
+                Timeframe: "1m",
+                Timestamp: DateTimeOffset.UtcNow.AddMinutes(-50 + i),
+                Open: 100m, High: 100m, Low: 100m, Close: 100m, Volume: 1_000_000);
+            await strategy.OnBarAsync(flatBar, CancellationToken.None);
+        }
+
+        // Act: jump bar at bar 51 triggers the crossover
+        var jumpBar = new BarEvent(
             Symbol: "AAPL",
             Timeframe: "1m",
             Timestamp: DateTimeOffset.UtcNow,
-            Open: 150m,
-            High: 151m,
-            Low: 149m,
-            Close: 150.5m,
-            Volume: 1000000);
+            Open: 200m, High: 200m, Low: 200m, Close: 200m, Volume: 1_000_000);
+        await strategy.OnBarAsync(jumpBar, CancellationToken.None);
 
-        // Act: Strategy generates signal
-        await _strategy.OnBarAsync(bar, CancellationToken.None);
-
-        // Assert: Strategy processed the bar (signals emitted to event bus)
-        Assert.NotNull(_strategy);
+        // Assert: at least one SignalEvent was published after the crossover bar
+        await mockEventBus.Received().PublishAsync(
+            Arg.Any<SignalEvent>(),
+            Arg.Any<CancellationToken>());
     }
 
     [Fact]
@@ -160,27 +173,37 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
     [Fact]
     public async Task TestVector3_CircuitBreakerTripsAfterFailures()
     {
-        // Arrange
-        var failureCount = 0;
-        _brokerMock.SubmitOrderAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<int>(),
-            Arg.Any<decimal>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                failureCount++;
-                return ValueTask.FromException<OrderInfo>(new BrokerException("Broker unavailable"));
-            });
+        // Arrange: DryRun=false + failing broker so each submission increments the circuit breaker.
+        var failingBroker = Substitute.For<IBrokerService>();
+        failingBroker.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(true, DateTimeOffset.UtcNow.AddDays(1), DateTimeOffset.UtcNow.AddHours(7), DateTimeOffset.UtcNow));
+        failingBroker.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new AccountInfo("test", 50000m, 0m, 100000m, 0m, true, false, DateTimeOffset.UtcNow));
+        failingBroker.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+        failingBroker.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(_ => ValueTask.FromException<OrderInfo>(new BrokerException("Broker unavailable")));
 
-        // Act: submit orders until circuit breaker trips
+        var localOptions = new TradingOptions
+        {
+            Symbols = new SymbolsOptions { Symbols = new List<string> { "AAPL" } },
+            Execution = new ExecutionOptions { DryRun = false },
+            RiskLimits = new RiskLimits { MaxTradesPerDay = 20, MaxDailyLoss = 10000m },
+            Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0 },
+            Session = new SessionOptions { MarketOpenTime = TimeSpan.Zero, MarketCloseTime = new TimeSpan(23, 59, 59) }
+        };
+
+        var localRiskManager = new RiskManager(failingBroker, fixture.StateRepository, localOptions, _riskManagerLogger);
+        var localOrderManager = new OrderManager(failingBroker, localRiskManager, fixture.StateRepository, fixture.EventBus, localOptions, _orderManagerLogger);
+
+        // Use a fixed signal timestamp so the gate check only applies once (retries bypass the gate)
         var signal = new SignalEvent(
             Symbol: "AAPL",
             Side: "BUY",
             Timeframe: "1m",
-            SignalTimestamp: DateTimeOffset.UtcNow,
+            SignalTimestamp: DateTimeOffset.Parse("2023-11-01T10:30:00Z"),
             Metadata: new SignalMetadata(
                 SmaPeriod: (5, 15),
                 FastSma: 150m,
@@ -190,10 +213,27 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
                 Confidence: 0.8m,
                 Regime: "TRENDING_UP",
                 RegimeStrength: 0.7m,
-                CurrentPrice: 150.5m));
+                CurrentPrice: 150.5m,
+                BarsInRegime: 15));
 
-        // Assert: circuit breaker logic in RiskManager would block
-        Assert.NotNull(_riskManager);
+        // Act: submit 5 times; each reaches the broker, which throws → circuit breaker increments
+        for (var i = 0; i < 5; i++)
+        {
+            try
+            {
+                await localOrderManager.SubmitSignalAsync(signal, 100, 150m);
+            }
+            catch (OrderManagerException) { }
+            catch (RiskManagerException) { break; } // should not happen before 5 failures
+        }
+
+        // Assert: circuit breaker must be >= 5 after 5 broker failures
+        var count = await fixture.StateRepository.GetCircuitBreakerCountAsync();
+        Assert.True(count >= 5, $"Expected circuit breaker >= 5 but got {count}");
+
+        // Assert: 6th attempt is blocked by the safety tier (circuit breaker tripped)
+        await Assert.ThrowsAsync<RiskManagerException>(
+            () => localOrderManager.SubmitSignalAsync(signal, 100, 150m).AsTask());
     }
 
     [Fact]

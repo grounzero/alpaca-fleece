@@ -58,4 +58,27 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
             pos.LastUpdateAt = DateTimeOffset.UtcNow;
         }
     }
+
+    /// <summary>
+    /// Rehydrates in-memory positions from the database.
+    /// Mirrors Python's PositionTracker._load_from_db(): reads position_tracking rows
+    /// and calls OpenPosition for each live row (qty > 0).
+    /// Call this once at startup before the main trading loop begins.
+    /// </summary>
+    public async ValueTask InitialiseFromDbAsync(CancellationToken ct = default)
+    {
+        var rows = await _stateRepository.GetAllPositionTrackingAsync(ct);
+        var loaded = 0;
+
+        foreach (var (symbol, quantity, entryPrice, atrValue) in rows)
+        {
+            if (quantity > 0)
+            {
+                OpenPosition(symbol, quantity, entryPrice, atrValue);
+                loaded++;
+            }
+        }
+
+        logger.LogInformation("PositionTracker rehydrated {count} position(s) from database", loaded);
+    }
 }

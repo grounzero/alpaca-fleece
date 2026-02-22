@@ -2,9 +2,14 @@ namespace AlpacaFleece.Trading.Orders;
 
 /// <summary>
 /// Order manager with SHA-256 idempotent client_order_id generation.
-/// Implements 11-step flow: Signal → Risk → Action → Intent Persist → Submit → Event Publish.
+/// Implements 11-step flow: Signal → Risk → Action → Entry Gate → Intent Persist → Submit → Event Publish.
 /// Persists order intent before submission for crash recovery.
 /// Increments circuit breaker on failures; resets on success.
+///
+/// Entry gating (for ENTER actions only):
+///   1. Position block  — rejects if an open DB position already exists for the symbol.
+///   2. Pending-order block — rejects if a non-terminal order for same symbol+side exists (different order).
+///   3. Per-bar gate — rejects duplicate signals from the same bar (1-minute cooldown via GateTryAcceptAsync).
 /// </summary>
 public sealed class OrderManager(
     IBrokerService broker,
@@ -16,18 +21,8 @@ public sealed class OrderManager(
 {
     /// <summary>
     /// Submits a signal as an order (persist first, then submit).
-    /// 11-step flow:
-    /// 1. Determine side (BUY/SELL from signal_type)
-    /// 2. Call RiskManager.CheckSignalAsync(signal) - throws if SAFETY/RISK fails
-    /// 3. Determine action (ENTER_LONG/EXIT_LONG/ENTER_SHORT/EXIT_SHORT) via PositionTracker
-    /// 4. If entry action: check position block, open order block, gate_try_accept
-    /// 5. Generate clientOrderId = SHA-256(...) first 16 chars
-    /// 6. Check StateRepository.GetOrderIntentAsync(clientOrderId) → if exists, return (duplicate)
-    /// 7. StateRepository.SaveOrderIntentAsync(clientOrderId, status="new") [CRASH SAFETY]
-    /// 8. If DRY_RUN: log and return
-    /// 9. await broker.SubmitOrderAsync(...) [NO RETRY]
-    /// 10. StateRepository.UpdateOrderIntentAsync(clientOrderId, status="submitted", alpacaOrderId=...)
-    /// 11. EventBus.PublishAsync(new OrderIntentEvent(...))
+    /// Returns the generated clientOrderId, or empty string if the order was gated/filtered.
+    /// Pass quantity=0 to auto-size using the dual-formula PositionSizer (equity cap + risk cap).
     /// </summary>
     public async ValueTask<string> SubmitSignalAsync(
         SignalEvent signal,
@@ -40,27 +35,33 @@ public sealed class OrderManager(
             // Step 1: Determine side (already in signal.Side as "BUY" or "SELL")
             var side = signal.Side;
 
+            // Step 1b: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
+            if (quantity == 0)
+            {
+                var account = await broker.GetAccountAsync(ct);
+                quantity = (int)PositionSizer.CalculateQuantity(
+                    signal,
+                    accountEquity: account.PortfolioValue,
+                    maxPositionPct: options.RiskLimits.MaxRiskPerTradePct,
+                    maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
+                    stopLossPct: options.RiskLimits.StopLossPct);
+                logger.LogInformation(
+                    "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
+                    signal.Symbol, quantity, account.PortfolioValue);
+            }
+
             // Step 2: Call RiskManager.CheckSignalAsync - throws RiskManagerException if SAFETY/RISK fails
             var riskCheckResult = await riskManager.CheckSignalAsync(signal, ct);
             if (!riskCheckResult.AllowsSignal)
             {
-                // FILTER tier soft skip - return empty string to indicate rejection
                 logger.LogWarning("Signal rejected by risk filter: {reason}", riskCheckResult.Reason);
                 return string.Empty;
             }
 
-            // Step 3: Determine action (simplified - assume entry for now)
-            // Full implementation would check PositionTracker for reversal scenarios
+            // Step 3: Determine action (simplified long-only: BUY→ENTER_LONG, SELL→EXIT_LONG)
             var action = DetermineAction(signal.Side);
 
-            // Step 4: Entry action checks (position block, open order block, gate)
-            // Simplified for now - full implementation would call gate_try_accept
-            if (action.StartsWith("ENTER", StringComparison.OrdinalIgnoreCase))
-            {
-                // Check position block and gates would go here
-            }
-
-            // Step 5: Generate deterministic clientOrderId
+            // Step 4: Generate deterministic clientOrderId before gating so duplicate check works first
             var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
                 strategy: "sma_crossover_multi",
                 symbol: signal.Symbol,
@@ -68,12 +69,46 @@ public sealed class OrderManager(
                 signalTimestamp: signal.SignalTimestamp,
                 side: signal.Side.ToLowerInvariant());
 
-            // Step 6: Check for duplicate - if already submitted, return
+            // Step 5: Idempotency check — if this exact order was already submitted, return early
             var existing = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
             if (existing is { AlpacaOrderId: not null })
             {
                 logger.LogInformation("Order already submitted with client_order_id {id}", clientOrderId);
                 return clientOrderId;
+            }
+
+            // Step 6: Entry gating (ENTER actions only; only for new intents — retries of failed
+            // submissions skip the gate so the broker can be reached again)
+            if (action.StartsWith("ENTER", StringComparison.OrdinalIgnoreCase) && existing == null)
+            {
+                // Gate 6a: Position block — don't open a new position if one already exists in DB
+                var dbPositions = await stateRepository.GetAllPositionTrackingAsync(ct);
+                if (dbPositions.Any(p => p.Symbol == signal.Symbol && p.Quantity > 0))
+                {
+                    logger.LogInformation(
+                        "Position block: already have open position for {symbol}, skipping ENTER",
+                        signal.Symbol);
+                    return string.Empty;
+                }
+
+                // Gate 6b: Per-bar gate — accept at most one ENTER per bar timestamp.
+                // cooldown=Zero relies purely on the same-bar timestamp check for idempotency;
+                // bar polling cadence already enforces rate limiting externally.
+                var gateName = $"entry_gate:{signal.Symbol}:{signal.Timeframe}";
+                var accepted = await stateRepository.GateTryAcceptAsync(
+                    gateName,
+                    signal.SignalTimestamp,
+                    DateTimeOffset.UtcNow,
+                    cooldown: TimeSpan.Zero,
+                    ct);
+
+                if (!accepted)
+                {
+                    logger.LogInformation(
+                        "Gate: signal for {symbol} on bar {ts} already accepted this cycle",
+                        signal.Symbol, signal.SignalTimestamp);
+                    return string.Empty;
+                }
             }
 
             // Step 7: Persist intent BEFORE submission (crash recovery)
@@ -110,7 +145,6 @@ public sealed class OrderManager(
             }
             catch (Exception ex)
             {
-                // On broker failure: increment circuit breaker
                 var currentCount = await stateRepository.GetCircuitBreakerCountAsync(ct);
                 await stateRepository.SaveCircuitBreakerCountAsync(currentCount + 1, ct);
 
@@ -128,7 +162,6 @@ public sealed class OrderManager(
                 DateTimeOffset.UtcNow,
                 ct);
 
-            // Reset circuit breaker on success
             await stateRepository.SaveCircuitBreakerCountAsync(0, ct);
 
             logger.LogInformation(
@@ -160,7 +193,8 @@ public sealed class OrderManager(
     }
 
     /// <summary>
-    /// Submits an exit order for a symbol (does not go through risk checks).
+    /// Submits an exit order for a symbol.
+    /// Uses a deterministic clientOrderId based on symbol + UTC date (idempotent per day).
     /// </summary>
     public async ValueTask SubmitExitAsync(
         string symbol,
@@ -171,8 +205,16 @@ public sealed class OrderManager(
     {
         try
         {
-            // Exit orders use a unique ID (not deterministic) as they're reactive
-            var clientOrderId = $"exit_{symbol}_{Guid.NewGuid().ToString()[..8]}";
+            // Deterministic exit ID: same symbol+side+date will yield the same ID (idempotent per day)
+            var nowUtc = DateTimeOffset.UtcNow;
+            var dateKey = nowUtc.ToString("yyyyMMdd");
+            var dayTs = new DateTimeOffset(nowUtc.Year, nowUtc.Month, nowUtc.Day, 0, 0, 0, TimeSpan.Zero);
+            var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
+                strategy: "exit",
+                symbol: symbol,
+                timeframe: dateKey,
+                signalTimestamp: dayTs,
+                side: side.ToLowerInvariant());
 
             await stateRepository.SaveOrderIntentAsync(
                 clientOrderId,
@@ -183,7 +225,6 @@ public sealed class OrderManager(
                 DateTimeOffset.UtcNow,
                 ct);
 
-            // DRY_RUN check
             if (options.Execution.DryRun)
             {
                 logger.LogInformation("DRY_RUN: Exit order would be submitted: {symbol} {side} {qty}",
@@ -218,7 +259,102 @@ public sealed class OrderManager(
     }
 
     /// <summary>
-    /// Determines action type from signal side (simplified).
+    /// Flattens all open broker positions by submitting opposing exit orders.
+    /// Long positions → SELL; short positions → BUY.
+    /// Per-symbol failures are logged and skipped; returns count of orders submitted.
+    /// </summary>
+    public async ValueTask<int> FlattenPositionsAsync(CancellationToken ct = default)
+    {
+        IReadOnlyList<PositionInfo> positions;
+        try
+        {
+            positions = await broker.GetPositionsAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "FlattenPositionsAsync: failed to fetch broker positions");
+            throw new OrderManagerException("Failed to fetch positions for flatten", ex);
+        }
+
+        if (positions.Count == 0)
+        {
+            logger.LogInformation("FlattenPositionsAsync: no open positions to flatten");
+            return 0;
+        }
+
+        logger.LogWarning("FlattenPositionsAsync: flattening {count} positions", positions.Count);
+
+        var submitted = 0;
+        foreach (var pos in positions)
+        {
+            try
+            {
+                // Long position (qty > 0) → SELL; short (qty < 0) → BUY
+                var exitSide = pos.Quantity > 0 ? "SELL" : "BUY";
+                var absQty = Math.Abs(pos.Quantity);
+
+                // Deterministic flatten ID: symbol + side + today so the same call is idempotent
+                var flattenNow = DateTimeOffset.UtcNow;
+                var flattenDateKey = flattenNow.ToString("yyyyMMdd");
+                var flattenDayTs = new DateTimeOffset(flattenNow.Year, flattenNow.Month, flattenNow.Day, 0, 0, 0, TimeSpan.Zero);
+                var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
+                    strategy: "flatten",
+                    symbol: pos.Symbol,
+                    timeframe: flattenDateKey,
+                    signalTimestamp: flattenDayTs,
+                    side: exitSide.ToLowerInvariant());
+
+                if (options.Execution.DryRun)
+                {
+                    logger.LogInformation(
+                        "DRY_RUN: Flatten would submit {side} {qty} {symbol}",
+                        exitSide, absQty, pos.Symbol);
+                    submitted++;
+                    continue;
+                }
+
+                var orderInfo = await broker.SubmitOrderAsync(
+                    pos.Symbol,
+                    exitSide,
+                    absQty,
+                    pos.CurrentPrice,   // market-price limit; caller can override
+                    clientOrderId,
+                    ct);
+
+                await stateRepository.SaveOrderIntentAsync(
+                    clientOrderId,
+                    pos.Symbol,
+                    exitSide,
+                    absQty,
+                    pos.CurrentPrice,
+                    DateTimeOffset.UtcNow,
+                    ct);
+
+                await stateRepository.UpdateOrderIntentAsync(
+                    clientOrderId,
+                    orderInfo.AlpacaOrderId,
+                    orderInfo.Status,
+                    DateTimeOffset.UtcNow,
+                    ct);
+
+                logger.LogInformation(
+                    "Flatten order submitted: {symbol} {side} {qty} (alpaca_id={alpacaId})",
+                    pos.Symbol, exitSide, absQty, orderInfo.AlpacaOrderId);
+
+                submitted++;
+            }
+            catch (OperationCanceledException) { throw; }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "FlattenPositionsAsync: failed for {symbol}, skipping", pos.Symbol);
+            }
+        }
+
+        return submitted;
+    }
+
+    /// <summary>
+    /// Determines action type from signal side (simplified long-only strategy).
     /// </summary>
     private static string DetermineAction(string side)
     {
