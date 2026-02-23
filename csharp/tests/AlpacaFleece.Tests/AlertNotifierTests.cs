@@ -6,6 +6,10 @@ namespace AlpacaFleece.Tests;
 public sealed class AlertNotifierTests
 {
     private readonly ILogger<AlertNotifier> _logger = Substitute.For<ILogger<AlertNotifier>>();
+    private static TradingOptions DefaultTradingOptions() => new()
+    {
+        Drawdown = new DrawdownOptions { WarningPositionMultiplier = 0.5m }
+    };
 
     [Fact]
     public async Task SendAlertAsync_SilentChannelLogsAlert()
@@ -17,7 +21,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.SendAlertAsync(
@@ -44,7 +48,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.SendAlertAsync(
@@ -66,7 +70,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.CircuitBreakerTrippedAsync(5);
@@ -90,7 +94,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.DailyLossLimitExceededAsync(-1500m, -1000m);
@@ -114,7 +118,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.PositionSizeLimitExceededAsync(50000m, 40000m);
@@ -138,7 +142,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.OrderSubmissionFailedAsync("AAPL", "Insufficient buying power");
@@ -162,7 +166,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.GhostPositionDetectedAsync("MSFT");
@@ -186,7 +190,7 @@ public sealed class AlertNotifierTests
             NotificationChannel = NotificationChannel.Silent
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         var discrepancies = new List<string>
         {
@@ -217,7 +221,7 @@ public sealed class AlertNotifierTests
             SmtpPassword = "super_secret_password"
         });
 
-        var notifier = new AlertNotifier(_logger, options);
+        var notifier = new AlertNotifier(_logger, options, DefaultTradingOptions());
 
         // Act
         await notifier.SendAlertAsync("Alert", "Message");

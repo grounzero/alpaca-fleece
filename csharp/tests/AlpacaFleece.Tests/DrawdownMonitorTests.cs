@@ -34,7 +34,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     public async Task InitializeAsync()
     {
         // Reset drawdown state before each test
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 0m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 0m, 0m, DateTimeOffset.UtcNow, false);
     }
 
     public Task DisposeAsync() => Task.CompletedTask;
@@ -57,7 +57,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     public async Task UpdateAsync_ReturnsWarning_AtThreshold()
     {
         // Persist peak = 100k, now equity = 97k → drawdown = 3% = warning threshold
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(97_000m);
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -70,7 +70,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_ReturnsHalt_AtThreshold()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(95_000m); // 5% drawdown
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -83,7 +83,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_ReturnsEmergency_AtThreshold()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(90_000m); // 10% drawdown
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -96,7 +96,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_ReturnsEmergency_AboveThreshold()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(85_000m); // 15% drawdown
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -112,7 +112,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     public async Task UpdateAsync_UpdatesPeakWhenEquityRises()
     {
         // Peak was 100k; equity is now 110k → new peak should be 110k (no drawdown)
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(110_000m);
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -149,7 +149,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_PersistsLevelToDatabase()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(94_000m); // 6% → Halt
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -166,7 +166,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task GetCurrentLevel_ReflectsLastUpdate()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(95_000m); // 5% → Halt
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -182,7 +182,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task GetPositionMultiplier_ReturnsHalf_InWarningState()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(97_000m); // 3% → Warning
         var monitor = CreateMonitor(DefaultOptions(warningMultiplier: 0.5m));
 
@@ -206,7 +206,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     public async Task GetPositionMultiplier_ReturnsOne_InHaltState()
     {
         // In Halt, multiplier is irrelevant (no new orders), but should still return 1.0
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(95_000m);
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -220,7 +220,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_DoesNothing_WhenDisabled()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(80_000m); // would be Emergency if enabled
         var monitor = CreateMonitor(DefaultOptions(enabled: false));
 
@@ -237,7 +237,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_ReportsTransition_WhenLevelChanges()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(97_000m); // 3% → Warning
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -250,7 +250,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task UpdateAsync_ReportsSameLevel_WhenNoChange()
     {
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(100_000m);
         var monitor = CreateMonitor(DefaultOptions());
 
@@ -276,7 +276,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
         await fixture.StateRepository.SaveCircuitBreakerCountAsync(0);
 
         // Set monitor to Emergency
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(90_000m); // 10% → Emergency
         var monitor = CreateMonitor(DefaultOptions());
         await monitor.UpdateAsync();
@@ -305,7 +305,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
         await fixture.StateRepository.SaveCircuitBreakerCountAsync(0);
 
         // Set monitor to Halt
-        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m);
+        await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 100_000m, 0m, DateTimeOffset.UtcNow, false);
         SetupEquity(95_000m); // 5% → Halt
         var monitor = CreateMonitor(DefaultOptions());
         await monitor.UpdateAsync();
