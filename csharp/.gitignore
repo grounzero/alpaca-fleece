@@ -1,0 +1,41 @@
+## Rider
+.idea/
+*.sln.iml
+
+## VS Code
+.vscode/
+*.code-workspace
+
+## Build
+bin/
+obj/
+*.dll
+*.exe
+*.pdb
+
+## NuGet
+*.nupkg
+*.snupkg
+.nuget/
+
+## User-specific
+.DS_Store
+*.user
+*.suo
+
+## Test
+coverage/
+TestResults/
+
+## Database
+*.db
+*.db-wal
+*.db-shm
+
+## Environment
+.env
+.env.local
+
+# Local appsettings files (do not commit secrets/config per-environment)
+# Ignore any appsettings.*.json (e.g. appsettings.Development.json)
+appsettings.*.json

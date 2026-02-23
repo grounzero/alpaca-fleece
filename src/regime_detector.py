@@ -20,7 +20,7 @@ class RegimeDetector:
     """Detects market regime to guide trading strategy."""
 
     def detect(self, df: pd.DataFrame) -> RegimeScore:
-        """Analyze price action to determine regime.
+        """Analyse price action to determine regime.
 
         Args:
             df: DataFrame with OHLCV data

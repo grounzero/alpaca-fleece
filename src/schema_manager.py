@@ -360,7 +360,7 @@ class SchemaManager:
                     # Acquire write lock early
                     cursor.execute("BEGIN IMMEDIATE")
                 else:
-                    # Still configure busy_timeout for consistent behavior, but do
+                    # Still configure busy_timeout for consistent behaviour, but do
                     # not alter journal mode or acquire a write lock.
                     cursor.execute("PRAGMA busy_timeout=5000")
                     # Start a deferred transaction so dry-run DDL can be rolled back

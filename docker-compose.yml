@@ -1,23 +1,46 @@
+version: '3.8'
+
 services:
-  alpaca-bot:
+  alpaca-fleece:
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: alpaca-trading-bot
-    restart: unless-stopped
-    env_file:
-      - .env
-    volumes:
-      # Persist database and logs
-      - ./data:/app/data
-      - ./logs:/app/logs
-      - ./config:/app/config
+    container_name: alpaca-fleece-bot
+
     environment:
-      - DATABASE_PATH=/app/data/trades.db
-      - CONFIG_PATH=/app/config/trading.yaml
-      - LOG_LEVEL=INFO
+      ASPNETCORE_ENVIRONMENT: Production
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      ALPACA_BASE_URL: ${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      ALLOW_LIVE_TRADING: ${ALLOW_LIVE_TRADING:-false}
+      TRADING_SYMBOLS: ${TRADING_SYMBOLS:-AAPL,MSFT,GOOGL}
+      EXIT_CHECK_INTERVAL_SECONDS: ${EXIT_CHECK_INTERVAL_SECONDS:-30}
+      RUNTIME_RECONCILIATION_INTERVAL_SECONDS: ${RUNTIME_RECONCILIATION_INTERVAL_SECONDS:-120}
+      DAILY_MAX_TRADES: ${DAILY_MAX_TRADES:-10}
+      DAILY_LOSS_LIMIT: ${DAILY_LOSS_LIMIT:-1000.00}
+
+    volumes:
+      - alpaca-data:/app/data
+      - ./config/trading.yaml:/app/config/trading.yaml:ro
+
+    ports:
+      - "8080:8080"  # Health checks endpoint
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
     logging:
-      driver: "json-file"
+      driver: json-file
       options:
-        max-size: "10m"
-        max-file: "5"
+        max-size: "100m"
+        max-file: "10"
+
+volumes:
+  alpaca-data:
+    driver: local

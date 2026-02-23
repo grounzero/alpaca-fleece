@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any, Optional
 
 import pandas as pd
-from alpaca.data.requests import StockBarsRequest, StockLatestQuoteRequest
+from alpaca.data.requests import CryptoLatestQuoteRequest, StockBarsRequest, StockLatestQuoteRequest
 from alpaca.data.timeframe import TimeFrame, TimeFrameUnit
 
 from .base import AlpacaDataClient, AlpacaDataClientError
@@ -12,6 +12,14 @@ from .base import AlpacaDataClient, AlpacaDataClientError
 
 class MarketDataClient(AlpacaDataClient):
     """Fetch market data: bars, snapshots."""
+
+    def __init__(
+        self, api_key: str, secret_key: str, trading_config: Optional[dict[str, Any]] = None
+    ) -> None:
+        # Pass trading_config to base which will decide whether to create
+        # a crypto client based on configured symbols and SDK availability.
+        super().__init__(api_key, secret_key, trading_config=trading_config)
+        self.trading_config: dict[str, Any] = trading_config or {}
 
     def get_bars(
         self,
@@ -50,7 +58,7 @@ class MarketDataClient(AlpacaDataClient):
                 end=end,
                 limit=limit,
             )
-            bars = self.client.get_stock_bars(request)
+            bars = self.stock_client.get_stock_bars(request)
 
             if symbol not in bars:
                 return pd.DataFrame()
@@ -70,14 +78,31 @@ class MarketDataClient(AlpacaDataClient):
         """Fetch latest snapshot (bid/ask for spread calculation).
 
         Args:
-            symbol: Stock symbol
+            symbol: Stock symbol (e.g., "AAPL" for equities, "BTC/USD" for crypto)
 
         Returns:
             Dict with keys: bid, ask, bid_size, ask_size, last_quote_time
         """
         try:
-            request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
-            quote = self.client.get_stock_latest_quote(request)
+            cfg = self.trading_config or {}
+            symbols_cfg = cfg.get("symbols", {}) if isinstance(cfg, dict) else {}
+            crypto_list = (
+                [str(s) for s in symbols_cfg.get("crypto_symbols", [])] if symbols_cfg else []
+            )
+            equity_list = (
+                [str(s) for s in symbols_cfg.get("equity_symbols", [])] if symbols_cfg else []
+            )
+
+            if symbol in crypto_list:
+                crypto_request = CryptoLatestQuoteRequest(symbol_or_symbols=symbol)
+                quote = self.crypto_client.get_crypto_latest_quote(crypto_request)
+            elif symbol in equity_list:
+                stock_request = StockLatestQuoteRequest(symbol_or_symbols=symbol)
+                quote = self.stock_client.get_stock_latest_quote(stock_request)
+            else:
+                raise AlpacaDataClientError(
+                    f"Symbol '{symbol}' not listed in trading_config 'crypto_symbols' or 'equity_symbols'"
+                )
 
             if symbol not in quote:
                 return {}
