@@ -4,7 +4,7 @@ namespace AlpacaFleece.Trading.Risk;
 /// Tracks peak-to-trough portfolio drawdown and manages escalation levels.
 ///
 /// State machine (Normal → Warning → Halt → Emergency):
-///   Normal    — drawdown &lt; WarningThresholdPct;  full trading
+///   Normal    — drawdown < WarningThresholdPct;  full trading
 ///   Warning   — drawdown ≥ WarningThresholdPct;  position sizes × WarningPositionMultiplier
 ///   Halt      — drawdown ≥ HaltThresholdPct;     no new positions
 ///   Emergency — drawdown ≥ EmergencyThresholdPct; all positions closed
