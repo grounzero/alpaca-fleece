@@ -161,7 +161,8 @@ public sealed class DrawdownMonitor(
 
             // Persist state BEFORE updating in-memory to ensure consistency
             await stateRepository.SaveDrawdownStateAsync(
-                newLevel, peakEquity, drawdownPct, _lastPeakResetTime, manualRecoveryRequested: false, ct);
+                newLevel, peakEquity, drawdownPct, _lastPeakResetTime,
+                manualRecoveryRequested: state?.ManualRecoveryRequested ?? false, ct);
             _currentLevel = newLevel;
 
             if (previousLevel != newLevel)
