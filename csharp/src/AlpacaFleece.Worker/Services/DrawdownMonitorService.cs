@@ -24,12 +24,33 @@ public sealed class DrawdownMonitorService(
             return;
         }
 
+        // Initialize from database first
+        await drawdownMonitor.InitializeAsync(stoppingToken);
+
         logger.LogInformation(
             "DrawdownMonitorService starting (interval={interval}s, warning={warn:P0}, halt={halt:P0}, emergency={emg:P0})",
             options.Drawdown.CheckIntervalSeconds,
             options.Drawdown.WarningThresholdPct,
             options.Drawdown.HaltThresholdPct,
             options.Drawdown.EmergencyThresholdPct);
+
+        // IMMEDIATE CHECK: Run once before timer loop to handle startup scenarios
+        // where we're already in Halt/Emergency state
+        try
+        {
+            var (initialPrevious, initialCurrent, initialDrawdownPct) = await drawdownMonitor.UpdateAsync(stoppingToken);
+            if (initialPrevious != initialCurrent || initialCurrent != DrawdownLevel.Normal)
+            {
+                logger.LogWarning(
+                    "DrawdownMonitorService: immediate check detected state {level} at startup (drawdown={pct:P2})",
+                    initialCurrent, initialDrawdownPct);
+                await HandleTransitionAsync(initialPrevious, initialCurrent, initialDrawdownPct, stoppingToken);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DrawdownMonitorService: immediate check failed at startup");
+        }
 
         using var timer = new PeriodicTimer(
             TimeSpan.FromSeconds(options.Drawdown.CheckIntervalSeconds));

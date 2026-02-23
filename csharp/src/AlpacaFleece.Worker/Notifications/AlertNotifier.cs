@@ -7,9 +7,11 @@ namespace AlpacaFleece.Worker.Notifications;
 /// </summary>
 public sealed class AlertNotifier(
     ILogger<AlertNotifier> logger,
-    IOptions<NotificationOptions> options)
+    IOptions<NotificationOptions> options,
+    TradingOptions tradingOptions)
 {
     private readonly NotificationOptions _options = options.Value;
+    private readonly TradingOptions _tradingOptions = tradingOptions;
     private const int MaxRetries = 3;
 
     /// <summary>
@@ -161,7 +163,7 @@ public sealed class AlertNotifier(
 
         var action = currentLevel switch
         {
-            DrawdownLevel.Warning => "Position sizes reduced to 50%.",
+            DrawdownLevel.Warning => $"Position sizes reduced to {_tradingOptions.Drawdown.WarningPositionMultiplier:P0}.",
             DrawdownLevel.Halt => "No new positions allowed.",
             DrawdownLevel.Emergency => "Closing all positions immediately.",
             _ => "Normal trading resumed."
