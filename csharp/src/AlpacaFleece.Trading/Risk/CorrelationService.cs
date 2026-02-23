@@ -27,8 +27,11 @@ public sealed class CorrelationService(
         if (!cfg.Enabled)
             return new RiskCheckResult(true, "Correlation limits disabled", "FILTER");
 
+        var allPositions = positionTracker.GetAllPositions();
+        var isExistingPosition = allPositions.ContainsKey(newSymbol);
+
         // Exclude same symbol — reversal scenario, already counted in portfolio.
-        var others = positionTracker.GetAllPositions().Keys
+        var others = allPositions.Keys
             .Where(s => !string.Equals(s, newSymbol, StringComparison.OrdinalIgnoreCase))
             .ToList();
 
@@ -50,11 +53,14 @@ public sealed class CorrelationService(
         var maxPositions = options.RiskLimits.MaxConcurrentPositions;
         if (maxPositions > 0)
         {
+            // Only add +1 for concentration if this is a *new* position (reversal/resize doesn't increase count).
+            var positionIncrement = isExistingPosition ? 0 : 1;
+
             // ── 2. Sector concentration ───────────────────────────────────────────
             var newSector = SectorMapping.GetSector(newSymbol);
             if (newSector != SectorMapping.UnknownSector)
             {
-                var sectorCount = others.Count(s => SectorMapping.GetSector(s) == newSector) + 1;
+                var sectorCount = others.Count(s => SectorMapping.GetSector(s) == newSector) + positionIncrement;
                 var sectorPct = (decimal)sectorCount / maxPositions;
                 if (sectorPct > cfg.MaxSectorPct)
                 {
@@ -67,7 +73,7 @@ public sealed class CorrelationService(
 
             // ── 3. Asset class concentration ──────────────────────────────────────
             var newClass = SectorMapping.GetAssetClass(newSymbol);
-            var classCount = others.Count(s => SectorMapping.GetAssetClass(s) == newClass) + 1;
+            var classCount = others.Count(s => SectorMapping.GetAssetClass(s) == newClass) + positionIncrement;
             var classPct = (decimal)classCount / maxPositions;
             if (classPct > cfg.MaxAssetClassPct)
             {
