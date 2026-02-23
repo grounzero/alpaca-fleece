@@ -200,7 +200,7 @@ public sealed class MarketDataClient(
     /// <summary>
     /// Normalizes Alpaca IBar to internal Quote record.
     /// </summary>
-    private static Quote NormalizeQuote(
+    private Quote NormalizeQuote(
         string symbol,
         decimal open,
         decimal high,
