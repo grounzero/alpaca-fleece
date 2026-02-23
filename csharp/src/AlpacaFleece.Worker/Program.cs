@@ -2,11 +2,43 @@
 // For now, using standard JSON formatting
 // using Serilog.Formatting.Compact;
 
+using AlpacaFleece.Infrastructure.Broker;
+using AlpacaFleece.Infrastructure.Data;
+using AlpacaFleece.Infrastructure.EventBus;
+using AlpacaFleece.Infrastructure.MarketData;
+using AlpacaFleece.Trading.Config;
+using AlpacaFleece.Trading.Exits;
+using AlpacaFleece.Trading.Orders;
+using AlpacaFleece.Trading.Positions;
+using AlpacaFleece.Trading.Risk;
+using AlpacaFleece.Trading.Strategy;
+using AlpacaFleece.Worker.Metrics;
+using AlpacaFleece.Worker.Notifications;
+using AlpacaFleece.Worker.Services;
+
 var hostBuilder = Host.CreateDefaultBuilder(args)
+    .ConfigureAppConfiguration((context, config) =>
+    {
+        // Add environment variables with ALPACA_ prefix mapped to config sections
+        // ALPACA_API_KEY -> Broker:ApiKey
+        // ALPACA_SECRET_KEY -> Broker:SecretKey
+        config.AddEnvironmentVariables(prefix: "ALPACA_");
+        
+        // Also add standard env vars for Docker compatibility (double underscore = section separator)
+        // Broker__ApiKey, Broker__SecretKey
+        config.AddEnvironmentVariables();
+    })
     .UseSerilog((context, loggerConfig) =>
     {
+        var logLevel = context.Configuration.GetValue("Serilog:MinimumLevel:Default", "Information");
+        var level = Enum.TryParse<Serilog.Events.LogEventLevel>(logLevel, out var parsedLevel) 
+            ? parsedLevel 
+            : Serilog.Events.LogEventLevel.Information;
+            
         loggerConfig
-            .MinimumLevel.Debug()
+            .MinimumLevel.Is(level)
+            .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
             .WriteTo.Console()
             .WriteTo.File(
                 "logs/alpaca-fleece.log",

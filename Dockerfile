@@ -1,5 +1,5 @@
 # Multi-stage build for AlpacaFleece
-FROM mcr.microsoft.com/dotnet/sdk:10-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-preview-alpine AS build
 WORKDIR /src
 
 # Copy project files
@@ -18,14 +18,14 @@ RUN dotnet build "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
 
 # Publish
 RUN dotnet publish "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
-    -c Release -o /app/publish --no-build --no-restore
+    -c Release -o /app/publish
 
 # Runtime image
-FROM mcr.microsoft.com/dotnet/runtime:10-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview-alpine
 WORKDIR /app
 
-# Install SQLite
-RUN apk add --no-cache sqlite-libs
+# Install SQLite and timezone data
+RUN apk add --no-cache sqlite-libs tzdata
 
 # Copy published application
 COPY --from=build /app/publish .
