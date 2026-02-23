@@ -34,6 +34,15 @@ public sealed class AlpacaBrokerService(
                 FetchedAt: DateTimeOffset.UtcNow);
         }
         catch (OperationCanceledException) { throw; }
+        catch (Exception ex) when (
+            ex.Message.Contains("Unauthorized", StringComparison.OrdinalIgnoreCase) ||
+            ex.Message.Contains("401"))
+        {
+            logger.LogError(ex,
+                "Failed to fetch clock - authentication failed. Check Alpaca API credentials");
+            throw new BrokerTransientException(
+                "Alpaca authentication failed. Verify ApiKey and SecretKey in appsettings", ex);
+        }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to fetch clock");
