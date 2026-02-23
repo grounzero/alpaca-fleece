@@ -189,7 +189,9 @@ public sealed class DrawdownStateEntityConfiguration : IEntityTypeConfiguration<
             Level = "Normal",
             PeakEquity = 0m,
             CurrentDrawdownPct = 0m,
-            LastUpdated = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero)
+            LastUpdated = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            LastPeakResetTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            ManualRecoveryRequested = false
         });
     }
 }

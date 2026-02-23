@@ -138,6 +138,8 @@ public interface IStateRepository
         DrawdownLevel level,
         decimal peakEquity,
         decimal drawdownPct,
+        DateTimeOffset lastPeakResetTime,
+        bool manualRecoveryRequested,
         CancellationToken ct = default);
 }
 
@@ -148,7 +150,9 @@ public record DrawdownStateDto(
     DrawdownLevel Level,
     decimal PeakEquity,
     decimal CurrentDrawdownPct,
-    DateTimeOffset LastUpdated);
+    DateTimeOffset LastUpdated,
+    DateTimeOffset LastPeakResetTime,
+    bool ManualRecoveryRequested);
 
 /// <summary>
 /// DTO for order intent from database.

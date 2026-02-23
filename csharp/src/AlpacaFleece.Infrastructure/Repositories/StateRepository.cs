@@ -609,7 +609,9 @@ public sealed class StateRepository(
                 Level: Enum.Parse<DrawdownLevel>(entity.Level),
                 PeakEquity: entity.PeakEquity,
                 CurrentDrawdownPct: entity.CurrentDrawdownPct,
-                LastUpdated: entity.LastUpdated);
+                LastUpdated: entity.LastUpdated,
+                LastPeakResetTime: entity.LastPeakResetTime,
+                ManualRecoveryRequested: entity.ManualRecoveryRequested);
         }
         catch (Exception ex)
         {
@@ -625,6 +627,8 @@ public sealed class StateRepository(
         DrawdownLevel level,
         decimal peakEquity,
         decimal drawdownPct,
+        DateTimeOffset lastPeakResetTime,
+        bool manualRecoveryRequested,
         CancellationToken ct = default)
     {
         try
@@ -640,7 +644,9 @@ public sealed class StateRepository(
                     Level = level.ToString(),
                     PeakEquity = peakEquity,
                     CurrentDrawdownPct = drawdownPct,
-                    LastUpdated = DateTimeOffset.UtcNow
+                    LastUpdated = DateTimeOffset.UtcNow,
+                    LastPeakResetTime = lastPeakResetTime,
+                    ManualRecoveryRequested = manualRecoveryRequested
                 });
             }
             else
@@ -649,6 +655,8 @@ public sealed class StateRepository(
                 entity.PeakEquity = peakEquity;
                 entity.CurrentDrawdownPct = drawdownPct;
                 entity.LastUpdated = DateTimeOffset.UtcNow;
+                entity.LastPeakResetTime = lastPeakResetTime;
+                entity.ManualRecoveryRequested = manualRecoveryRequested;
             }
 
             await dbContext.SaveChangesAsync(ct);

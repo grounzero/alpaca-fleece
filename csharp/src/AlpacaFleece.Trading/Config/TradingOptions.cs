@@ -134,9 +134,28 @@ public sealed class DrawdownOptions
     public bool Enabled { get; set; } = true;
 
     /// <summary>
+    /// Rolling lookback period in days for peak equity reset (default: 20).
+    /// Peak is reset to current equity at the start of each lookback window.
+    /// </summary>
+    public int LookbackDays { get; set; } = 20;
+
+    /// <summary>
+    /// Enable automatic recovery from drawdown states (default: true).
+    /// When true, levels descend (Halt → Normal) when drawdown falls below recovery thresholds.
+    /// When false, manual intervention required (system restart with recovery flag).
+    /// </summary>
+    public bool EnableAutoRecovery { get; set; } = true;
+
+    /// <summary>
     /// Drawdown % at which Warning is triggered — position sizes reduced (default: 3%).
     /// </summary>
     public decimal WarningThresholdPct { get; set; } = 0.03m;
+
+    /// <summary>
+    /// Drawdown % at which Recovery from Warning state occurs (default: 2%).
+    /// Only used if EnableAutoRecovery is true.
+    /// </summary>
+    public decimal WarningRecoveryThresholdPct { get; set; } = 0.02m;
 
     /// <summary>
     /// Drawdown % at which Halt is triggered — no new positions (default: 5%).
@@ -144,9 +163,21 @@ public sealed class DrawdownOptions
     public decimal HaltThresholdPct { get; set; } = 0.05m;
 
     /// <summary>
+    /// Drawdown % at which Recovery from Halt state occurs (default: 4%).
+    /// Only used if EnableAutoRecovery is true.
+    /// </summary>
+    public decimal HaltRecoveryThresholdPct { get; set; } = 0.04m;
+
+    /// <summary>
     /// Drawdown % at which Emergency is triggered — all positions closed (default: 10%).
     /// </summary>
     public decimal EmergencyThresholdPct { get; set; } = 0.10m;
+
+    /// <summary>
+    /// Drawdown % at which Recovery from Emergency state occurs (default: 8%).
+    /// Only used if EnableAutoRecovery is true.
+    /// </summary>
+    public decimal EmergencyRecoveryThresholdPct { get; set; } = 0.08m;
 
     /// <summary>
     /// Position size multiplier during Warning state (default: 0.5 = 50%).
