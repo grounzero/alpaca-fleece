@@ -173,3 +173,25 @@ public sealed class CircuitBreakerStateEntityConfiguration : IEntityTypeConfigur
         builder.HasData(new CircuitBreakerStateEntity { Id = 1, Count = 0, LastResetAt = DateTimeOffset.UtcNow });
     }
 }
+
+public sealed class DrawdownStateEntityConfiguration : IEntityTypeConfiguration<DrawdownStateEntity>
+{
+    public void Configure(EntityTypeBuilder<DrawdownStateEntity> builder)
+    {
+        builder.ToTable("drawdown_state");
+        builder.HasKey(x => x.Id);
+        builder.Property(x => x.Level).HasMaxLength(20).IsRequired();
+        builder.Property(x => x.PeakEquity).HasPrecision(10, 4);
+        builder.Property(x => x.CurrentDrawdownPct).HasPrecision(10, 6);
+        builder.HasData(new DrawdownStateEntity
+        {
+            Id = 1,
+            Level = "Normal",
+            PeakEquity = 0m,
+            CurrentDrawdownPct = 0m,
+            LastUpdated = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            LastPeakResetTime = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero),
+            ManualRecoveryRequested = false
+        });
+    }
+}

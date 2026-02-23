@@ -591,4 +591,80 @@ public sealed class StateRepository(
             throw new StateRepositoryException($"Failed to get all position tracking records", ex);
         }
     }
+
+    /// <summary>
+    /// Gets the persisted drawdown state. Returns null if no record exists yet.
+    /// </summary>
+    public async ValueTask<DrawdownStateDto?> GetDrawdownStateAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var entity = await dbContext.DrawdownState
+                .FirstOrDefaultAsync(x => x.Id == 1, ct);
+
+            if (entity == null)
+                return null;
+
+            return new DrawdownStateDto(
+                Level: Enum.Parse<DrawdownLevel>(entity.Level),
+                PeakEquity: entity.PeakEquity,
+                CurrentDrawdownPct: entity.CurrentDrawdownPct,
+                LastUpdated: entity.LastUpdated,
+                LastPeakResetTime: entity.LastPeakResetTime,
+                ManualRecoveryRequested: entity.ManualRecoveryRequested);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get drawdown state");
+            throw new StateRepositoryException("Failed to get drawdown state", ex);
+        }
+    }
+
+    /// <summary>
+    /// Persists the current drawdown state (upsert on single row Id=1).
+    /// </summary>
+    public async ValueTask SaveDrawdownStateAsync(
+        DrawdownLevel level,
+        decimal peakEquity,
+        decimal drawdownPct,
+        DateTimeOffset lastPeakResetTime,
+        bool manualRecoveryRequested,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            var entity = await dbContext.DrawdownState
+                .FirstOrDefaultAsync(x => x.Id == 1, ct);
+
+            if (entity == null)
+            {
+                dbContext.DrawdownState.Add(new DrawdownStateEntity
+                {
+                    Id = 1,
+                    Level = level.ToString(),
+                    PeakEquity = peakEquity,
+                    CurrentDrawdownPct = drawdownPct,
+                    LastUpdated = DateTimeOffset.UtcNow,
+                    LastPeakResetTime = lastPeakResetTime,
+                    ManualRecoveryRequested = manualRecoveryRequested
+                });
+            }
+            else
+            {
+                entity.Level = level.ToString();
+                entity.PeakEquity = peakEquity;
+                entity.CurrentDrawdownPct = drawdownPct;
+                entity.LastUpdated = DateTimeOffset.UtcNow;
+                entity.LastPeakResetTime = lastPeakResetTime;
+                entity.ManualRecoveryRequested = manualRecoveryRequested;
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to save drawdown state");
+            throw new StateRepositoryException("Failed to save drawdown state", ex);
+        }
+    }
 }

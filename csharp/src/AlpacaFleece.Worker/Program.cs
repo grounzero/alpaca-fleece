@@ -79,8 +79,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Trading (Phase 3: Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);
         services.AddScoped<IStrategy, SmaCrossoverStrategy>();
-        services.AddScoped<IRiskManager, RiskManager>();
-        services.AddScoped<IOrderManager, OrderManager>();
         services.AddSingleton<PositionTracker>();
 
         // Phase 2: Data Handling
@@ -88,6 +86,29 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
         services.AddExitManager(Options.Create(tradingOptions));
+
+        // Drawdown monitor (singleton — maintains in-memory level cache)
+        services.AddSingleton(sp => new DrawdownMonitor(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IStateRepository>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<DrawdownMonitor>>()));
+
+        // RiskManager and OrderManager with explicit DrawdownMonitor injection
+        services.AddScoped<IRiskManager>(sp => new RiskManager(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IStateRepository>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<RiskManager>>(),
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
+        services.AddScoped<IOrderManager>(sp => new OrderManager(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IRiskManager>(),
+            sp.GetRequiredService<IStateRepository>(),
+            sp.GetRequiredService<IEventBus>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<OrderManager>>(),
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
 
         // Phase 5: Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();
@@ -111,6 +132,9 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Phase 6: Housekeeping Service
         services.AddHostedService<HousekeepingService>();
+
+        // Drawdown monitor service
+        services.AddHostedService<DrawdownMonitorService>();
 
         // Notifications
         services.AddSingleton<AlertNotifier>();

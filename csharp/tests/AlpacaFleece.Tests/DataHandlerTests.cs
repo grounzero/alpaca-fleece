@@ -15,7 +15,7 @@ public sealed class DataHandlerTests
         var handler = new DataHandler(eventBus, dbContextFactory, logger);
 
         // Act
-        handler.Initialize();
+        handler.Initialise();
 
         // Assert: Subscribe method no longer exists in IEventBus interface
         // eventBus.Received().Subscribe<BarEvent>(Arg.Any<Func<BarEvent, CancellationToken, ValueTask>>());
@@ -65,7 +65,7 @@ public sealed class DataHandlerTests
         var handler = new DataHandler(eventBus, dbContextFactory, logger);
 
         // Act - manually add bars to the handler
-        handler.Initialize();
+        handler.Initialise();
         // Note: In real scenario, bars would be added via event subscription
 
         // Assert
@@ -96,7 +96,7 @@ public sealed class DataHandlerTests
         var dbContextFactory = Substitute.For<IDbContextFactory<TradingDbContext>>();
         var logger = Substitute.For<ILogger<DataHandler>>();
         var handler = new DataHandler(eventBus, dbContextFactory, logger);
-        handler.Initialize();
+        handler.Initialise();
 
         // Act
         handler.Clear();
@@ -115,7 +115,7 @@ public sealed class DataHandlerTests
         var handler = new DataHandler(eventBus, dbContextFactory, logger);
 
         // Act
-        handler.Initialize();
+        handler.Initialise();
 
         // Assert: Subscribe method no longer exists in IEventBus interface
         // eventBus.Received(1).Subscribe<BarEvent>(Arg.Any<Func<BarEvent, CancellationToken, ValueTask>>());
@@ -147,7 +147,7 @@ public sealed class DataHandlerTests
         var dbContextFactory = Substitute.For<IDbContextFactory<TradingDbContext>>();
         var logger = Substitute.For<ILogger<DataHandler>>();
         var handler = new DataHandler(eventBus, dbContextFactory, logger);
-        handler.Initialize();
+        handler.Initialise();
 
         // Act
         var aapl = handler.GetBarCount("AAPL");

@@ -19,6 +19,7 @@ public sealed class TradingDbContext(DbContextOptions<TradingDbContext> options)
     public DbSet<ReconciliationReportEntity> ReconciliationReports { get; set; } = null!;
     public DbSet<SchemaMetaEntity> SchemaMeta { get; set; } = null!;
     public DbSet<CircuitBreakerStateEntity> CircuitBreakerState { get; set; } = null!;
+    public DbSet<DrawdownStateEntity> DrawdownState { get; set; } = null!;
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -37,5 +38,6 @@ public sealed class TradingDbContext(DbContextOptions<TradingDbContext> options)
         modelBuilder.ApplyConfiguration(new ReconciliationReportEntityConfiguration());
         modelBuilder.ApplyConfiguration(new SchemaMetaEntityConfiguration());
         modelBuilder.ApplyConfiguration(new CircuitBreakerStateEntityConfiguration());
+        modelBuilder.ApplyConfiguration(new DrawdownStateEntityConfiguration());
     }
 }

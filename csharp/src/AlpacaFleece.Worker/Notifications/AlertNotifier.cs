@@ -7,9 +7,11 @@ namespace AlpacaFleece.Worker.Notifications;
 /// </summary>
 public sealed class AlertNotifier(
     ILogger<AlertNotifier> logger,
-    IOptions<NotificationOptions> options)
+    IOptions<NotificationOptions> options,
+    TradingOptions tradingOptions)
 {
     private readonly NotificationOptions _options = options.Value;
+    private readonly TradingOptions _tradingOptions = tradingOptions;
     private const int MaxRetries = 3;
 
     /// <summary>
@@ -140,6 +142,35 @@ public sealed class AlertNotifier(
         var message = $"Reconciliation failed with {discrepancies.Count} discrepancies.";
         await SendAlertAsync("🔄 Reconciliation Failed", message,
             AlertSeverity.Critical, ct);
+    }
+
+    /// <summary>
+    /// Drawdown level transition alert. Sent whenever the level changes.
+    /// </summary>
+    public async ValueTask DrawdownLevelChangedAsync(
+        DrawdownLevel previousLevel,
+        DrawdownLevel currentLevel,
+        decimal drawdownPct,
+        CancellationToken ct = default)
+    {
+        var (title, severity) = currentLevel switch
+        {
+            DrawdownLevel.Warning => ("Drawdown Warning", AlertSeverity.Warning),
+            DrawdownLevel.Halt => ("Drawdown Halt", AlertSeverity.Error),
+            DrawdownLevel.Emergency => ("Emergency Drawdown", AlertSeverity.Critical),
+            _ => ("Drawdown Recovered", AlertSeverity.Info)
+        };
+
+        var action = currentLevel switch
+        {
+            DrawdownLevel.Warning => $"Position sizes reduced to {_tradingOptions.Drawdown.WarningPositionMultiplier:P0}.",
+            DrawdownLevel.Halt => "No new positions allowed.",
+            DrawdownLevel.Emergency => "Closing all positions immediately.",
+            _ => "Normal trading resumed."
+        };
+
+        var message = $"Drawdown: {drawdownPct:P2} — level changed from {previousLevel} to {currentLevel}. {action}";
+        await SendAlertAsync(title, message, severity, ct);
     }
 
     /// <summary>

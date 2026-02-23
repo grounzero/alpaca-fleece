@@ -179,3 +179,24 @@ public sealed class CircuitBreakerStateEntity
     public int Count { get; set; }
     public DateTimeOffset LastResetAt { get; set; }
 }
+
+/// <summary>
+/// Drawdown state (single-row; tracks peak equity, escalation level, and recovery settings).
+/// </summary>
+public sealed class DrawdownStateEntity
+{
+    public int Id { get; set; }
+    public string Level { get; set; } = "Normal";
+    public decimal PeakEquity { get; set; }
+    public decimal CurrentDrawdownPct { get; set; }
+    public DateTimeOffset LastUpdated { get; set; }
+    /// <summary>
+    /// Timestamp of the last peak reset (for rolling lookback window).
+    /// </summary>
+    public DateTimeOffset LastPeakResetTime { get; set; }
+    /// <summary>
+    /// Flag set to true when manual recovery is requested (only applies if EnableAutoRecovery is false).
+    /// Cleared after next startup when recovery logic validates and resets to Normal.
+    /// </summary>
+    public bool ManualRecoveryRequested { get; set; }
+}

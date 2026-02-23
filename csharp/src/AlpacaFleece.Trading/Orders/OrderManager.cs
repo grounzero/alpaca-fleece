@@ -17,7 +17,8 @@ public sealed class OrderManager(
     IStateRepository stateRepository,
     IEventBus eventBus,
     TradingOptions options,
-    ILogger<OrderManager> logger) : IOrderManager
+    ILogger<OrderManager> logger,
+    DrawdownMonitor? drawdownMonitor = null) : IOrderManager
 {
     /// <summary>
     /// Submits a signal as an order (persist first, then submit).
@@ -35,7 +36,10 @@ public sealed class OrderManager(
             // Step 1: Determine side (already in signal.Side as "BUY" or "SELL")
             var side = signal.Side;
 
-            // Step 1b: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
+            // Step 1b: Get drawdown position multiplier (Warning state reduces sizes)
+            var positionMultiplier = drawdownMonitor?.GetPositionMultiplier() ?? 1.0m;
+
+            // Step 1c: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
             if (quantity == 0)
             {
                 var account = await broker.GetAccountAsync(ct);
@@ -48,6 +52,19 @@ public sealed class OrderManager(
                 logger.LogInformation(
                     "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
                     signal.Symbol, quantity, account.PortfolioValue);
+            }
+
+            // Step 1d: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
+            if (positionMultiplier < 1.0m)
+            {
+                var originalQty = quantity;
+                quantity = Math.Max(1, (int)(quantity * positionMultiplier));
+                if (quantity != originalQty)
+                {
+                    logger.LogInformation(
+                        "Drawdown warning: position size reduced from {original} to {qty} ({multiplier:P0}) for {symbol}",
+                        originalQty, quantity, positionMultiplier, signal.Symbol);
+                }
             }
 
             // Step 2: Call RiskManager.CheckSignalAsync - throws RiskManagerException if SAFETY/RISK fails
