@@ -24,7 +24,7 @@ RUN dotnet publish "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview-alpine
 WORKDIR /app
 
-# Install SQLite, timezone data, and procps (for pgrep in healthcheck)
+# Install SQLite, timezone data, and process utilities for healthcheck
 RUN apk add --no-cache sqlite-libs tzdata procps
 
 # Copy published application

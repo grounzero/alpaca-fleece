@@ -11,7 +11,7 @@ namespace AlpacaFleece.Worker.Services;
 /// </summary>
 public sealed class DrawdownMonitorService(
     DrawdownMonitor drawdownMonitor,
-    IOrderManager orderManager,
+    IServiceProvider serviceProvider,
     AlertNotifier alertNotifier,
     TradingOptions options,
     ILogger<DrawdownMonitorService> logger) : BackgroundService
@@ -107,6 +107,9 @@ public sealed class DrawdownMonitorService(
                 "DRAWDOWN EMERGENCY: drawdown={pct:P2} — closing all open positions", drawdownPct);
             try
             {
+                // Resolve IOrderManager from service provider (scoped service)
+                using var scope = serviceProvider.CreateScope();
+                var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
                 var count = await orderManager.FlattenPositionsAsync(ct);
                 logger.LogWarning(
                     "DrawdownMonitorService: emergency flatten submitted {count} exit orders", count);

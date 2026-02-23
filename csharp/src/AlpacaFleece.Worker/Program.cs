@@ -79,8 +79,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Trading (Phase 3: Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);
         services.AddScoped<IStrategy, SmaCrossoverStrategy>();
-        services.AddScoped<IRiskManager, RiskManager>();
-        services.AddScoped<IOrderManager, OrderManager>();
         services.AddSingleton<PositionTracker>();
 
         // Phase 2: Data Handling
@@ -101,6 +99,22 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             sp.GetRequiredService<IStateRepository>(),
             tradingOptions,
             sp.GetRequiredService<ILogger<DrawdownMonitor>>()));
+
+        // RiskManager and OrderManager with explicit DrawdownMonitor injection
+        services.AddScoped<IRiskManager>(sp => new RiskManager(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IStateRepository>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<RiskManager>>(),
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
+        services.AddScoped<IOrderManager>(sp => new OrderManager(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IRiskManager>(),
+            sp.GetRequiredService<IStateRepository>(),
+            sp.GetRequiredService<IEventBus>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<OrderManager>>(),
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
 
         // Phase 5: Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();

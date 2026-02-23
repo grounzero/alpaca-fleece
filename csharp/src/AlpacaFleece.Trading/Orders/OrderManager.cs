@@ -36,20 +36,8 @@ public sealed class OrderManager(
             // Step 1: Determine side (already in signal.Side as "BUY" or "SELL")
             var side = signal.Side;
 
-            // Step 1b: Apply drawdown position multiplier (Warning state reduces sizes)
+            // Step 1b: Get drawdown position multiplier (Warning state reduces sizes)
             var positionMultiplier = drawdownMonitor?.GetPositionMultiplier() ?? 1.0m;
-            if (positionMultiplier < 1.0m)
-            {
-                // Reduce provided quantity, ensuring at least 1 share
-                var originalQty = quantity;
-                quantity = Math.Max(1, (int)(quantity * positionMultiplier));
-                if (quantity != originalQty)
-                {
-                    logger.LogInformation(
-                        "Drawdown warning: position size reduced from {original} to {qty} ({multiplier:P0}) for {symbol}",
-                        originalQty, quantity, positionMultiplier, signal.Symbol);
-                }
-            }
 
             // Step 1c: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
             if (quantity == 0)
@@ -58,20 +46,24 @@ public sealed class OrderManager(
                 quantity = (int)PositionSizer.CalculateQuantity(
                     signal,
                     accountEquity: account.PortfolioValue,
-                    maxPositionPct: options.RiskLimits.MaxRiskPerTradePct * positionMultiplier,
-                    maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct * positionMultiplier,
+                    maxPositionPct: options.RiskLimits.MaxRiskPerTradePct,
+                    maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
                     stopLossPct: options.RiskLimits.StopLossPct);
-                if (positionMultiplier < 1.0m)
+                logger.LogInformation(
+                    "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
+                    signal.Symbol, quantity, account.PortfolioValue);
+            }
+
+            // Step 1d: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
+            if (positionMultiplier < 1.0m)
+            {
+                var originalQty = quantity;
+                quantity = Math.Max(1, (int)(quantity * positionMultiplier));
+                if (quantity != originalQty)
                 {
                     logger.LogInformation(
-                        "Drawdown warning: auto-sized position reduced by {multiplier:P0} for {symbol}: {qty}",
-                        positionMultiplier, signal.Symbol, quantity);
-                }
-                else
-                {
-                    logger.LogInformation(
-                        "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
-                        signal.Symbol, quantity, account.PortfolioValue);
+                        "Drawdown warning: position size reduced from {original} to {qty} ({multiplier:P0}) for {symbol}",
+                        originalQty, quantity, positionMultiplier, signal.Symbol);
                 }
             }
 
