@@ -46,12 +46,6 @@ public sealed class BrokerOptions
     public int TimeoutMs { get; set; } = 5000;
 
     /// <summary>
-    /// Data feed to use for market data. "SIP" (default) or "IEX" (for paper trading).
-    /// IEX is free but has less coverage. SIP requires paid subscription.
-    /// </summary>
-    public string DataFeed { get; set; } = "SIP";
-
-    /// <summary>
     /// Validates configuration.
     /// </summary>
     public void Validate()
