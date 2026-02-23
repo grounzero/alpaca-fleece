@@ -220,31 +220,58 @@ public sealed class DrawdownMonitor(
     /// </summary>
     private DrawdownLevel CalculateLevel(DrawdownLevel currentLevel, decimal drawdownPct, DrawdownOptions cfg)
     {
-        // Check escalation thresholds first (highest priority)
-        if (drawdownPct >= cfg.EmergencyThresholdPct)
-            return DrawdownLevel.Emergency;
-        if (drawdownPct >= cfg.HaltThresholdPct)
-            return DrawdownLevel.Halt;
-        if (drawdownPct >= cfg.WarningThresholdPct)
-            return DrawdownLevel.Warning;
-
-        // Check recovery thresholds (only if auto-recovery is enabled)
-        if (!cfg.EnableAutoRecovery)
-            return currentLevel; // No recovery if disabled
-
-        // Recovery logic: descend levels when drawdown falls below recovery thresholds
-        return currentLevel switch
+        // Hysteresis:
+        // - Escalate based on escalation thresholds when moving to a higher-severity state.
+        // - Recover based on recovery thresholds (if auto-recovery enabled) when moving to a lower-severity state.
+        switch (currentLevel)
         {
-            DrawdownLevel.Emergency when drawdownPct < cfg.EmergencyRecoveryThresholdPct
-                => DrawdownLevel.Halt,
+            case DrawdownLevel.Normal:
+                // From Normal we can only escalate based on thresholds.
+                if (drawdownPct >= cfg.EmergencyThresholdPct)
+                    return DrawdownLevel.Emergency;
+                if (drawdownPct >= cfg.HaltThresholdPct)
+                    return DrawdownLevel.Halt;
+                if (drawdownPct >= cfg.WarningThresholdPct)
+                    return DrawdownLevel.Warning;
 
-            DrawdownLevel.Halt when drawdownPct < cfg.HaltRecoveryThresholdPct
-                => DrawdownLevel.Warning,
+                // Already at lowest severity; nothing to recover to.
+                return DrawdownLevel.Normal;
 
-            DrawdownLevel.Warning when drawdownPct < cfg.WarningRecoveryThresholdPct
-                => DrawdownLevel.Normal,
+            case DrawdownLevel.Warning:
+                // Escalate to higher severity if thresholds are breached.
+                if (drawdownPct >= cfg.EmergencyThresholdPct)
+                    return DrawdownLevel.Emergency;
+                if (drawdownPct >= cfg.HaltThresholdPct)
+                    return DrawdownLevel.Halt;
 
-            _ => currentLevel
-        };
+                // Optionally recover to Normal if auto-recovery is enabled.
+                if (cfg.EnableAutoRecovery && drawdownPct < cfg.WarningRecoveryThresholdPct)
+                    return DrawdownLevel.Normal;
+
+                return DrawdownLevel.Warning;
+
+            case DrawdownLevel.Halt:
+                // Escalate to Emergency if threshold is breached.
+                if (drawdownPct >= cfg.EmergencyThresholdPct)
+                    return DrawdownLevel.Emergency;
+
+                // Optionally recover to Warning if auto-recovery is enabled.
+                if (cfg.EnableAutoRecovery && drawdownPct < cfg.HaltRecoveryThresholdPct)
+                    return DrawdownLevel.Warning;
+
+                return DrawdownLevel.Halt;
+
+            case DrawdownLevel.Emergency:
+                // Already at highest severity; cannot escalate further.
+                // Optionally recover to Halt if auto-recovery is enabled.
+                if (cfg.EnableAutoRecovery && drawdownPct < cfg.EmergencyRecoveryThresholdPct)
+                    return DrawdownLevel.Halt;
+
+                return DrawdownLevel.Emergency;
+
+            default:
+                // Fallback to Normal if we somehow get an unknown level.
+                return DrawdownLevel.Normal;
+        }
     }
 }
