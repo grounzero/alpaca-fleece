@@ -254,7 +254,7 @@ public static class SectorMapping
             ["XLP"] = AssetClass.Equity, ["XLV"] = AssetClass.Equity,
             ["XLF"] = AssetClass.Equity, ["XLE"] = AssetClass.Equity,
             ["XLI"] = AssetClass.Equity, ["XLB"] = AssetClass.Equity,
-            ["XLU"] = AssetClass.Equity, ["XLRE"] = AssetClass.Equity,
+            ["XLU"] = AssetClass.Equity,
 
             // Bond ETFs
             ["TLT"] = AssetClass.Bond, ["IEF"] = AssetClass.Bond,

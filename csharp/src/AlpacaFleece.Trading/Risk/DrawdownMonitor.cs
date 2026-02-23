@@ -23,10 +23,10 @@ public sealed class DrawdownMonitor(
     private const int MaxConsecutiveFailures = 3;
 
     /// <summary>
-    /// Initializes the drawdown monitor by loading persisted state from database.
+    /// Initialises the drawdown monitor by loading persisted state from database.
     /// Must be called before using GetCurrentLevel() to ensure accurate state after restarts.
     /// </summary>
-    public async Task InitializeAsync(CancellationToken ct = default)
+    public async Task InitialiseAsync(CancellationToken ct = default)
     {
         if (!options.Drawdown.Enabled)
         {
@@ -42,7 +42,7 @@ public sealed class DrawdownMonitor(
                 _currentLevel = state.Level;
                 logger.LogInformation(
                     "DrawdownMonitor initialized from database: level={level}, peak={peak:F2}, drawdown={drawdown:P2}",
-                    state.Level, state.PeakEquity, state.DrawdownPct);
+                    state.Level, state.PeakEquity, state.CurrentDrawdownPct);
             }
             else
             {

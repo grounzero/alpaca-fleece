@@ -1,17 +1,27 @@
 using Alpaca.Markets;
+using AlpacaFleece.Infrastructure.Broker;
 
 namespace AlpacaFleece.Infrastructure.MarketData;
 
 /// <summary>
 /// Wrapper for Alpaca market data API.
 /// Routes equity bars/quotes to IAlpacaDataClient and crypto to IAlpacaCryptoDataClient.
+/// Configurable data feed (SIP or IEX) for paper trading compatibility.
 /// </summary>
 public sealed class MarketDataClient(
     IAlpacaDataClient equityDataClient,
     IAlpacaCryptoDataClient cryptoDataClient,
+    BrokerOptions brokerOptions,
     ILogger<MarketDataClient> logger) : IMarketDataClient
 {
     private const int RequestTimeoutMs = 10000;
+
+    private readonly DataFeed _dataFeed = brokerOptions.DataFeed?.ToUpperInvariant() switch
+    {
+        "IEX" => DataFeed.Iex,
+        "SIP" => DataFeed.Sip,
+        _ => DataFeed.Sip
+    };
 
     /// <summary>
     /// Fetches the most recent <paramref name="limit"/> bars for a symbol.
@@ -58,7 +68,8 @@ public sealed class MarketDataClient(
                 // up to ~780 bars (2 full trading days × 390 min/day) in one request.
                 var from = into.AddDays(-5);
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
-                    .WithPageSize(1000);
+                    .WithPageSize(1000)
+                    .WithFeed(_dataFeed);
                 var page = await equityDataClient.ListHistoricalBarsAsync(request, cts.Token);
                 items = page.Items;
             }

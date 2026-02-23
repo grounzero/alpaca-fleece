@@ -24,8 +24,8 @@ public sealed class DrawdownMonitorService(
             return;
         }
 
-        // Initialize from database first
-        await drawdownMonitor.InitializeAsync(stoppingToken);
+        // Initialise from database first
+        await drawdownMonitor.InitialiseAsync(stoppingToken);
 
         logger.LogInformation(
             "DrawdownMonitorService starting (interval={interval}s, warning={warn:P0}, halt={halt:P0}, emergency={emg:P0})",
