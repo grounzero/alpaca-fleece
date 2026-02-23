@@ -116,13 +116,13 @@ public sealed class DataHandler(
             var bars = history.GetBars();
             var quotes = new List<Quote>(bars.Count);
 
-            var baseDate = DateTime.UtcNow.AddMinutes(-bars.Count);
+            var baseDate = DateTimeOffset.UtcNow.AddMinutes(-bars.Count);
             for (var i = 0; i < bars.Count; i++)
             {
                 var bar = bars[i];
                 quotes.Add(new Quote(
                     Symbol: symbol,
-                    Date: baseDate.AddMinutes(i),
+                    Timestamp: baseDate.AddMinutes(i),
                     Open: bar.Open,
                     High: bar.High,
                     Low: bar.Low,

@@ -2,18 +2,21 @@ namespace AlpacaFleece.Trading.Risk;
 
 /// <summary>
 /// Risk manager with 3-tier checks: Safety, Risk, Filters.
-/// TIER 1 (Safety): Kill switch, circuit breaker, market clock
-/// TIER 2 (Risk): Daily loss limit, trade count, position limits
+/// TIER 1 (Safety): Kill switch, circuit breaker, market clock, drawdown emergency
+/// TIER 2 (Risk): Daily loss limit, trade count, position limits, drawdown halt
 /// TIER 3 (Filter): Confidence, regime bars, time-of-day (soft skip)
 ///
 /// Crypto symbols (from options.Symbols.CryptoSymbols) are exempt from market-hours checks.
+/// DrawdownMonitor is optional; when null, drawdown checks are skipped.
 /// </summary>
 public sealed class RiskManager(
     IBrokerService broker,
     IStateRepository stateRepository,
     TradingOptions options,
     ILogger<RiskManager> logger,
-    IMarketDataClient? marketDataClient = null) : IRiskManager
+    IMarketDataClient? marketDataClient = null,
+    DrawdownMonitor? drawdownMonitor = null,
+    CorrelationService? correlationService = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
     private readonly HashSet<string> _cryptoSymbols =
@@ -86,6 +89,15 @@ public sealed class RiskManager(
                 RiskTier: "SAFETY");
         }
 
+        // Drawdown emergency: all new orders blocked
+        if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Emergency)
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: "Drawdown emergency: all new orders blocked",
+                RiskTier: "SAFETY");
+        }
+
         // Circuit breaker tripped
         var circuitBreakerCount = await stateRepository.GetCircuitBreakerCountAsync(ct);
         if (circuitBreakerCount >= 5)
@@ -122,6 +134,15 @@ public sealed class RiskManager(
         SignalEvent signal,
         CancellationToken ct = default)
     {
+        // Drawdown halt: no new positions (check first, before expensive broker calls)
+        if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Halt)
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: "Drawdown halt: no new positions allowed",
+                RiskTier: "RISK");
+        }
+
         var account = await broker.GetAccountAsync(ct);
 
         // Daily PnL limit
@@ -236,15 +257,23 @@ public sealed class RiskManager(
             }
         }
 
+        // Correlation and concentration filter
+        if (correlationService != null)
+        {
+            var correlationResult = correlationService.Check(signal.Symbol);
+            if (!correlationResult.AllowsSignal)
+                return correlationResult;
+        }
+
         // Spread filter: skip if bid/ask spread is too wide
         if (marketDataClient != null)
         {
             try
             {
                 var snapshot = await marketDataClient.GetSnapshotAsync(signal.Symbol, ct);
-                if (snapshot != null && snapshot.Bid > 0 && snapshot.Ask > 0)
+                if (snapshot != null && snapshot.BidPrice > 0 && snapshot.AskPrice > 0)
                 {
-                    var spread = (snapshot.Ask - snapshot.Bid) / snapshot.Bid;
+                    var spread = (snapshot.AskPrice - snapshot.BidPrice) / snapshot.BidPrice;
                     if (spread > options.Filters.MaxSpreadPct)
                     {
                         return new RiskCheckResult(
