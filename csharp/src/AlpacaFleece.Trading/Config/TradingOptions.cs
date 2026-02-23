@@ -11,6 +11,7 @@ public sealed class TradingOptions
     public ExitOptions Exit { get; set; } = new();
     public ExecutionOptions Execution { get; set; } = new();
     public FiltersOptions Filters { get; set; } = new();
+    public DrawdownOptions Drawdown { get; set; } = new();
 }
 
 /// <summary>
@@ -120,4 +121,40 @@ public sealed class FiltersOptions
     /// Signals with a wider spread are soft-skipped (FILTER tier).
     /// </summary>
     public decimal MaxSpreadPct { get; set; } = 0.005m;
+}
+
+/// <summary>
+/// Drawdown monitoring configuration.
+/// </summary>
+public sealed class DrawdownOptions
+{
+    /// <summary>
+    /// Enable or disable drawdown monitoring (default: true).
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Drawdown % at which Warning is triggered — position sizes reduced (default: 3%).
+    /// </summary>
+    public decimal WarningThresholdPct { get; set; } = 0.03m;
+
+    /// <summary>
+    /// Drawdown % at which Halt is triggered — no new positions (default: 5%).
+    /// </summary>
+    public decimal HaltThresholdPct { get; set; } = 0.05m;
+
+    /// <summary>
+    /// Drawdown % at which Emergency is triggered — all positions closed (default: 10%).
+    /// </summary>
+    public decimal EmergencyThresholdPct { get; set; } = 0.10m;
+
+    /// <summary>
+    /// Position size multiplier during Warning state (default: 0.5 = 50%).
+    /// </summary>
+    public decimal WarningPositionMultiplier { get; set; } = 0.5m;
+
+    /// <summary>
+    /// Drawdown check interval in seconds (default: 60).
+    /// </summary>
+    public int CheckIntervalSeconds { get; set; } = 60;
 }

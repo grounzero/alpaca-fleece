@@ -89,6 +89,13 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
         services.AddExitManager(Options.Create(tradingOptions));
 
+        // Drawdown monitor (singleton — maintains in-memory level cache)
+        services.AddSingleton(sp => new DrawdownMonitor(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IStateRepository>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<DrawdownMonitor>>()));
+
         // Phase 5: Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();
 
@@ -111,6 +118,9 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Phase 6: Housekeeping Service
         services.AddHostedService<HousekeepingService>();
+
+        // Drawdown monitor service
+        services.AddHostedService<DrawdownMonitorService>();
 
         // Notifications
         services.AddSingleton<AlertNotifier>();

@@ -14,4 +14,5 @@ global using AlpacaFleece.Trading.Config;
 global using AlpacaFleece.Trading.Exits;
 global using AlpacaFleece.Trading.Orders;
 global using AlpacaFleece.Trading.Positions;
+global using AlpacaFleece.Trading.Risk;
 global using Serilog;

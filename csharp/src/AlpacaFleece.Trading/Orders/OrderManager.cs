@@ -17,7 +17,8 @@ public sealed class OrderManager(
     IStateRepository stateRepository,
     IEventBus eventBus,
     TradingOptions options,
-    ILogger<OrderManager> logger) : IOrderManager
+    ILogger<OrderManager> logger,
+    DrawdownMonitor? drawdownMonitor = null) : IOrderManager
 {
     /// <summary>
     /// Submits a signal as an order (persist first, then submit).
@@ -39,15 +40,25 @@ public sealed class OrderManager(
             if (quantity == 0)
             {
                 var account = await broker.GetAccountAsync(ct);
+                var positionMultiplier = drawdownMonitor?.GetPositionMultiplier() ?? 1.0m;
                 quantity = (int)PositionSizer.CalculateQuantity(
                     signal,
                     accountEquity: account.PortfolioValue,
-                    maxPositionPct: options.RiskLimits.MaxRiskPerTradePct,
-                    maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
+                    maxPositionPct: options.RiskLimits.MaxRiskPerTradePct * positionMultiplier,
+                    maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct * positionMultiplier,
                     stopLossPct: options.RiskLimits.StopLossPct);
-                logger.LogInformation(
-                    "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
-                    signal.Symbol, quantity, account.PortfolioValue);
+                if (positionMultiplier < 1.0m)
+                {
+                    logger.LogInformation(
+                        "Drawdown warning: position size reduced by {multiplier:P0} for {symbol}: {qty}",
+                        positionMultiplier, signal.Symbol, quantity);
+                }
+                else
+                {
+                    logger.LogInformation(
+                        "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
+                        signal.Symbol, quantity, account.PortfolioValue);
+                }
             }
 
             // Step 2: Call RiskManager.CheckSignalAsync - throws RiskManagerException if SAFETY/RISK fails

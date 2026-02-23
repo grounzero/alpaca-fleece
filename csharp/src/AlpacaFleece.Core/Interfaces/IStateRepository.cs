@@ -124,7 +124,31 @@ public interface IStateRepository
     /// </summary>
     ValueTask<IReadOnlyList<(string Symbol, int Quantity, decimal EntryPrice, decimal AtrValue)>>
         GetAllPositionTrackingAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets the persisted drawdown state (peak equity, current drawdown, level).
+    /// Returns null if no state has been saved yet.
+    /// </summary>
+    ValueTask<DrawdownStateDto?> GetDrawdownStateAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Persists the current drawdown state (upsert, single row).
+    /// </summary>
+    ValueTask SaveDrawdownStateAsync(
+        DrawdownLevel level,
+        decimal peakEquity,
+        decimal drawdownPct,
+        CancellationToken ct = default);
 }
+
+/// <summary>
+/// DTO for drawdown state from database.
+/// </summary>
+public record DrawdownStateDto(
+    DrawdownLevel Level,
+    decimal PeakEquity,
+    decimal CurrentDrawdownPct,
+    DateTimeOffset LastUpdated);
 
 /// <summary>
 /// DTO for order intent from database.

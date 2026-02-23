@@ -2,18 +2,20 @@ namespace AlpacaFleece.Trading.Risk;
 
 /// <summary>
 /// Risk manager with 3-tier checks: Safety, Risk, Filters.
-/// TIER 1 (Safety): Kill switch, circuit breaker, market clock
-/// TIER 2 (Risk): Daily loss limit, trade count, position limits
+/// TIER 1 (Safety): Kill switch, circuit breaker, market clock, drawdown emergency
+/// TIER 2 (Risk): Daily loss limit, trade count, position limits, drawdown halt
 /// TIER 3 (Filter): Confidence, regime bars, time-of-day (soft skip)
 ///
 /// Crypto symbols (from options.Symbols.CryptoSymbols) are exempt from market-hours checks.
+/// DrawdownMonitor is optional; when null, drawdown checks are skipped.
 /// </summary>
 public sealed class RiskManager(
     IBrokerService broker,
     IStateRepository stateRepository,
     TradingOptions options,
     ILogger<RiskManager> logger,
-    IMarketDataClient? marketDataClient = null) : IRiskManager
+    IMarketDataClient? marketDataClient = null,
+    DrawdownMonitor? drawdownMonitor = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
     private readonly HashSet<string> _cryptoSymbols =
@@ -86,6 +88,15 @@ public sealed class RiskManager(
                 RiskTier: "SAFETY");
         }
 
+        // Drawdown emergency: all new orders blocked
+        if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Emergency)
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: "Drawdown emergency: all new orders blocked",
+                RiskTier: "SAFETY");
+        }
+
         // Circuit breaker tripped
         var circuitBreakerCount = await stateRepository.GetCircuitBreakerCountAsync(ct);
         if (circuitBreakerCount >= 5)
@@ -123,6 +134,15 @@ public sealed class RiskManager(
         CancellationToken ct = default)
     {
         var account = await broker.GetAccountAsync(ct);
+
+        // Drawdown halt: no new positions
+        if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Halt)
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: "Drawdown halt: no new positions allowed",
+                RiskTier: "RISK");
+        }
 
         // Daily PnL limit
         var dailyLossState = await stateRepository.GetStateAsync("daily_realized_pnl", ct);

@@ -179,3 +179,15 @@ public sealed class CircuitBreakerStateEntity
     public int Count { get; set; }
     public DateTimeOffset LastResetAt { get; set; }
 }
+
+/// <summary>
+/// Drawdown state (single-row; tracks peak equity and current escalation level).
+/// </summary>
+public sealed class DrawdownStateEntity
+{
+    public int Id { get; set; }
+    public string Level { get; set; } = "Normal";
+    public decimal PeakEquity { get; set; }
+    public decimal CurrentDrawdownPct { get; set; }
+    public DateTimeOffset LastUpdated { get; set; }
+}

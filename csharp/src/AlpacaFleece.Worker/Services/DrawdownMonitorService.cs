@@ -1,0 +1,99 @@
+namespace AlpacaFleece.Worker.Services;
+
+/// <summary>
+/// Background service that periodically calls DrawdownMonitor.UpdateAsync().
+///
+/// On level transitions:
+///   Warning   — alert sent; OrderManager applies position multiplier automatically.
+///   Halt      — alert sent; RiskManager blocks new positions automatically.
+///   Emergency — alert sent; all open positions closed via IOrderManager.FlattenPositionsAsync().
+///   Recovery  — alert sent; normal trading resumes.
+/// </summary>
+public sealed class DrawdownMonitorService(
+    DrawdownMonitor drawdownMonitor,
+    IOrderManager orderManager,
+    AlertNotifier alertNotifier,
+    TradingOptions options,
+    ILogger<DrawdownMonitorService> logger) : BackgroundService
+{
+    protected override async Task ExecuteAsync(CancellationToken stoppingToken)
+    {
+        if (!options.Drawdown.Enabled)
+        {
+            logger.LogInformation("DrawdownMonitorService: disabled via configuration, not starting");
+            return;
+        }
+
+        logger.LogInformation(
+            "DrawdownMonitorService starting (interval={interval}s, warning={warn:P0}, halt={halt:P0}, emergency={emg:P0})",
+            options.Drawdown.CheckIntervalSeconds,
+            options.Drawdown.WarningThresholdPct,
+            options.Drawdown.HaltThresholdPct,
+            options.Drawdown.EmergencyThresholdPct);
+
+        using var timer = new PeriodicTimer(
+            TimeSpan.FromSeconds(options.Drawdown.CheckIntervalSeconds));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(stoppingToken))
+            {
+                try
+                {
+                    var (previous, current, drawdownPct) = await drawdownMonitor.UpdateAsync(stoppingToken);
+
+                    if (previous != current)
+                    {
+                        await HandleTransitionAsync(previous, current, drawdownPct, stoppingToken);
+                    }
+                }
+                catch (OperationCanceledException)
+                {
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    logger.LogError(ex, "DrawdownMonitorService: error in check cycle");
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            logger.LogInformation("DrawdownMonitorService stopped");
+        }
+    }
+
+    private async Task HandleTransitionAsync(
+        DrawdownLevel previous,
+        DrawdownLevel current,
+        decimal drawdownPct,
+        CancellationToken ct)
+    {
+        // Alert on every transition
+        try
+        {
+            await alertNotifier.DrawdownLevelChangedAsync(previous, current, drawdownPct, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DrawdownMonitorService: failed to send alert for {previous} → {current}", previous, current);
+        }
+
+        // Emergency: close all positions immediately
+        if (current == DrawdownLevel.Emergency)
+        {
+            logger.LogCritical(
+                "DRAWDOWN EMERGENCY: drawdown={pct:P2} — closing all open positions", drawdownPct);
+            try
+            {
+                var count = await orderManager.FlattenPositionsAsync(ct);
+                logger.LogWarning(
+                    "DrawdownMonitorService: emergency flatten submitted {count} exit orders", count);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "DrawdownMonitorService: emergency flatten failed");
+            }
+        }
+    }
+}

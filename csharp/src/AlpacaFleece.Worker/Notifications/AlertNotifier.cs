@@ -143,6 +143,35 @@ public sealed class AlertNotifier(
     }
 
     /// <summary>
+    /// Drawdown level transition alert. Sent whenever the level changes.
+    /// </summary>
+    public async ValueTask DrawdownLevelChangedAsync(
+        DrawdownLevel previousLevel,
+        DrawdownLevel currentLevel,
+        decimal drawdownPct,
+        CancellationToken ct = default)
+    {
+        var (title, severity) = currentLevel switch
+        {
+            DrawdownLevel.Warning => ("Drawdown Warning", AlertSeverity.Warning),
+            DrawdownLevel.Halt => ("Drawdown Halt", AlertSeverity.Error),
+            DrawdownLevel.Emergency => ("Emergency Drawdown", AlertSeverity.Critical),
+            _ => ("Drawdown Recovered", AlertSeverity.Info)
+        };
+
+        var action = currentLevel switch
+        {
+            DrawdownLevel.Warning => "Position sizes reduced to 50%.",
+            DrawdownLevel.Halt => "No new positions allowed.",
+            DrawdownLevel.Emergency => "Closing all positions immediately.",
+            _ => "Normal trading resumed."
+        };
+
+        var message = $"Drawdown: {drawdownPct:P2} — level changed from {previousLevel} to {currentLevel}. {action}";
+        await SendAlertAsync(title, message, severity, ct);
+    }
+
+    /// <summary>
     /// Sends Slack webhook alert.
     /// </summary>
     private async ValueTask SendSlackAsync(
