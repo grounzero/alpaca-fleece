@@ -195,7 +195,7 @@ public sealed class StreamPollerService(
 
                 foreach (var quote in quotes)
                 {
-                    var barTs = new DateTimeOffset(quote.Date, TimeSpan.Zero);
+                    var barTs = quote.Timestamp;
 
                     // Skip bars we've already published (deduplication)
                     if (barTs <= lastTs)

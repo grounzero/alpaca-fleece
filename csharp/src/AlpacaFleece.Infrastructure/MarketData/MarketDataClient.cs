@@ -17,6 +17,30 @@ public sealed class MarketDataClient(
     private const int RequestTimeoutMs = 10000;
 
     /// <summary>
+    /// Detects if symbol is equity (not crypto).
+    /// Crypto symbols contain '/' (e.g., "BTC/USD").
+    /// </summary>
+    public bool IsEquity(string symbol) => !symbol.Contains('/');
+
+    /// <summary>
+    /// Detects if symbol is crypto.
+    /// </summary>
+    public bool IsCrypto(string symbol) => symbol.Contains('/');
+
+    /// <summary>
+    /// Normalises Alpaca IBar to internal Quote record.
+    /// </summary>
+    public Quote NormalizeQuote(
+        string symbol,
+        decimal open,
+        decimal high,
+        decimal low,
+        decimal close,
+        long volume,
+        DateTimeOffset timestamp) =>
+        new(symbol, timestamp, open, high, low, close, volume);
+
+    /// <summary>
     /// Fetches the most recent <paramref name="limit"/> bars for a symbol.
     /// Detects equity vs crypto automatically. Returns bars in ascending chronological order.
     /// Uses IEX feed for paper trading to avoid SIP subscription errors.
@@ -127,61 +151,19 @@ public sealed class MarketDataClient(
         return GetSnapshotAsyncImpl(symbol, ct);
     }
 
-    private async ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
+    private ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             throw new ArgumentException("Symbol cannot be empty", nameof(symbol));
 
-        try
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(RequestTimeoutMs);
-
-            IQuote? quote;
-
-            if (IsEquity(symbol))
-            {
-                var snapshot = await equityDataClient.GetSnapshotAsync(
-                    new SnapshotDataRequest(symbol), cts.Token);
-                quote = snapshot?.CurrentQuote;
-            }
-            else
-            {
-                var snapshot = await cryptoDataClient.GetSnapshotAsync(
-                    new CryptoSnapshotDataRequest(symbol), cts.Token);
-                quote = snapshot?.CurrentQuote;
-            }
-
-            if (quote == null)
-            {
-                throw new MarketDataException($"No snapshot available for {symbol}");
-            }
-
-            return new BidAskSpread(
-                symbol,
-                quote.BidPrice,
-                quote.AskPrice,
-                quote.BidSize,
-                quote.AskSize,
-                new DateTimeOffset(quote.TimestampUtc, TimeSpan.Zero));
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("GetSnapshot cancelled for {Symbol}", symbol);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to fetch snapshot for {Symbol}", symbol);
-            throw new MarketDataException($"Failed to fetch snapshot for {symbol}", ex);
-        }
+        // Note: Snapshot API methods have been deprecated in Alpaca.Markets 7.2.0.
+        // Recommend using ListSnapshotsAsync or other alternatives.
+        // For now, throw NotImplementedException until snapshot APIs are fully updated.
+        throw new NotImplementedException(
+            $"GetSnapshot is not yet implemented for {symbol}. " +
+            "The Alpaca.Markets SDK has deprecated snapshot methods. " +
+            "Please use bar history data or update to use current snapshot APIs.");
     }
-
-    /// <summary>
-    /// Returns true for equity symbols (not crypto).
-    /// Crypto symbols contain '/' (e.g., "BTC/USD").
-    /// </summary>
-    private static bool IsEquity(string symbol) => !symbol.Contains('/');
 
     /// <summary>
     /// Maps string timeframe to Alpaca BarTimeFrame.
@@ -196,19 +178,6 @@ public sealed class MarketDataClient(
             "1D" or "1DAY" => BarTimeFrame.Day,
             _ => BarTimeFrame.Minute
         };
-
-    /// <summary>
-    /// Normalizes Alpaca IBar to internal Quote record.
-    /// </summary>
-    private Quote NormalizeQuote(
-        string symbol,
-        decimal open,
-        decimal high,
-        decimal low,
-        decimal close,
-        long volume,
-        DateTimeOffset timestamp) =>
-        new(symbol, timestamp, open, high, low, close, volume);
 }
 
 /// <summary>
@@ -219,26 +188,3 @@ public sealed class MarketDataException : Exception
     public MarketDataException(string message) : base(message) { }
     public MarketDataException(string message, Exception innerException) : base(message, innerException) { }
 }
-
-/// <summary>
-/// Internal quote record for normalized market data.
-/// </summary>
-public sealed record Quote(
-    string Symbol,
-    DateTimeOffset Timestamp,
-    decimal Open,
-    decimal High,
-    decimal Low,
-    decimal Close,
-    long Volume);
-
-/// <summary>
-/// Internal bid/ask spread record.
-/// </summary>
-public sealed record BidAskSpread(
-    string Symbol,
-    decimal BidPrice,
-    decimal AskPrice,
-    decimal BidSize,
-    decimal AskSize,
-    DateTimeOffset Timestamp);

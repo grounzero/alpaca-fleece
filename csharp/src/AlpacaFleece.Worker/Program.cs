@@ -100,13 +100,14 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             tradingOptions,
             sp.GetRequiredService<ILogger<DrawdownMonitor>>()));
 
-        // RiskManager and OrderManager with explicit DrawdownMonitor injection
+        // RiskManager and OrderManager with explicit DrawdownMonitor and CorrelationService injection
         services.AddScoped<IRiskManager>(sp => new RiskManager(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),
             tradingOptions,
             sp.GetRequiredService<ILogger<RiskManager>>(),
-            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
+            correlationService: sp.GetRequiredService<CorrelationService>()));
         services.AddScoped<IOrderManager>(sp => new OrderManager(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IRiskManager>(),

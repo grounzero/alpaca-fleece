@@ -20,7 +20,6 @@ public static class MarketDataExtensions
         var environment = options.IsPaperTrading ? Environments.Paper : Environments.Live;
         var secretKey = new SecretKey(options.ApiKey, options.SecretKey);
 
-        services.AddSingleton(options);
         services.AddSingleton(environment.GetAlpacaDataClient(secretKey));
         services.AddSingleton(environment.GetAlpacaCryptoDataClient(secretKey));
         services.AddSingleton<IMarketDataClient, MarketDataClient>();
