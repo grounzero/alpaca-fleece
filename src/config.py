@@ -156,7 +156,9 @@ def validate_exit_config(exit_config: dict[str, Any]) -> None:
     # Validate trailing_stop settings
     activation = exit_config.get("trailing_stop_activation_pct", 0.01)
     if not isinstance(activation, (int, float)):
-        raise ConfigError(f"trailing_stop_activation_pct must be a number, got {type(activation).__name__}")
+        raise ConfigError(
+            f"trailing_stop_activation_pct must be a number, got {type(activation).__name__}"
+        )
     if activation <= 0:
         raise ConfigError("trailing_stop_activation_pct must be positive")
     if activation >= 1:
