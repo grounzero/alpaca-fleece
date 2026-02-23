@@ -15,7 +15,8 @@ public sealed class RiskManager(
     TradingOptions options,
     ILogger<RiskManager> logger,
     IMarketDataClient? marketDataClient = null,
-    DrawdownMonitor? drawdownMonitor = null) : IRiskManager
+    DrawdownMonitor? drawdownMonitor = null,
+    CorrelationService? correlationService = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
     private readonly HashSet<string> _cryptoSymbols =
@@ -254,6 +255,14 @@ public sealed class RiskManager(
                     Reason: $"Too close to market close: {minutesBeforeClose:F1} min < {options.Filters.MinMinutesBeforeClose} min",
                     RiskTier: "FILTER");
             }
+        }
+
+        // Correlation and concentration filter
+        if (correlationService != null)
+        {
+            var correlationResult = correlationService.Check(signal.Symbol);
+            if (!correlationResult.AllowsSignal)
+                return correlationResult;
         }
 
         // Spread filter: skip if bid/ask spread is too wide

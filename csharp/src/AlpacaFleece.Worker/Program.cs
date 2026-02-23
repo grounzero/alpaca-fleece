@@ -89,6 +89,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
         services.AddExitManager(Options.Create(tradingOptions));
 
+        // Correlation service (singleton — all checks are in-memory)
+        services.AddSingleton(sp => new CorrelationService(
+            tradingOptions,
+            sp.GetRequiredService<PositionTracker>(),
+            sp.GetRequiredService<ILogger<CorrelationService>>()));
+
         // Drawdown monitor (singleton — maintains in-memory level cache)
         services.AddSingleton(sp => new DrawdownMonitor(
             sp.GetRequiredService<IBrokerService>(),
