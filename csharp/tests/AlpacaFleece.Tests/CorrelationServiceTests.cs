@@ -140,22 +140,15 @@ public sealed class CorrelationServiceTests
         SetupPositions("AAPL");
         var svc = CreateService(DefaultOptions(
             maxCorrelation: 0.70m,
-            staticCorrelations: new())); // no entries
-
-        // MSFT vs AAPL — not in config, assumed 0 correlation
-        var result = svc.Check("MSFT");
-
-        // May still fail sector check (both Technology, 2/5 = 40% > 20%)
-        // Set maxSectorPct high enough to isolate correlation-only test
-        var svc2 = CreateService(DefaultOptions(
-            maxCorrelation: 0.70m,
             maxSectorPct: 1.0m,   // disable sector check
             maxAssetClassPct: 1.0m,
-            staticCorrelations: new()));
+            staticCorrelations: new())); // no entries
 
-        var result2 = svc2.Check("MSFT");
+        // MSFT vs AAPL — not in config, assumed 0 correlation. Sector checks are
+        // effectively disabled by maxSectorPct=1.0 to isolate correlation-only behavior.
+        var result = svc.Check("MSFT");
 
-        Assert.True(result2.AllowsSignal);
+        Assert.True(result.AllowsSignal);
     }
 
     // ─── Sector concentration ─────────────────────────────────────────────────────
