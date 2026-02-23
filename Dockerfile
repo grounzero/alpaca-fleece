@@ -40,9 +40,9 @@ ENV DOTNET_EnableDiagnostics=0
 # Volume for persistent data
 VOLUME ["/app/data"]
 
-# Health check endpoint (if HTTP server available)
+# Health check - verify worker process is running
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-    CMD dotnet --version || exit 1
+    CMD pgrep -f "AlpacaFleece.Worker" > /dev/null || exit 1
 
 # Entry point
 ENTRYPOINT ["dotnet", "AlpacaFleece.Worker.dll"]

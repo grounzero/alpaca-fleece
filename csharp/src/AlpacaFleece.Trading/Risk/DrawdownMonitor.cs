@@ -19,6 +19,42 @@ public sealed class DrawdownMonitor(
     ILogger<DrawdownMonitor> logger)
 {
     private volatile DrawdownLevel _currentLevel = DrawdownLevel.Normal;
+    private int _consecutiveFailures = 0;
+    private const int MaxConsecutiveFailures = 3;
+
+    /// <summary>
+    /// Initializes the drawdown monitor by loading persisted state from database.
+    /// Must be called before using GetCurrentLevel() to ensure accurate state after restarts.
+    /// </summary>
+    public async Task InitializeAsync(CancellationToken ct = default)
+    {
+        if (!options.Drawdown.Enabled)
+        {
+            logger.LogInformation("DrawdownMonitor: disabled, skipping initialization");
+            return;
+        }
+
+        try
+        {
+            var state = await stateRepository.GetDrawdownStateAsync(ct);
+            if (state != null)
+            {
+                _currentLevel = state.Level;
+                logger.LogInformation(
+                    "DrawdownMonitor initialized from database: level={level}, peak={peak:F2}, drawdown={drawdown:P2}",
+                    state.Level, state.PeakEquity, state.DrawdownPct);
+            }
+            else
+            {
+                logger.LogInformation("DrawdownMonitor: no persisted state found, starting at Normal");
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DrawdownMonitor: failed to initialize from database, defaulting to Normal");
+            _currentLevel = DrawdownLevel.Normal;
+        }
+    }
 
     /// <summary>
     /// Returns the current drawdown level (synchronous, hot-path safe).
@@ -27,7 +63,7 @@ public sealed class DrawdownMonitor(
 
     /// <summary>
     /// Returns the position size multiplier for the current drawdown level.
-    /// 0.5 during Warning, 1.0 for all other levels.
+    /// WarningPositionMultiplier during Warning, 1.0 for all other levels.
     /// </summary>
     public decimal GetPositionMultiplier() =>
         _currentLevel == DrawdownLevel.Warning
@@ -39,6 +75,9 @@ public sealed class DrawdownMonitor(
     /// and returns the (previous, current, drawdownPct) transition tuple.
     ///
     /// If Drawdown.Enabled is false, returns (Normal, Normal, 0) without touching the broker or DB.
+    ///
+    /// On repeated broker/DB failures, escalates to Halt after MaxConsecutiveFailures attempts
+    /// to ensure fail-safe behavior.
     /// </summary>
     public async ValueTask<(DrawdownLevel Previous, DrawdownLevel Current, decimal DrawdownPct)>
         UpdateAsync(CancellationToken ct = default)
@@ -69,6 +108,10 @@ public sealed class DrawdownMonitor(
 
             var previousLevel = _currentLevel;
 
+            // Reset failure counter on success
+            _consecutiveFailures = 0;
+
+            // Persist state BEFORE updating in-memory to ensure consistency
             await stateRepository.SaveDrawdownStateAsync(newLevel, peakEquity, drawdownPct, ct);
             _currentLevel = newLevel;
 
@@ -89,7 +132,26 @@ public sealed class DrawdownMonitor(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "DrawdownMonitor: failed to update drawdown state");
+            _consecutiveFailures++;
+            logger.LogError(ex, 
+                "DrawdownMonitor: failed to update drawdown state (failure {count}/{max})",
+                _consecutiveFailures, MaxConsecutiveFailures);
+
+            // Fail-safe: escalate to Halt after repeated failures
+            if (_consecutiveFailures >= MaxConsecutiveFailures)
+            {
+                var previousLevel = _currentLevel;
+                if (previousLevel != DrawdownLevel.Halt)
+                {
+                    _currentLevel = DrawdownLevel.Halt;
+                    logger.LogCritical(
+                        "DrawdownMonitor: fail-safe triggered after {count} failures, escalating to HALT",
+                        _consecutiveFailures);
+                    return (previousLevel, DrawdownLevel.Halt, 0m);
+                }
+            }
+
+            // Return current state without change on transient failure
             return (_currentLevel, _currentLevel, 0m);
         }
     }
