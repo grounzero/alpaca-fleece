@@ -42,7 +42,7 @@ public sealed class SmaCrossoverStrategy(
     {
         lock (_syncLock)
         {
-            // Initialize history for symbol if needed
+            // Get history for symbol if needed
             if (!_barHistories.TryGetValue(bar.Symbol, out var history))
             {
                 history = new BarHistory(RequiredBars + 10); // Small buffer

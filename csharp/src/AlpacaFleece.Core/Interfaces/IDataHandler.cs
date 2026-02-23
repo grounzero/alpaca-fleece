@@ -6,9 +6,9 @@ namespace AlpacaFleece.Core.Interfaces;
 public interface IDataHandler
 {
     /// <summary>
-    /// Initializes handler by subscribing to BarEvent.
+    /// Initialises handler by subscribing to BarEvent.
     /// </summary>
-    void Initialize();
+    void Initialise();
 
     /// <summary>
     /// Gets in-memory bar history for a symbol as Quote list.

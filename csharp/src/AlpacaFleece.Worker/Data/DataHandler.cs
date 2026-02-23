@@ -14,11 +14,11 @@ public sealed class DataHandler(
     private readonly object _syncLock = new();
 
     /// <summary>
-    /// Initializes handler (no-op, EventDispatcher handles event routing).
+    /// Initialises handler (no-op, EventDispatcher handles event routing).
     /// </summary>
-    public void Initialize()
+    public void Initialise()
     {
-        logger.LogInformation("DataHandler initialized");
+        logger.LogInformation("DataHandler initialised");
     }
 
     /// <summary>

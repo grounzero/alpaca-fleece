@@ -1,6 +1,6 @@
-# AlpacaFleece - C# Implementation (Phase 1)
+# AlpacaFleece - C# Implementation
 
-This is the Phase 1 (Infrastructure) C# implementation of the alpaca-fleece trading bot for Alpaca Markets.
+This repository contains the C# implementation of the Alpaca Fleece trading bot for Alpaca Markets. The C# port provides a full-featured, production-oriented runtime including event routing, persistence, market-data polling, strategy wiring, risk controls, order lifecycle management and housekeeping.
 
 ## Architecture
 
@@ -53,53 +53,26 @@ csharp/
 
 ## Key Features
 
-### Phase 1 (Infrastructure - COMPLETE)
+## Implemented features
 
-1. **Event Bus** (dual-channel architecture)
-   - Bounded normal channel: 10,000 event capacity with DropWrite overflow
-   - Unbounded exit signal channel: never dropped
-   - Priority dispatch: exit signals processed first
+- Event routing: dual-channel event bus with priority dispatch for exit signals and a bounded main channel.
+- Broker integration: Alpaca broker abstraction with fresh clock reads, short-lived account/position cache, and safe order submission semantics.
+- Persistence: SQLite-backed state repository including order intent persistence, idempotent fill recording, circuit-breaker state and key-value state store.
+- Strategy: multi-timeframe SMA crossover strategy with ATR and regime detection.
+- Order lifecycle: deterministic `client_order_id` generation (SHA-256), persist-before-submit flow, and deduplication.
+- Configuration: runtime options for symbols, risk limits, exit rules, and execution gates (dry-run / kill-switch).
 
-2. **Broker Service**
-   - Clock: always fresh (never cached)
-   - Account/Positions: 1s TTL cache with SemaphoreSlim guard
-   - Orders: no retry on writes (fatal errors)
-   - Reads: ready for Polly retry policy (Phase 2)
+## Runtime services
 
-3. **State Repository** (SQLite)
-   - Key-value store (bot_state table)
-   - Order intent persistence (crash recovery)
-   - **Atomic gate logic**: Serializable isolation, same-bar deduplication, cooldown enforcement
-   - Circuit breaker state tracking
-   - Fill idempotency via unique constraint
+The worker project registers and runs a set of hosted services that provide market-data polling, bar persistence, exit handling, reconciliation and housekeeping. Notable services included in the `AlpacaFleece.Worker` project:
 
-4. **Strategy**
-   - Multi-timeframe SMA crossover (5, 10, 20-period SMAs)
-   - ATR calculation (14-period)
-   - Regime detection: Trending Up/Down/Ranging
-   - Buy/Sell signal generation
+- `StreamPollerService` — polls Alpaca for bars and order updates and publishes `BarEvent`/`OrderUpdateEvent` to the event bus.
+- `BarsHandler` — persists incoming bars to SQLite and maintains an in-memory deque per symbol for fast access.
+- `ExitManagerService` — runtime wrapper that executes exit logic (stop loss, trailing stop, profit target).
+- `ReconciliationService` — startup and runtime reconciliation, fill reconciliation and discrepancy reporting.
+- `HousekeepingService` — periodic equity snapshots, daily reset tasks and graceful shutdown flattening.
 
-5. **Order Manager**
-   - **SHA-256 deterministic client_order_id**: input = `strategy:symbol:timeframe:signalTs:side`
-   - Persist-before-submit for crash recovery
-   - Duplicate detection via idempotent client ID
-   - Exit order support
-
-6. **Configuration**
-   - Trading symbols and risk limits
-   - SMA parameters, exit rules
-   - Execution options (dry run, kill switch)
-   - Session and filter settings
-
-### Phase 2-6 (Stubs)
-
-- StreamPollerService
-- StrategyService
-- RiskManagerService
-- OrderManagerService
-- ExitManagerService
-- ReconciliationService
-- HousekeepingService
+There are a few small stub services included for incremental development (see `Services/StubServices.cs`), but the core runtime pipeline is implemented and registered in `Program.cs`.
 
 ## Setup Instructions
 
@@ -122,22 +95,72 @@ dotnet build
 # Run tests
 dotnet test
 
-# (Phase 2) Create database migration
-dotnet ef migrations add InitialCreate -p src/AlpacaFleece.Infrastructure -s src/AlpacaFleece.Worker
+## Database migration (EF Core)
+If you need to create the initial migration locally:
 
-# Run the bot (after Phase 2 completion)
+```bash
+dotnet ef migrations add InitialCreate -p src/AlpacaFleece.Infrastructure -s src/AlpacaFleece.Worker
+```
+```
+
+### Running the Bot
+
+**Foreground (with console output):**
+```bash
+cd /Users/me/git/alpaca-fleece/csharp
 dotnet run --project src/AlpacaFleece.Worker
 ```
 
+**Background (survives terminal disconnect):**
+```bash
+cd /Users/me/git/alpaca-fleece/csharp
+dotnet run --project src/AlpacaFleece.Worker &
+```
+
+**With environment variables:**
+```bash
+cd /Users/me/git/alpaca-fleece/csharp
+ALPACA_API_KEY=your_key ALPACA_SECRET_KEY=your_secret dotnet run --project src/AlpacaFleece.Worker
+```
+
+The application will:
+- Create `trading.db` automatically
+- Initialize all database tables
+- Load position tracking data
+- Start the event loop (queries database every 2 seconds)
+- Log to `logs/alpaca-fleece.log`
+
+Stop with **Ctrl+C**.
+
 ## Configuration
+
+### Alpaca API Credentials
+
+**Required:** Valid Alpaca API credentials for the application to connect.
+
+1. Create a free account at [Alpaca Markets](https://alpaca.markets)
+2. Go to **Dashboard → API Keys** and generate new keys
+3. Copy your **API Key** and **Secret Key**
+
+**Paper Trading (default - safe for testing):**
+- Use your credentials with `IsPaperTrading: true` (default)
+- No real money is risked
+- Perfect for development and testing
+
+**Live Trading (requires dual gates):**
+- Set `IsPaperTrading: false` AND `AllowLiveTrading: true`
+- This is intentionally difficult to prevent accidental live trading
+
+### Setting Credentials
 
 Edit `src/AlpacaFleece.Worker/appsettings.json`:
 
 ```json
 {
   "Broker": {
-    "ApiKey": "${ALPACA_API_KEY}",
-    "SecretKey": "${ALPACA_SECRET_KEY}",
+    "ApiKey": "YOUR_ACTUAL_API_KEY_HERE",
+    "SecretKey": "YOUR_ACTUAL_SECRET_KEY_HERE",
+    "BaseUrl": "https://paper-api.alpaca.markets",
     "IsPaperTrading": true,
     "AllowLiveTrading": false,
     "DryRun": false,
@@ -150,6 +173,18 @@ Edit `src/AlpacaFleece.Worker/appsettings.json`:
   }
 }
 ```
+
+**OR** use environment variables:
+```bash
+export ALPACA_API_KEY="your_api_key"
+export ALPACA_SECRET_KEY="your_secret_key"
+dotnet run --project src/AlpacaFleece.Worker
+```
+
+**Troubleshooting:**
+- If you see "Unauthorized" errors, verify your API credentials are correct
+- Ensure you're using the paper trading endpoint for testing
+- Check that your Alpaca account is active and API access is enabled
 
 ## Logging
 
@@ -185,37 +220,16 @@ dotnet test /p:CollectCoverage=true
 - **Line length**: 100 characters (black/ruff compatible)
 - **Logging**: No string interpolation in logger calls
 
-## Test Coverage (Phase 1)
+## Test coverage and CI
 
-- **OrderStateTests**: 11 state mappings, terminal detection, partial-terminal detection
-- **EventBusTests**: normal/exit event publishing, drop on full, dispatch priority
-- **StateRepositoryTests**: gate atomicity, KV crud, circuit breaker
-- **OrderManagerTests**: SHA-256 idempotency, persist-before-submit, deduplication
-- **BrokerServiceTests**: clock never cached, account/positions cache, kill switch
-- **StrategyTests**: SMA calculation, ATR, regime detection, required history
+There are unit and integration tests covering event bus, state repository, order manager and strategy logic. Run the test suite locally with `dotnet test`.
 
-## Next Steps (Phase 2-6)
+## Notes / Safety
 
-1. **Phase 2**: WebSocket stream polling, market data handler
-2. **Phase 3**: Risk manager (3-tier), order manager wire-up, position tracking
-3. **Phase 4**: Exit manager (stop loss, trailing stop, profit target)
-4. **Phase 5**: Nightly reconciliation, Alpaca order syncing
-5. **Phase 6**: Housekeeping (state cleanup), daily reset
+- Dual-gate protection prevents accidental live trading: live mode requires both `IsPaperTrading == false` and `AllowLiveTrading == true`.
+- Database path: `trading.db` (created in application directory).
+- Database operations use short-lived EF Core contexts and adopt idempotent patterns to avoid duplicate side effects.
 
-## Dual-Gate Protection
-
-Live trading requires BOTH conditions:
-1. `BrokerOptions.IsPaperTrading == false`
-2. `BrokerOptions.AllowLiveTrading == true`
-
-Default: Paper trading only (safe for development).
-
-## Notes
-
-- Database path: `trading.db` (created in application directory)
-- All database operations use context managers (no connection leaks)
-- Serializable isolation level for gate atomicity
-- Circuit breaker: exponential backoff capped at 300 seconds
 
 ## References
 

@@ -156,7 +156,7 @@ public sealed class AlertNotifier(
             throw new InvalidOperationException("Slack webhook URL not configured");
         }
 
-        var color = severity switch
+        var colour = severity switch
         {
             AlertSeverity.Info => "#36a64f",
             AlertSeverity.Warning => "#ff9900",
@@ -171,7 +171,7 @@ public sealed class AlertNotifier(
             {
                 new
                 {
-                    color = color,
+                    color = colour,
                     title = title,
                     text = message,
                     ts = DateTimeOffset.UtcNow.ToUnixTimeSeconds()

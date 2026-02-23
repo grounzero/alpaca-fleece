@@ -195,8 +195,8 @@ public sealed class EventDispatcherService(
         try
         {
             var dataHandler = serviceProvider.GetRequiredService<IDataHandler>();
-            // DataHandler.Initialize() sets up subscriptions; actual bar processing happens via event bus
-            dataHandler.Initialize();
+            // DataHandler.Initialise() sets up subscriptions; actual bar processing happens via event bus
+            dataHandler.Initialise();
         }
         catch (Exception ex)
         {
