@@ -32,11 +32,11 @@ public sealed class DrawdownMonitor(
     private const int MaxConsecutiveFailures = 3;
 
     /// <summary>
-    /// Initializes the drawdown monitor by loading persisted state from database.
+    /// Initialises the drawdown monitor by loading persisted state from database.
     /// Handles manual recovery flag and rolling window reset.
     /// Must be called before using GetCurrentLevel() to ensure accurate state after restarts.
     /// </summary>
-    public async Task InitializeAsync(CancellationToken ct = default)
+    public async Task InitialiseAsync(CancellationToken ct = default)
     {
         if (!options.Drawdown.Enabled)
         {
@@ -157,7 +157,7 @@ public sealed class DrawdownMonitor(
             var newLevel = CalculateLevel(previousLevel, drawdownPct, cfg);
 
             // Reset failure counter on success
-            _consecutiveFailures = 0;
+            Interlocked.Exchange(ref _consecutiveFailures, 0);
 
             // Persist state BEFORE updating in-memory to ensure consistency
             await stateRepository.SaveDrawdownStateAsync(
@@ -181,13 +181,13 @@ public sealed class DrawdownMonitor(
         }
         catch (Exception ex)
         {
-            _consecutiveFailures++;
+            var failureCount = Interlocked.Increment(ref _consecutiveFailures);
             logger.LogError(ex,
                 "DrawdownMonitor: failed to update drawdown state (failure {count}/{max})",
-                _consecutiveFailures, MaxConsecutiveFailures);
+                failureCount, MaxConsecutiveFailures);
 
             // Fail-safe: escalate to Halt after repeated failures
-            if (_consecutiveFailures >= MaxConsecutiveFailures)
+            if (failureCount >= MaxConsecutiveFailures)
             {
                 var previousLevel = _currentLevel;
 
@@ -198,14 +198,14 @@ public sealed class DrawdownMonitor(
                     _currentLevel = DrawdownLevel.Halt;
                     logger.LogCritical(
                         "DrawdownMonitor: fail-safe triggered after {count} failures, escalating from {previous} to HALT",
-                        _consecutiveFailures, previousLevel);
+                        failureCount, previousLevel);
                     return (previousLevel, DrawdownLevel.Halt, 0m);
                 }
 
                 // Already in Halt or Emergency: remain at current level but still log critical fail-safe.
                 logger.LogCritical(
                     "DrawdownMonitor: fail-safe triggered after {count} failures at level {level}, no further escalation",
-                    _consecutiveFailures, _currentLevel);
+                    failureCount, _currentLevel);
             }
 
             // Return current state without change on transient failure

@@ -12,7 +12,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
     private readonly IOrderManager _orderManagerMock = Substitute.For<IOrderManager>();
     private readonly ILogger<DrawdownMonitorService> _logger = Substitute.For<ILogger<DrawdownMonitorService>>();
 
-    public async Task InitializeAsync()
+    async Task IAsyncLifetime.InitializeAsync()
     {
         await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 0m, 0m, DateTimeOffset.UtcNow, false);
     }
@@ -62,7 +62,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
             Substitute.For<ILogger<DrawdownMonitor>>());
 
         // Act: Initialize loads persisted state
-        await monitor.InitializeAsync();
+        await monitor.InitialiseAsync();
 
         // Assert: Monitor correctly loads Emergency state
         Assert.Equal(DrawdownLevel.Emergency, monitor.GetCurrentLevel());
@@ -85,7 +85,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
             Substitute.For<ILogger<DrawdownMonitor>>());
 
         // Act: Initialize processes recovery flag
-        await monitor.InitializeAsync();
+        await monitor.InitialiseAsync();
 
         // Assert: Monitor resets to Normal when manual recovery is requested
         Assert.Equal(DrawdownLevel.Normal, monitor.GetCurrentLevel());
@@ -146,7 +146,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
             fixture.StateRepository,
             options,
             Substitute.For<ILogger<DrawdownMonitor>>());
-        await monitor.InitializeAsync();
+        await monitor.InitialiseAsync();
 
         // Act: Drawdown improves to 8% (recovery threshold)
         _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>()).Returns(
@@ -175,7 +175,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
             fixture.StateRepository,
             options,
             Substitute.For<ILogger<DrawdownMonitor>>());
-        await monitor.InitializeAsync();
+        await monitor.InitialiseAsync();
 
         // Act: Drawdown improves significantly
         _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>()).Returns(
