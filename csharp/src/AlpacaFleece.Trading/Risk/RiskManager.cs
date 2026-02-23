@@ -134,9 +134,7 @@ public sealed class RiskManager(
         SignalEvent signal,
         CancellationToken ct = default)
     {
-        var account = await broker.GetAccountAsync(ct);
-
-        // Drawdown halt: no new positions
+        // Drawdown halt: no new positions (check first, before expensive broker calls)
         if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Halt)
         {
             return new RiskCheckResult(
@@ -144,6 +142,8 @@ public sealed class RiskManager(
                 Reason: "Drawdown halt: no new positions allowed",
                 RiskTier: "RISK");
         }
+
+        var account = await broker.GetAccountAsync(ct);
 
         // Daily PnL limit
         var dailyLossState = await stateRepository.GetStateAsync("daily_realized_pnl", ct);

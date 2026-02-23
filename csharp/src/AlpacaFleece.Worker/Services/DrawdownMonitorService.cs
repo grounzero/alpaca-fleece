@@ -39,12 +39,22 @@ public sealed class DrawdownMonitorService(
         try
         {
             var (initialPrevious, initialCurrent, initialDrawdownPct) = await drawdownMonitor.UpdateAsync(stoppingToken);
-            if (initialPrevious != initialCurrent || initialCurrent != DrawdownLevel.Normal)
+
+            // Only alert on actual transitions
+            if (initialPrevious != initialCurrent)
             {
                 logger.LogWarning(
-                    "DrawdownMonitorService: immediate check detected state {level} at startup (drawdown={pct:P2})",
-                    initialCurrent, initialDrawdownPct);
+                    "DrawdownMonitorService: immediate check detected transition {previous} → {current} at startup (drawdown={pct:P2})",
+                    initialPrevious, initialCurrent, initialDrawdownPct);
                 await HandleTransitionAsync(initialPrevious, initialCurrent, initialDrawdownPct, stoppingToken);
+            }
+            // But still handle Emergency state even without a transition (pre-existing Emergency at restart)
+            else if (initialCurrent == DrawdownLevel.Emergency)
+            {
+                logger.LogWarning(
+                    "DrawdownMonitorService: immediate check detected pre-existing Emergency at startup (drawdown={pct:P2})",
+                    initialDrawdownPct);
+                await HandleEmergencyAsync(initialDrawdownPct, stoppingToken);
             }
         }
         catch (Exception ex)
@@ -90,7 +100,7 @@ public sealed class DrawdownMonitorService(
         decimal drawdownPct,
         CancellationToken ct)
     {
-        // Alert on every transition
+        // Alert on transition
         try
         {
             await alertNotifier.DrawdownLevelChangedAsync(previous, current, drawdownPct, ct);
@@ -103,21 +113,26 @@ public sealed class DrawdownMonitorService(
         // Emergency: close all positions immediately
         if (current == DrawdownLevel.Emergency)
         {
-            logger.LogCritical(
-                "DRAWDOWN EMERGENCY: drawdown={pct:P2} — closing all open positions", drawdownPct);
-            try
-            {
-                // Resolve IOrderManager from service provider (scoped service)
-                using var scope = serviceProvider.CreateScope();
-                var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
-                var count = await orderManager.FlattenPositionsAsync(ct);
-                logger.LogWarning(
-                    "DrawdownMonitorService: emergency flatten submitted {count} exit orders", count);
-            }
-            catch (Exception ex)
-            {
-                logger.LogError(ex, "DrawdownMonitorService: emergency flatten failed");
-            }
+            await HandleEmergencyAsync(drawdownPct, ct);
+        }
+    }
+
+    private async Task HandleEmergencyAsync(decimal drawdownPct, CancellationToken ct)
+    {
+        logger.LogCritical(
+            "DRAWDOWN EMERGENCY: drawdown={pct:P2} — closing all open positions", drawdownPct);
+        try
+        {
+            // Resolve IOrderManager from service provider (scoped service)
+            using var scope = serviceProvider.CreateScope();
+            var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
+            var count = await orderManager.FlattenPositionsAsync(ct);
+            logger.LogWarning(
+                "DrawdownMonitorService: emergency flatten submitted {count} exit orders", count);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "DrawdownMonitorService: emergency flatten failed");
         }
     }
 }
