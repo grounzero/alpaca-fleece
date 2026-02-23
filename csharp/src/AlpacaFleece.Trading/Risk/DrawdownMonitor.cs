@@ -4,7 +4,7 @@ namespace AlpacaFleece.Trading.Risk;
 /// Tracks peak-to-trough portfolio drawdown and manages escalation levels.
 ///
 /// State machine (Normal → Warning → Halt → Emergency):
-///   Normal    — drawdown &lt; WarningThresholdPct;  full trading
+///   Normal    — drawdown < WarningThresholdPct;  full trading
 ///   Warning   — drawdown ≥ WarningThresholdPct;  position sizes × WarningPositionMultiplier
 ///   Halt      — drawdown ≥ HaltThresholdPct;     no new positions
 ///   Emergency — drawdown ≥ EmergencyThresholdPct; all positions closed
@@ -141,14 +141,22 @@ public sealed class DrawdownMonitor(
             if (_consecutiveFailures >= MaxConsecutiveFailures)
             {
                 var previousLevel = _currentLevel;
-                if (previousLevel != DrawdownLevel.Halt)
+
+                // Only escalate from less severe states (Normal/Warning) to Halt.
+                // Do NOT downgrade from Emergency or re-escalate from Halt.
+                if (previousLevel == DrawdownLevel.Normal || previousLevel == DrawdownLevel.Warning)
                 {
                     _currentLevel = DrawdownLevel.Halt;
                     logger.LogCritical(
-                        "DrawdownMonitor: fail-safe triggered after {count} failures, escalating to HALT",
-                        _consecutiveFailures);
+                        "DrawdownMonitor: fail-safe triggered after {count} failures, escalating from {previous} to HALT",
+                        _consecutiveFailures, previousLevel);
                     return (previousLevel, DrawdownLevel.Halt, 0m);
                 }
+
+                // Already in Halt or Emergency: remain at current level but still log critical fail-safe.
+                logger.LogCritical(
+                    "DrawdownMonitor: fail-safe triggered after {count} failures at level {level}, no further escalation",
+                    _consecutiveFailures, _currentLevel);
             }
 
             // Return current state without change on transient failure
