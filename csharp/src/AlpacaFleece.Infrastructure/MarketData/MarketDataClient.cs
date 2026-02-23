@@ -87,15 +87,14 @@ public sealed class MarketDataClient(
                 var from = into.AddDays(-5);
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize(1000);
-                
+
                 // Use IEX feed for paper trading (SIP requires paid subscription)
                 if (brokerOptions.IsPaperTrading)
                 {
-                    // Try to set IEX feed - Alpaca.Markets should handle this
-                    // The SDK may use IEX by default for paper trading
+                    // Explicitly configure IEX feed for paper trading accounts
+                    request = request.WithFeed(HistoricalDataFeed.Iex);
                     logger.LogDebug("Using IEX feed for {Symbol} (paper trading)", symbol);
                 }
-                
                 var page = await equityDataClient.ListHistoricalBarsAsync(request, cts.Token);
                 items = page.Items;
             }
