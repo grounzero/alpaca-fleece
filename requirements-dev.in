@@ -1,6 +1,6 @@
 # Dev/test tooling
 black==26.1.0
-isort==7.0.0
+isort==8.0.0
 ruff==0.15.0
 mypy==1.19.1
 pytest==9.0.2
