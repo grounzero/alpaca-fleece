@@ -35,12 +35,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         var logLevel = context.Configuration.GetValue("Serilog:MinimumLevel:Default", "Information");
         var level = Enum.TryParse<Serilog.Events.LogEventLevel>(logLevel, out var parsedLevel) 
             ? parsedLevel 
-            : Serilog.Events.LogEventLevel.Information;
+            : LogEventLevel.Information;
             
         loggerConfig
             .MinimumLevel.Is(level)
-            .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
             .WriteTo.Console()
             .WriteTo.File(
                 "logs/alpaca-fleece.log",
