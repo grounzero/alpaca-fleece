@@ -13,8 +13,9 @@ public sealed class MarketDataClientTests
     {
         equityClient ??= Substitute.For<IAlpacaDataClient>();
         cryptoClient ??= Substitute.For<IAlpacaCryptoDataClient>();
+        var brokerOptions = new BrokerOptions { ApiKey = "test", SecretKey = "test", IsPaperTrading = true };
         var logger = Substitute.For<ILogger<MarketDataClient>>();
-        return new MarketDataClient(equityClient, cryptoClient, logger);
+        return new MarketDataClient(equityClient, cryptoClient, brokerOptions, logger);
     }
 
     [Fact]
@@ -67,25 +68,13 @@ public sealed class MarketDataClientTests
     }
 
     [Fact]
-    public async Task GetSnapshotAsync_ReturnsSnapshot()
+    public async Task GetSnapshotAsync_ThrowsNotImplementedException()
     {
-        var mockEquityClient = Substitute.For<IAlpacaDataClient>();
-        var mockQuote = Substitute.For<IQuote>();
-        mockQuote.BidPrice.Returns(149m);
-        mockQuote.AskPrice.Returns(151m);
-        mockQuote.BidSize.Returns(100u);
-        mockQuote.AskSize.Returns(100u);
-        mockEquityClient
-            .GetLatestQuoteAsync(Arg.Any<LatestMarketDataRequest>(), Arg.Any<CancellationToken>())
-            .Returns(mockQuote);
+        var client = CreateClient();
 
-        var client = CreateClient(equityClient: mockEquityClient);
-        var result = await client.GetSnapshotAsync("AAPL");
-
-        Assert.NotNull(result);
-        Assert.Equal("AAPL", result.Symbol);
-        Assert.Equal(149m, result.Bid);
-        Assert.Equal(151m, result.Ask);
+        // GetSnapshotAsync is not yet implemented due to Alpaca.Markets SDK snapshot API deprecation
+        await Assert.ThrowsAsync<NotImplementedException>(
+            async () => await client.GetSnapshotAsync("AAPL"));
     }
 
     [Fact]

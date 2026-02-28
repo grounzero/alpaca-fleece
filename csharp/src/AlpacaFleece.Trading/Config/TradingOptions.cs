@@ -12,6 +12,7 @@ public sealed class TradingOptions
     public ExecutionOptions Execution { get; set; } = new();
     public FiltersOptions Filters { get; set; } = new();
     public DrawdownOptions Drawdown { get; set; } = new();
+    public CorrelationLimitsOptions CorrelationLimits { get; set; } = new();
 }
 
 /// <summary>
@@ -188,4 +189,40 @@ public sealed class DrawdownOptions
     /// Drawdown check interval in seconds (default: 60).
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 60;
+}
+
+/// <summary>
+/// Correlation and concentration limit configuration.
+/// </summary>
+public sealed class CorrelationLimitsOptions
+{
+    /// <summary>
+    /// Enable or disable all correlation and concentration checks (default: true).
+    /// </summary>
+    public bool Enabled { get; set; } = true;
+
+    /// <summary>
+    /// Maximum allowed pairwise correlation coefficient before a new signal is rejected (default: 0.70).
+    /// Pairs with a higher correlation in StaticCorrelations will be blocked.
+    /// </summary>
+    public decimal MaxCorrelation { get; set; } = 0.70m;
+
+    /// <summary>
+    /// Maximum fraction of total position capacity allowed in any single GICS sector (default: 0.20 = 20%).
+    /// Calculated as (positionsInSector + 1) / MaxConcurrentPositions.
+    /// </summary>
+    public decimal MaxSectorPct { get; set; } = 0.20m;
+
+    /// <summary>
+    /// Maximum fraction of total position capacity allowed in any single asset class (default: 0.40 = 40%).
+    /// Calculated as (positionsInClass + 1) / MaxConcurrentPositions.
+    /// </summary>
+    public decimal MaxAssetClassPct { get; set; } = 0.40m;
+
+    /// <summary>
+    /// Static pairwise correlation values loaded from configuration.
+    /// Keys are "SYMBOL_A:SYMBOL_B" — both orderings are tried on lookup.
+    /// </summary>
+    public Dictionary<string, decimal> StaticCorrelations { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase);
 }

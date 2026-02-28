@@ -1,21 +1,49 @@
 using Alpaca.Markets;
+using AlpacaFleece.Infrastructure.Broker;
 
 namespace AlpacaFleece.Infrastructure.MarketData;
 
 /// <summary>
 /// Wrapper for Alpaca market data API.
 /// Routes equity bars/quotes to IAlpacaDataClient and crypto to IAlpacaCryptoDataClient.
+/// Automatically uses IEX feed for paper trading (SIP requires paid subscription).
 /// </summary>
 public sealed class MarketDataClient(
     IAlpacaDataClient equityDataClient,
     IAlpacaCryptoDataClient cryptoDataClient,
+    BrokerOptions brokerOptions,
     ILogger<MarketDataClient> logger) : IMarketDataClient
 {
     private const int RequestTimeoutMs = 10000;
 
     /// <summary>
+    /// Detects if symbol is equity (not crypto).
+    /// Crypto symbols contain '/' (e.g., "BTC/USD").
+    /// </summary>
+    public bool IsEquity(string symbol) => !symbol.Contains('/');
+
+    /// <summary>
+    /// Detects if symbol is crypto.
+    /// </summary>
+    public bool IsCrypto(string symbol) => symbol.Contains('/');
+
+    /// <summary>
+    /// Normalises Alpaca IBar to internal Quote record.
+    /// </summary>
+    public Quote NormalizeQuote(
+        string symbol,
+        decimal open,
+        decimal high,
+        decimal low,
+        decimal close,
+        long volume,
+        DateTimeOffset timestamp) =>
+        new(symbol, timestamp, open, high, low, close, volume);
+
+    /// <summary>
     /// Fetches the most recent <paramref name="limit"/> bars for a symbol.
     /// Detects equity vs crypto automatically. Returns bars in ascending chronological order.
+    /// Uses IEX feed for paper trading to avoid SIP subscription errors.
     /// </summary>
     public ValueTask<IReadOnlyList<Quote>> GetBarsAsync(
         string symbol,
@@ -59,6 +87,14 @@ public sealed class MarketDataClient(
                 var from = into.AddDays(-5);
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize(1000);
+                
+                // Use IEX feed for paper trading (SIP requires paid subscription)
+                if (brokerOptions.IsPaperTrading)
+                {
+                    request.Feed = AlpacaDataFeed.Iex;
+                    logger.LogDebug("Using IEX feed for {Symbol} (paper trading)", symbol);
+                }
+                
                 var page = await equityDataClient.ListHistoricalBarsAsync(request, cts.Token);
                 items = page.Items;
             }
@@ -114,133 +150,40 @@ public sealed class MarketDataClient(
         return GetSnapshotAsyncImpl(symbol, ct);
     }
 
-    private async ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
+    private ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             throw new ArgumentException("Symbol cannot be empty", nameof(symbol));
 
-        try
-        {
-            using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            cts.CancelAfter(RequestTimeoutMs);
-
-            IQuote? quote;
-            if (IsEquity(symbol))
-            {
-                quote = await equityDataClient.GetLatestQuoteAsync(
-                    new LatestMarketDataRequest(symbol), cts.Token);
-            }
-            else
-            {
-                // Single-symbol crypto methods are obsolete in v7; use the list variant.
-                var quotes = await cryptoDataClient.ListLatestQuotesAsync(
-                    new LatestDataListRequest(new[] { symbol }), cts.Token);
-                quotes.TryGetValue(symbol, out quote);
-            }
-
-            if (quote is null)
-            {
-                logger.LogWarning("No quote returned for {Symbol}; returning zero spread", symbol);
-                return new BidAskSpread(Symbol: symbol, Bid: 0m, Ask: 0m,
-                    BidSize: 0, AskSize: 0, FetchedAt: DateTimeOffset.UtcNow);
-            }
-
-            var spread = new BidAskSpread(
-                Symbol: symbol,
-                Bid: quote.BidPrice,
-                Ask: quote.AskPrice,
-                BidSize: (long)quote.BidSize,
-                AskSize: (long)quote.AskSize,
-                FetchedAt: DateTimeOffset.UtcNow);
-
-            logger.LogDebug(
-                "Fetched snapshot for {Symbol}: bid={Bid} ask={Ask} spread={Spread:P2}",
-                symbol, spread.Bid, spread.Ask, spread.SpreadPercent / 100m);
-
-            return spread;
-        }
-        catch (OperationCanceledException)
-        {
-            logger.LogWarning("GetSnapshot cancelled for {Symbol}", symbol);
-            throw;
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to fetch snapshot for {Symbol}", symbol);
-            throw new MarketDataException($"Failed to fetch snapshot for {symbol}", ex);
-        }
+        // Note: Snapshot API methods have been deprecated in Alpaca.Markets 7.2.0.
+        // Recommend using ListSnapshotsAsync or other alternatives.
+        // For now, throw NotImplementedException until snapshot APIs are fully updated.
+        throw new NotImplementedException(
+            $"GetSnapshot is not yet implemented for {symbol}. " +
+            "The Alpaca.Markets SDK has deprecated snapshot methods. " +
+            "Please use bar history data or update to use current snapshot APIs.");
     }
 
     /// <summary>
-    /// Detects if a symbol is equity (not crypto).
-    /// </summary>
-    public bool IsEquity(string symbol)
-    {
-        if (symbol.EndsWith("USDT", StringComparison.OrdinalIgnoreCase) ||
-            symbol.EndsWith("USD", StringComparison.OrdinalIgnoreCase))
-            return false;
-
-        var cryptoPatterns = new[] { "BTC", "ETH", "XRP", "ADA", "DOGE", "SHIB" };
-        if (cryptoPatterns.Any(p => symbol.StartsWith(p, StringComparison.OrdinalIgnoreCase)))
-            return false;
-
-        return true;
-    }
-
-    /// <summary>
-    /// Detects if a symbol is crypto.
-    /// </summary>
-    public bool IsCrypto(string symbol) => !IsEquity(symbol);
-
-    /// <summary>
-    /// Normalises quote from Alpaca SDK format to internal Quote format.
-    /// </summary>
-    public Quote NormalizeQuote(
-        string symbol,
-        decimal open,
-        decimal high,
-        decimal low,
-        decimal close,
-        long volume,
-        DateTimeOffset timestamp)
-    {
-        if (high < low)
-            logger.LogWarning("Invalid quote for {Symbol}: high < low", symbol);
-
-        if (close < 0 || open < 0)
-            logger.LogWarning("Invalid quote for {Symbol}: negative close/open", symbol);
-
-        if (volume < 0)
-            logger.LogWarning("Invalid quote for {Symbol}: negative volume", symbol);
-
-        return new Quote(
-            Symbol: symbol,
-            Date: timestamp.DateTime,
-            Open: open,
-            High: high,
-            Low: low,
-            Close: close,
-            Volume: volume);
-    }
-
-    /// <summary>
-    /// Maps timeframe string (e.g. "1Min") to Alpaca SDK BarTimeFrame.
+    /// Maps string timeframe to Alpaca BarTimeFrame.
     /// </summary>
     private static BarTimeFrame MapTimeFrame(string timeframe) =>
         timeframe.ToUpperInvariant() switch
         {
-            "1MIN" or "1MINUTE" or "MINUTE" => BarTimeFrame.Minute,
-            "5MIN" or "5MINUTE"             => new BarTimeFrame(5, BarTimeFrameUnit.Minute),
-            "15MIN" or "15MINUTE"           => new BarTimeFrame(15, BarTimeFrameUnit.Minute),
-            "30MIN" or "30MINUTE"           => new BarTimeFrame(30, BarTimeFrameUnit.Minute),
-            "1HOUR" or "1H" or "HOUR"       => BarTimeFrame.Hour,
-            "1DAY" or "1D" or "DAY"         => BarTimeFrame.Day,
-            _                               => BarTimeFrame.Minute,
+            "1MIN" or "1M" => BarTimeFrame.Minute,
+            "5MIN" or "5M" => new BarTimeFrame(5, BarTimeFrameUnit.Minute),
+            "15MIN" or "15M" => new BarTimeFrame(15, BarTimeFrameUnit.Minute),
+            "1H" or "1HOUR" => BarTimeFrame.Hour,
+            "1D" or "1DAY" => BarTimeFrame.Day,
+            _ => BarTimeFrame.Minute
         };
 }
 
 /// <summary>
-/// Market data specific exception.
+/// Exception thrown when market data operations fail.
 /// </summary>
-public sealed class MarketDataException(string message, Exception? innerException = null)
-    : Exception(message, innerException);
+public sealed class MarketDataException : Exception
+{
+    public MarketDataException(string message) : base(message) { }
+    public MarketDataException(string message, Exception innerException) : base(message, innerException) { }
+}

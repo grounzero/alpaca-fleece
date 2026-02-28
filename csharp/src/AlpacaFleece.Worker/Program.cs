@@ -87,6 +87,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
         services.AddExitManager(Options.Create(tradingOptions));
 
+        // Correlation service (singleton — all checks are in-memory)
+        services.AddSingleton(sp => new CorrelationService(
+            tradingOptions,
+            sp.GetRequiredService<PositionTracker>(),
+            sp.GetRequiredService<ILogger<CorrelationService>>()));
+
         // Drawdown monitor (singleton — maintains in-memory level cache)
         services.AddSingleton(sp => new DrawdownMonitor(
             sp.GetRequiredService<IBrokerService>(),
@@ -94,13 +100,14 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             tradingOptions,
             sp.GetRequiredService<ILogger<DrawdownMonitor>>()));
 
-        // RiskManager and OrderManager with explicit DrawdownMonitor injection
+        // RiskManager and OrderManager with explicit DrawdownMonitor and CorrelationService injection
         services.AddScoped<IRiskManager>(sp => new RiskManager(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),
             tradingOptions,
             sp.GetRequiredService<ILogger<RiskManager>>(),
-            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
+            correlationService: sp.GetRequiredService<CorrelationService>()));
         services.AddScoped<IOrderManager>(sp => new OrderManager(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IRiskManager>(),

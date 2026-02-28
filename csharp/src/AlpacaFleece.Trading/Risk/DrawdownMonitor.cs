@@ -68,8 +68,8 @@ public sealed class DrawdownMonitor(
                 }
 
                 logger.LogInformation(
-                    "DrawdownMonitor initialized from database: level={level}, peak={peak:F2}, drawdown={drawdown:P2}, lookbackResetTime={resetTime:O}",
-                    _currentLevel, state.PeakEquity, state.CurrentDrawdownPct, _lastPeakResetTime);
+                    "DrawdownMonitor initialized from database: persistedLevel={persistedLevel}, effectiveLevel={effectiveLevel}, peak={peak:F2}, drawdown={drawdown:P2}",
+                    state.Level, _currentLevel, state.PeakEquity, state.CurrentDrawdownPct);
             }
             else
             {

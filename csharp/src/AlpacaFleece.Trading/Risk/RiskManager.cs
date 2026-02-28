@@ -15,7 +15,8 @@ public sealed class RiskManager(
     TradingOptions options,
     ILogger<RiskManager> logger,
     IMarketDataClient? marketDataClient = null,
-    DrawdownMonitor? drawdownMonitor = null) : IRiskManager
+    DrawdownMonitor? drawdownMonitor = null,
+    CorrelationService? correlationService = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
     private readonly HashSet<string> _cryptoSymbols =
@@ -256,15 +257,23 @@ public sealed class RiskManager(
             }
         }
 
+        // Correlation and concentration filter
+        if (correlationService != null)
+        {
+            var correlationResult = correlationService.Check(signal.Symbol);
+            if (!correlationResult.AllowsSignal)
+                return correlationResult;
+        }
+
         // Spread filter: skip if bid/ask spread is too wide
         if (marketDataClient != null)
         {
             try
             {
                 var snapshot = await marketDataClient.GetSnapshotAsync(signal.Symbol, ct);
-                if (snapshot != null && snapshot.Bid > 0 && snapshot.Ask > 0)
+                if (snapshot != null && snapshot.BidPrice > 0 && snapshot.AskPrice > 0)
                 {
-                    var spread = (snapshot.Ask - snapshot.Bid) / snapshot.Bid;
+                    var spread = (snapshot.AskPrice - snapshot.BidPrice) / snapshot.BidPrice;
                     if (spread > options.Filters.MaxSpreadPct)
                     {
                         return new RiskCheckResult(

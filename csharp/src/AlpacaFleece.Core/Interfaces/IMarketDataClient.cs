@@ -20,7 +20,7 @@ public interface IMarketDataClient
     ValueTask<BidAskSpread> GetSnapshotAsync(string symbol, CancellationToken ct = default);
 
     /// <summary>
-    /// Detects if symbol is equity.
+    /// Detects if symbol is equity (not crypto).
     /// </summary>
     bool IsEquity(string symbol);
 
@@ -30,7 +30,7 @@ public interface IMarketDataClient
     bool IsCrypto(string symbol);
 
     /// <summary>
-    /// Normalizes quote to standard format.
+    /// Normalises quote to standard format.
     /// </summary>
     Quote NormalizeQuote(
         string symbol,
@@ -47,31 +47,31 @@ public interface IMarketDataClient
 /// </summary>
 public sealed record BidAskSpread(
     string Symbol,
-    decimal Bid,
-    decimal Ask,
-    long BidSize,
-    long AskSize,
-    DateTimeOffset FetchedAt)
+    decimal BidPrice,
+    decimal AskPrice,
+    decimal BidSize,
+    decimal AskSize,
+    DateTimeOffset Timestamp)
 {
     /// <summary>
     /// Calculates spread percentage.
     /// </summary>
     public decimal SpreadPercent =>
-        Ask > 0 && Bid > 0 ? ((Ask - Bid) / Bid) * 100m : 0m;
+        AskPrice > 0 && BidPrice > 0 ? ((AskPrice - BidPrice) / BidPrice) * 100m : 0m;
 
     /// <summary>
     /// Calculates mid price.
     /// </summary>
     public decimal MidPrice =>
-        Bid > 0 && Ask > 0 ? (Bid + Ask) / 2m : 0m;
+        BidPrice > 0 && AskPrice > 0 ? (BidPrice + AskPrice) / 2m : 0m;
 }
 
 /// <summary>
-/// Quote normalized to Skender format.
+/// Quote normalised to Skender format.
 /// </summary>
 public sealed record Quote(
     string Symbol,
-    DateTime Date,
+    DateTimeOffset Timestamp,
     decimal Open,
     decimal High,
     decimal Low,
