@@ -1,4 +1,7 @@
 using Alpaca.Markets;
+using AlpacaFleece.Infrastructure.Symbols;
+using AlpacaFleece.Trading.Config;
+using AlpacaFleece.Core.Interfaces;
 
 namespace AlpacaFleece.Tests;
 
@@ -7,15 +10,31 @@ namespace AlpacaFleece.Tests;
 /// </summary>
 public sealed class MarketDataClientTests
 {
+    
+
     private static MarketDataClient CreateClient(
         IAlpacaDataClient? equityClient = null,
-        IAlpacaCryptoDataClient? cryptoClient = null)
+        IAlpacaCryptoDataClient? cryptoClient = null,
+        ISymbolClassifier? symbolClassifier = null)
     {
         equityClient ??= Substitute.For<IAlpacaDataClient>();
         cryptoClient ??= Substitute.For<IAlpacaCryptoDataClient>();
         var brokerOptions = new BrokerOptions { ApiKey = "test", SecretKey = "test", IsPaperTrading = true };
         var logger = Substitute.For<ILogger<MarketDataClient>>();
-        return new MarketDataClient(equityClient, cryptoClient, brokerOptions, logger);
+        if (symbolClassifier == null)
+        {
+            var opts = new TradingOptions
+            {
+                Symbols = new SymbolLists
+                {
+                    CryptoSymbols = new List<string> { "BTCUSD", "ETHUSD", "BTCUSDT", "ETHUSDT" },
+                    EquitySymbols = new List<string> { "AAPL", "MSFT", "GOOG" }
+                }
+            };
+            symbolClassifier = new SymbolClassifier(opts.Symbols.CryptoSymbols, opts.Symbols.EquitySymbols);
+        }
+
+        return new MarketDataClient(equityClient, cryptoClient, brokerOptions, logger, symbolClassifier);
     }
 
     [Fact]

@@ -33,7 +33,7 @@ public sealed class StreamPollerTests
         var opts = Substitute.For<IOptions<TradingOptions>>();
         opts.Value.Returns(new TradingOptions
         {
-            Symbols = new SymbolsOptions { Symbols = symbols }
+            Symbols = new SymbolLists { EquitySymbols = symbols }
         });
         return opts;
     }
@@ -137,9 +137,9 @@ public sealed class StreamPollerTests
         // Two symbols: one equity (AAPL), one crypto (BTC/USD)
         var opts = Options.Create(new TradingOptions
         {
-            Symbols = new SymbolsOptions
+            Symbols = new SymbolLists
             {
-                Symbols = new List<string> { "AAPL", "BTC/USD" },
+                EquitySymbols = new List<string> { "AAPL", "BTC/USD" },
                 CryptoSymbols = new List<string> { "BTC/USD" }
             }
         });

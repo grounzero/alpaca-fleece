@@ -245,7 +245,7 @@ public sealed class DrawdownMonitor(
                     return DrawdownLevel.Halt;
 
                 // Optionally recover to Normal if auto-recovery is enabled.
-                if (cfg.EnableAutoRecovery && drawdownPct < cfg.WarningRecoveryThresholdPct)
+                if (cfg.EnableAutoRecovery && drawdownPct <= cfg.WarningRecoveryThresholdPct)
                     return DrawdownLevel.Normal;
 
                 return DrawdownLevel.Warning;
@@ -256,7 +256,7 @@ public sealed class DrawdownMonitor(
                     return DrawdownLevel.Emergency;
 
                 // Optionally recover to Warning if auto-recovery is enabled.
-                if (cfg.EnableAutoRecovery && drawdownPct < cfg.HaltRecoveryThresholdPct)
+                if (cfg.EnableAutoRecovery && drawdownPct <= cfg.HaltRecoveryThresholdPct)
                     return DrawdownLevel.Warning;
 
                 return DrawdownLevel.Halt;
@@ -264,7 +264,7 @@ public sealed class DrawdownMonitor(
             case DrawdownLevel.Emergency:
                 // Already at highest severity; cannot escalate further.
                 // Optionally recover to Halt if auto-recovery is enabled.
-                if (cfg.EnableAutoRecovery && drawdownPct < cfg.EmergencyRecoveryThresholdPct)
+                if (cfg.EnableAutoRecovery && drawdownPct <= cfg.EmergencyRecoveryThresholdPct)
                     return DrawdownLevel.Halt;
 
                 return DrawdownLevel.Emergency;

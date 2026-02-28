@@ -1,5 +1,6 @@
 using Alpaca.Markets;
 using AlpacaFleece.Infrastructure.Broker;
+using AlpacaFleece.Core.Interfaces;
 
 namespace AlpacaFleece.Infrastructure.MarketData;
 
@@ -12,20 +13,22 @@ public sealed class MarketDataClient(
     IAlpacaDataClient equityDataClient,
     IAlpacaCryptoDataClient cryptoDataClient,
     BrokerOptions brokerOptions,
-    ILogger<MarketDataClient> logger) : IMarketDataClient
+    ILogger<MarketDataClient> logger,
+    ISymbolClassifier symbolClassifier) : IMarketDataClient
 {
     private const int RequestTimeoutMs = 10000;
 
     /// <summary>
     /// Detects if symbol is equity (not crypto).
-    /// Crypto symbols contain '/' (e.g., "BTC/USD").
+    /// Delegates to configured `ISymbolClassifier`.
     /// </summary>
-    public bool IsEquity(string symbol) => !symbol.Contains('/');
+    public bool IsEquity(string symbol) => !symbolClassifier.IsCrypto(symbol);
 
     /// <summary>
     /// Detects if symbol is crypto.
+    /// Delegates to configured `ISymbolClassifier`.
     /// </summary>
-    public bool IsCrypto(string symbol) => symbol.Contains('/');
+    public bool IsCrypto(string symbol) => symbolClassifier.IsCrypto(symbol);
 
     /// <summary>
     /// Normalises Alpaca IBar to internal Quote record.

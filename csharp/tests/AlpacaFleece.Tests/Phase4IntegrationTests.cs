@@ -37,7 +37,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
 
         var tradingOptions = new TradingOptions
         {
-            Symbols = new SymbolsOptions { Symbols = new List<string> { "AAPL" } },
+            Symbols = new SymbolLists { EquitySymbols = new List<string> { "AAPL" } },
             Execution = new ExecutionOptions { DryRun = true },
             RiskLimits = new RiskLimits { MaxTradesPerDay = 10, MaxDailyLoss = 1000m },
             Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0 },
@@ -48,7 +48,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _riskManager = new RiskManager(_brokerMock, fixture.StateRepository, tradingOptions, _riskManagerLogger);
         _orderManager = new OrderManager(_brokerMock, _riskManager, fixture.StateRepository, fixture.EventBus, tradingOptions, _orderManagerLogger);
 
-        var exitOptions = Options.Create(new TradingOptions { Exit = new ExitOptions(), Symbols = new SymbolsOptions() });
+        var exitOptions = Options.Create(new TradingOptions { Exit = new ExitOptions(), Symbols = new SymbolLists() });
         _exitManager = new ExitManager(
             _positionTracker,
             _brokerMock,
@@ -188,7 +188,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
 
         var localOptions = new TradingOptions
         {
-            Symbols = new SymbolsOptions { Symbols = new List<string> { "AAPL" } },
+            Symbols = new SymbolLists { EquitySymbols = new List<string> { "AAPL" } },
             Execution = new ExecutionOptions { DryRun = false },
             RiskLimits = new RiskLimits { MaxTradesPerDay = 20, MaxDailyLoss = 10000m },
             Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0 },
