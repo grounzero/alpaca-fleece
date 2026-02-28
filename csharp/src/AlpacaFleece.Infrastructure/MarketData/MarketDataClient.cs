@@ -91,7 +91,7 @@ public sealed class MarketDataClient(
                 // Use IEX feed for paper trading (SIP requires paid subscription)
                 if (brokerOptions.IsPaperTrading)
                 {
-                    request.Feed = AlpacaDataFeed.Iex;
+                    request.Feed = MarketDataFeed.Iex;
                     logger.LogDebug("Using IEX feed for {Symbol} (paper trading)", symbol);
                 }
                 
