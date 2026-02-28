@@ -1,3 +1,6 @@
+using AlpacaFleece.Core.Interfaces;
+using AlpacaFleece.Infrastructure.Symbols;
+
 namespace AlpacaFleece.Trading.Exits;
 
 /// <summary>
@@ -23,14 +26,14 @@ public class ExitManager(
     IEventBus eventBus,
     IStateRepository stateRepository,
     ILogger<ExitManager> logger,
-    IOptions<TradingOptions> options)
+    IOptions<TradingOptions> options,
+    ISymbolClassifier? symbolClassifier = null)
 {
     // Protected no-arg constructor for NSubstitute proxy creation
-    protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions())) { }
+    protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions()), null!) { }
 
     private readonly ExitOptions _options = options.Value.Exit;
-    private readonly HashSet<string> _cryptoSymbols =
-        new(options.Value.Symbols.CryptoSymbols, StringComparer.OrdinalIgnoreCase);
+    private readonly ISymbolClassifier _symbolClassifier = symbolClassifier ?? new SymbolClassifier(options.Value.Symbols.CryptoSymbols, options.Value.Symbols.EquitySymbols);
 
     /// <summary>
     /// Main execution loop — run this in a hosted service background task.
@@ -102,7 +105,7 @@ public class ExitManager(
             try
             {
                 // Skip check if market closed (except 24/5 crypto)
-                if (!clock.IsOpen && !IsCrypto24h(symbol))
+                if (!clock.IsOpen && !(_symbolClassifier?.IsCrypto(symbol) ?? false))
                 {
                     continue;
                 }
@@ -198,11 +201,7 @@ public class ExitManager(
         }
     }
 
-    /// <summary>
-    /// Returns true if the symbol trades 24/5 (crypto — exempt from market-hours check).
-    /// Uses the configured CryptoSymbols list from TradingOptions.
-    /// </summary>
-    private bool IsCrypto24h(string symbol) => _cryptoSymbols.Contains(symbol);
+    // Crypto classification now delegated to ISymbolClassifier via DI.
 
     /// <summary>
     /// Validates ATR is a finite positive number.

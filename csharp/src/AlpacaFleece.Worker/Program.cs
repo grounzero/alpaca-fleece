@@ -6,6 +6,8 @@ using AlpacaFleece.Infrastructure.Broker;
 using AlpacaFleece.Infrastructure.Data;
 using AlpacaFleece.Infrastructure.EventBus;
 using AlpacaFleece.Infrastructure.MarketData;
+using AlpacaFleece.Infrastructure.Symbols;
+using AlpacaFleece.Core.Interfaces;
 using AlpacaFleece.Trading.Config;
 using AlpacaFleece.Trading.Exits;
 using AlpacaFleece.Trading.Orders;
@@ -33,12 +35,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         var logLevel = context.Configuration.GetValue("Serilog:MinimumLevel:Default", "Information");
         var level = Enum.TryParse<Serilog.Events.LogEventLevel>(logLevel, out var parsedLevel) 
             ? parsedLevel 
-            : Serilog.Events.LogEventLevel.Information;
+            : LogEventLevel.Information;
             
         loggerConfig
             .MinimumLevel.Is(level)
-            .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
             .WriteTo.Console()
             .WriteTo.File(
                 "logs/alpaca-fleece.log",
@@ -78,7 +80,14 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Trading (Phase 3: Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);
-        services.AddScoped<IStrategy, SmaCrossoverStrategy>();
+
+        // Symbol classifier (centralised symbol type detection using TradingOptions lists)
+        services.AddSingleton<ISymbolClassifier>(sp =>
+            new SymbolClassifier(tradingOptions.Symbols.CryptoSymbols, tradingOptions.Symbols.EquitySymbols));
+        services.AddScoped<IStrategy>(sp => new SmaCrossoverStrategy(
+            sp.GetRequiredService<IEventBus>(),
+            sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
+            tradingOptions.Symbols.CryptoSymbols));
         services.AddSingleton<PositionTracker>();
 
         // Phase 2: Data Handling

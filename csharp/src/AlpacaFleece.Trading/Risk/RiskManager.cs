@@ -9,6 +9,9 @@ namespace AlpacaFleece.Trading.Risk;
 /// Crypto symbols (from options.Symbols.CryptoSymbols) are exempt from market-hours checks.
 /// DrawdownMonitor is optional; when null, drawdown checks are skipped.
 /// </summary>
+using AlpacaFleece.Core.Interfaces;
+using AlpacaFleece.Infrastructure.Symbols;
+
 public sealed class RiskManager(
     IBrokerService broker,
     IStateRepository stateRepository,
@@ -16,11 +19,11 @@ public sealed class RiskManager(
     ILogger<RiskManager> logger,
     IMarketDataClient? marketDataClient = null,
     DrawdownMonitor? drawdownMonitor = null,
-    CorrelationService? correlationService = null) : IRiskManager
+    CorrelationService? correlationService = null,
+    ISymbolClassifier? symbolClassifier = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
-    private readonly HashSet<string> _cryptoSymbols =
-        new(options.Symbols.CryptoSymbols, StringComparer.OrdinalIgnoreCase);
+    private readonly ISymbolClassifier _symbolClassifier = symbolClassifier ?? new SymbolClassifier(options.Symbols.CryptoSymbols, options.Symbols.EquitySymbols);
 
     /// <summary>
     /// Checks if a signal should be allowed based on risk rules (3-tier).
@@ -109,7 +112,7 @@ public sealed class RiskManager(
         }
 
         // Market hours check (crypto exempt — trades 24/5)
-        if (!IsCrypto(signal.Symbol))
+        if (!(_symbolClassifier?.IsCrypto(signal.Symbol) ?? false))
         {
             var clock = await broker.GetClockAsync(ct);
             if (!clock.IsOpen)
@@ -230,7 +233,7 @@ public sealed class RiskManager(
         }
 
         // Time of day filter (skip first N minutes after open and last M minutes before close)
-        if (!IsCrypto(signal.Symbol))
+        if (!(_symbolClassifier?.IsCrypto(signal.Symbol) ?? false))
         {
             var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).TimeOfDay;
             var openTime = options.Session.MarketOpenTime;
@@ -295,9 +298,5 @@ public sealed class RiskManager(
             RiskTier: "FILTER");
     }
 
-    /// <summary>
-    /// Returns true if the symbol is a crypto asset (trades 24/5, exempt from market-hours checks).
-    /// Uses the configured CryptoSymbols list from TradingOptions.
-    /// </summary>
-    private bool IsCrypto(string symbol) => _cryptoSymbols.Contains(symbol);
+    // Crypto classification is handled via injected ISymbolClassifier.
 }

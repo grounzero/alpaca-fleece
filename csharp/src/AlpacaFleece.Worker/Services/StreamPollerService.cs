@@ -63,10 +63,18 @@ public sealed class StreamPollerService(
 
     private async Task RunBarPollLoopAsync(CancellationToken ct)
     {
-        var allSymbols = tradingOptions.Value.Symbols.Symbols;
+        // Build universe as the union of configured equity + crypto lists (explicit classification)
         var cryptoSymbols = new HashSet<string>(
             tradingOptions.Value.Symbols.CryptoSymbols,
             StringComparer.OrdinalIgnoreCase);
+        var equitySymbols = new HashSet<string>(
+            tradingOptions.Value.Symbols.EquitySymbols,
+            StringComparer.OrdinalIgnoreCase);
+
+        var allSymbols = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        foreach (var s in cryptoSymbols) allSymbols.Add(s);
+        foreach (var s in equitySymbols) allSymbols.Add(s);
+        var allSymbolsList = allSymbols.ToList();
         const string timeframe = "1m";
 
         while (!ct.IsCancellationRequested)
@@ -79,7 +87,7 @@ public sealed class StreamPollerService(
                 List<string> symbolsToPoll;
                 if (!marketOpen)
                 {
-                    symbolsToPoll = allSymbols.Where(s => cryptoSymbols.Contains(s)).ToList();
+                    symbolsToPoll = allSymbolsList.Where(s => cryptoSymbols.Contains(s)).ToList();
                     if (symbolsToPoll.Count == 0)
                     {
                         logger.LogDebug("Market is closed and no crypto symbols configured, skipping bar poll");
@@ -91,7 +99,7 @@ public sealed class StreamPollerService(
                 }
                 else
                 {
-                    symbolsToPoll = allSymbols;
+                    symbolsToPoll = allSymbolsList;
                 }
 
                 await PollSymbolBatchesAsync(symbolsToPoll, timeframe, ct);
