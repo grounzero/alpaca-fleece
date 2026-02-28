@@ -1,17 +1,15 @@
 using Alpaca.Markets;
 using AlpacaFleece.Infrastructure.Broker;
-using Microsoft.Extensions.DependencyInjection;
 
 namespace AlpacaFleece.Infrastructure.MarketData;
 
 /// <summary>
 /// DI extensions for market data services.
 /// </summary>
-public static class MarketDataExtensions
+public static class MarketDataExtensionss
 {
     /// <summary>
     /// Registers MarketDataClient and Alpaca data clients in DI.
-    /// For paper trading, uses IEX feed (SIP requires paid subscription).
     /// </summary>
     public static IServiceCollection AddMarketDataServices(
         this IServiceCollection services,
@@ -20,10 +18,9 @@ public static class MarketDataExtensions
         var environment = options.IsPaperTrading ? Environments.Paper : Environments.Live;
         var secretKey = new SecretKey(options.ApiKey, options.SecretKey);
 
-        services.AddSingleton(environment.GetAlpacaDataClient(secretKey));
-        services.AddSingleton(environment.GetAlpacaCryptoDataClient(secretKey));
-        services.AddSingleton<IMarketDataClient, MarketDataClient>();
-
-        return services;
+        return services
+            .AddSingleton(environment.GetAlpacaDataClient(secretKey))
+            .AddSingleton(environment.GetAlpacaCryptoDataClient(secretKey))
+            .AddSingleton<IMarketDataClient, MarketDataClient>();
     }
 }
