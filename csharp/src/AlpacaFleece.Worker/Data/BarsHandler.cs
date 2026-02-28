@@ -14,12 +14,54 @@ public sealed class BarsHandler(
     private const int MaxDequeSize = 500;
 
     /// <summary>
-    /// Initializes handler (EventDispatcher handles event routing).
+    /// Initializes handler: loads historical bars from SQLite, then waits.
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
+        await LoadHistoricalBarsAsync(stoppingToken);
         logger.LogInformation("BarsHandler initialized");
         await Task.Delay(Timeout.Infinite, stoppingToken);
+    }
+
+    /// <summary>
+    /// Loads the last <see cref="MaxDequeSize"/> bars per symbol from SQLite into memory.
+    /// Errors are logged as warnings and never crash startup.
+    /// </summary>
+    internal async ValueTask LoadHistoricalBarsAsync(CancellationToken ct)
+    {
+        try
+        {
+            using var context = await dbContextFactory.CreateDbContextAsync(ct);
+
+            var symbols = await context.Bars
+                .Select(b => b.Symbol)
+                .Distinct()
+                .ToListAsync(ct);
+
+            foreach (var symbol in symbols)
+            {
+                var bars = await context.Bars
+                    .Where(b => b.Symbol == symbol)
+                    .OrderByDescending(b => b.Timestamp)
+                    .Take(MaxDequeSize)
+                    .OrderBy(b => b.Timestamp)
+                    .ToListAsync(ct);
+
+                lock (_symbolDeques)
+                {
+                    var deque = new Queue<(decimal, decimal, decimal, decimal, long)>(bars.Count);
+                    foreach (var bar in bars)
+                        deque.Enqueue((bar.Open, bar.High, bar.Low, bar.Close, bar.Volume));
+                    _symbolDeques[symbol] = deque;
+                }
+
+                logger.LogInformation("Loaded {Count} historical bars for {Symbol}", bars.Count, symbol);
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to load historical bars; continuing with empty deques");
+        }
     }
 
     /// <summary>
