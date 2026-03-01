@@ -1,7 +1,5 @@
 using Alpaca.Markets;
 using AlpacaFleece.Infrastructure.Symbols;
-using AlpacaFleece.Trading.Config;
-using AlpacaFleece.Core.Interfaces;
 
 namespace AlpacaFleece.Tests;
 

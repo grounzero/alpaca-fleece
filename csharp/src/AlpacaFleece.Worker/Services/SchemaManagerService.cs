@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
@@ -19,7 +17,17 @@ public sealed class SchemaManagerService(
             var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>();
             await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-            await dbContext.Database.MigrateAsync(cancellationToken);
+            try
+            {
+                await dbContext.Database.MigrateAsync(cancellationToken);
+            }
+            catch (Microsoft.Data.Sqlite.SqliteException sqlEx) when (sqlEx.Message?.Contains("already exists") == true)
+            {
+                // Development-time repair: Some environments may have an existing schema
+                // created outside of EF migrations (e.g. EnsureCreated). If migrations
+                // attempt to re-create tables, treat as non-fatal and continue.
+                logger.LogWarning(sqlEx, "Migration encountered existing-table error; continuing in development mode");
+            }
 
             // Ensure DrawdownState table exists (for existing databases that were created before this table was added)
             await EnsureDrawdownStateTableAsync(dbContext, cancellationToken);

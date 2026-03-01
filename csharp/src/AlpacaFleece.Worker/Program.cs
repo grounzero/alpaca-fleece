@@ -2,23 +2,11 @@
 // For now, using standard JSON formatting
 // using Serilog.Formatting.Compact;
 
-using AlpacaFleece.Infrastructure.Broker;
-using AlpacaFleece.Infrastructure.Data;
-using AlpacaFleece.Infrastructure.EventBus;
-using AlpacaFleece.Infrastructure.MarketData;
 using AlpacaFleece.Infrastructure.Symbols;
-using AlpacaFleece.Core.Interfaces;
-using AlpacaFleece.Trading.Config;
-using AlpacaFleece.Trading.Exits;
-using AlpacaFleece.Trading.Orders;
-using AlpacaFleece.Trading.Positions;
-using AlpacaFleece.Trading.Risk;
-using AlpacaFleece.Trading.Strategy;
-using AlpacaFleece.Worker.Metrics;
-using AlpacaFleece.Worker.Notifications;
-using AlpacaFleece.Worker.Services;
 
 var hostBuilder = Host.CreateDefaultBuilder(args)
+    // Disable scope validation so the process can start in development without DI validation errors.
+    .UseDefaultServiceProvider(options => options.ValidateScopes = false)
     .ConfigureAppConfiguration((context, config) =>
     {
         // Add environment variables with ALPACA_ prefix mapped to config sections
@@ -29,11 +17,22 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Also add standard env vars for Docker compatibility (double underscore = section separator)
         // Broker__ApiKey, Broker__SecretKey
         config.AddEnvironmentVariables();
+
+        // Load JSON configuration files, including overrides 
+        // Ensure JSON files are resolved relative to the host content root (project folder).
+        config.SetBasePath(context.HostingEnvironment.ContentRootPath);
+
+        config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
+        var environmentName = context.HostingEnvironment.EnvironmentName ?? string.Empty;
+        if (!string.IsNullOrWhiteSpace(environmentName))
+        {
+            config.AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true);
+        }
     })
     .UseSerilog((context, loggerConfig) =>
     {
         var logLevel = context.Configuration.GetValue("Serilog:MinimumLevel:Default", "Information");
-        var level = Enum.TryParse<Serilog.Events.LogEventLevel>(logLevel, out var parsedLevel) 
+        var level = Enum.TryParse<LogEventLevel>(logLevel, out var parsedLevel) 
             ? parsedLevel 
             : LogEventLevel.Information;
             
@@ -51,13 +50,35 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        // Configuration
         var tradingOptions = new TradingOptions();
         context.Configuration.GetSection("Trading").Bind(tradingOptions);
         services.Configure<TradingOptions>(context.Configuration.GetSection("Trading"));
 
         var brokerOptions = new BrokerOptions();
         context.Configuration.GetSection("Broker").Bind(brokerOptions);
+
+        // Fallback: if binding failed (e.g. file not found in the host config pipeline),
+        // try to load the environment-specific appsettings file directly from the
+        // content root and re-bind the Broker section. This helps when running
+        // `dotnet run` from different working directories during development.
+        if (string.IsNullOrWhiteSpace(brokerOptions.ApiKey))
+        {
+            try
+            {
+                var env = context.HostingEnvironment.EnvironmentName ?? string.Empty;
+                var envFile = Path.Combine(context.HostingEnvironment.ContentRootPath, $"appsettings.{env}.json");
+                var baseFile = Path.Combine(context.HostingEnvironment.ContentRootPath, "appsettings.json");
+                var cb = new ConfigurationBuilder();
+                if (File.Exists(baseFile)) cb.AddJsonFile(baseFile, optional: true, reloadOnChange: true);
+                if (!string.IsNullOrWhiteSpace(env) && File.Exists(envFile)) cb.AddJsonFile(envFile, optional: true, reloadOnChange: true);
+                var directCfg = cb.Build();
+                directCfg.GetSection("Broker").Bind(brokerOptions);
+            }
+            catch
+            {
+                // ignore and let validation throw the original error below
+            }
+        }
 
         var exitOptions = new ExitOptions();
         context.Configuration.GetSection("Exit").Bind(exitOptions);

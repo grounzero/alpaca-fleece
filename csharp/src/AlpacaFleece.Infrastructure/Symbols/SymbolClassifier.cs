@@ -1,4 +1,3 @@
-using AlpacaFleece.Core.Interfaces;
 // Note: accept plain symbol lists to avoid cross-project references to TradingOptions
 
 namespace AlpacaFleece.Infrastructure.Symbols;

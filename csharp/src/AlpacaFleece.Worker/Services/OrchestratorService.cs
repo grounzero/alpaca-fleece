@@ -1,5 +1,3 @@
-using Microsoft.EntityFrameworkCore;
-
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
@@ -34,23 +32,18 @@ public sealed class OrchestratorService(
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Phase 1: Infrastructure - Starting schema and reconciliation");
-
-        // Ensure database is created before proceeding
-        using var scope = serviceProvider.CreateScope();
-        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>();
-        await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
-        await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-
-        // Rehydrate PositionTracker from DB before the trading loop begins.
-        // Mirrors Python's PositionTracker._load_from_db() so a worker restart does not
-        // lose open-position metadata (entry price, ATR, trailing stop).
-        var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
-        await positionTracker.InitialiseFromDbAsync(cancellationToken);
+        await Task.CompletedTask;
     }
 
     public async Task StartedAsync(CancellationToken cancellationToken)
     {
         logger.LogInformation("Phase 2-4: Data Layer, Trading Logic, Runtime - All services started");
+
+        // Rehydrate PositionTracker from DB after migrations have completed.
+        // Mirrors Python's PositionTracker._load_from_db() so a worker restart does not
+        // lose open-position metadata (entry price, ATR, trailing stop).
+        var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
+        await positionTracker.InitialiseFromDbAsync(cancellationToken);
 
         // Register signal handlers
         Console.CancelKeyPress += (sender, args) =>

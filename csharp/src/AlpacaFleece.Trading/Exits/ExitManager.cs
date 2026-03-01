@@ -1,4 +1,3 @@
-using AlpacaFleece.Core.Interfaces;
 using AlpacaFleece.Infrastructure.Symbols;
 
 namespace AlpacaFleece.Trading.Exits;
