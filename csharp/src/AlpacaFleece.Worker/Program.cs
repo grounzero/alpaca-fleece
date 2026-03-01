@@ -5,8 +5,12 @@
 using AlpacaFleece.Infrastructure.Symbols;
 
 var hostBuilder = Host.CreateDefaultBuilder(args)
-    // Disable scope validation so the process can start in development without DI validation errors.
-    .UseDefaultServiceProvider(options => options.ValidateScopes = false)
+    // Configure scope validation based on environment:
+    // enable in Development to catch DI lifetime issues early.
+    .UseDefaultServiceProvider((context, options) =>
+    {
+        options.ValidateScopes = (context.HostingEnvironment.EnvironmentName ?? string.Empty) == "Development";
+    })
     .ConfigureAppConfiguration((context, config) =>
     {
         // Add environment variables with ALPACA_ prefix mapped to config sections
