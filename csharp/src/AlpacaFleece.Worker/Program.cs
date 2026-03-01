@@ -78,7 +78,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
                 var directCfg = cb.Build();
                 directCfg.GetSection("Broker").Bind(brokerOptions);
             }
-            catch (Exception ex)
+            catch (Exception)
             {
                 // ignore and let validation throw the original error below
             }
