@@ -233,7 +233,7 @@ public sealed class RiskManager(
         }
 
         // Time of day filter (skip first N minutes after open and last M minutes before close)
-        if (!(_symbolClassifier?.IsCrypto(signal.Symbol) ?? false))
+        if (!_symbolClassifier.IsCrypto(signal.Symbol))
         {
             var now = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, _timeZone).TimeOfDay;
             var openTime = options.Session.MarketOpenTime;
