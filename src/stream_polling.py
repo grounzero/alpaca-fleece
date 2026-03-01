@@ -206,7 +206,7 @@ class StreamPolling:
         # Maximum concurrent Alpaca order requests during polling
         self._order_polling_concurrency: int = order_polling_concurrency
         # State store for persistence (used by polling path).
-        # Initialize lazily so tests can override `self._db_path`.
+        # Lazy load so tests can override `self._db_path`.
         self._state_store: Optional[StateStore] = None
 
     def _get_state_store(self) -> StateStore:

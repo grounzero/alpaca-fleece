@@ -238,7 +238,7 @@ public sealed class StreamPollerTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public void BarsHandler_InitializesWithEmptyDeques()
+    public void BarsHandler_InitialisesWithEmptyDeques()
     {
         var handler = new BarsHandler(
             Substitute.For<IEventBus>(),

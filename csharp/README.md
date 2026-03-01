@@ -107,25 +107,22 @@ dotnet ef migrations add InitialCreate -p src/AlpacaFleece.Infrastructure -s src
 
 **Foreground (with console output):**
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
 dotnet run --project src/AlpacaFleece.Worker
 ```
 
 **Background (survives terminal disconnect):**
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
 dotnet run --project src/AlpacaFleece.Worker &
 ```
 
 **With environment variables:**
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
 ALPACA_API_KEY=your_key ALPACA_SECRET_KEY=your_secret dotnet run --project src/AlpacaFleece.Worker
 ```
 
 The application will:
 - Create `trading.db` automatically
-- Initialize all database tables
+- Initialise all database tables
 - Load position tracking data
 - Start the event loop (queries database every 2 seconds)
 - Log to `logs/alpaca-fleece.log`
@@ -182,7 +179,7 @@ dotnet run --project src/AlpacaFleece.Worker
 ```
 
 **Troubleshooting:**
-- If you see "Unauthorized" errors, verify your API credentials are correct
+- Verify your API credentials are correct
 - Ensure you're using the paper trading endpoint for testing
 - Check that your Alpaca account is active and API access is enabled
 

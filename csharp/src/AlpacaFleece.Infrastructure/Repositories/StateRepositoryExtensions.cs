@@ -14,13 +14,13 @@ public static class StateRepositoryExtensions
     {
         var connectionString = $"Data Source={databasePath}";
 
-        services.AddDbContext<TradingDbContext>(options =>
-            options.UseSqlite(connectionString));
-
+        // Use pooled factory to create DbContext instances per call. Do not register a long-lived
+        // DbContext to avoid concurrent usage across threads.
         services.AddPooledDbContextFactory<TradingDbContext>(options =>
             options.UseSqlite(connectionString));
 
-        services.AddScoped<IStateRepository, StateRepository>();
+        // StateRepository uses the pooled factory internally and is safe to register as singleton.
+        services.AddSingleton<IStateRepository, StateRepository>();
 
         return services;
     }

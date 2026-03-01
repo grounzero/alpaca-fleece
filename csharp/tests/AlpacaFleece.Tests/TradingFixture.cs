@@ -16,10 +16,14 @@ public sealed class TradingFixture : IAsyncLifetime
             .UseSqlite($"Data Source={_databasePath}")
             .Options;
 
+        // Create a shared options instance and ensure database exists using a short-lived context
         DbContext = new TradingDbContext(options);
         await DbContext.Database.EnsureCreatedAsync();
 
-        StateRepository = new StateRepository(DbContext, Substitute.For<ILogger<StateRepository>>());
+        // Use the shared test factory implementation that accepts options
+        var factory = new TestDbContextFactory(options);
+
+        StateRepository = new StateRepository(factory, Substitute.For<ILogger<StateRepository>>());
         EventBus = new EventBusService();
     }
 
@@ -41,3 +45,5 @@ public sealed class TradingFixture : IAsyncLifetime
 public sealed class TradingDatabaseCollection : ICollectionFixture<TradingFixture>
 {
 }
+
+    

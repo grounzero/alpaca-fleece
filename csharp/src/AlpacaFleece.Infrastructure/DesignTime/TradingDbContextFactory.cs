@@ -14,8 +14,10 @@ public sealed class TradingDbContextFactory : IDesignTimeDbContextFactory<Tradin
     {
         var optionsBuilder = new DbContextOptionsBuilder<TradingDbContext>();
 
-        // Use a local sqlite file in the current working directory for design-time operations.
-        var file = Path.Combine(Directory.GetCurrentDirectory(), "trading.db");
+        // Use the runtime base directory so EF tooling targets the same DB file the
+        // application uses at runtime (AppDomain.CurrentDomain.BaseDirectory/trading.db).
+        var runtimeBase = AppDomain.CurrentDomain.BaseDirectory ?? Directory.GetCurrentDirectory();
+        var file = Path.Combine(runtimeBase, "trading.db");
         optionsBuilder.UseSqlite($"Data Source={file}");
 
         return new TradingDbContext(optionsBuilder.Options);

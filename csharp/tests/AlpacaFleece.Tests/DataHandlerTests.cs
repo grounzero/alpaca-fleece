@@ -6,7 +6,7 @@ namespace AlpacaFleece.Tests;
 public sealed class DataHandlerTests
 {
     [Fact]
-    public void DataHandler_InitializesSuccessfully()
+    public void DataHandler_InitialisesSuccessfully()
     {
         // Arrange
         var eventBus = Substitute.For<IEventBus>();

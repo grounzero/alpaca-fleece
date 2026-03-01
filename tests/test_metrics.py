@@ -60,7 +60,7 @@ class TestBotMetrics:
     """Test BotMetrics dataclass."""
 
     def test_default_initialization(self):
-        """Test that BotMetrics initializes with correct defaults."""
+        """Test that BotMetrics initialises with correct defaults."""
         m = BotMetrics()
 
         # Counters should be 0
