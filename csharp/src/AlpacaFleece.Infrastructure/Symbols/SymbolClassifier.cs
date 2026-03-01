@@ -32,7 +32,7 @@ public sealed class SymbolClassifier : ISymbolClassifier
         {
             throw new ArgumentException(
                 $"Symbols cannot be both crypto and equity: {string.Join(", ", overlappingSymbols)}",
-                nameof(cryptoSymbols));
+                $"{nameof(cryptoSymbols)}, {nameof(equitySymbols)}");
         }
     }
 
