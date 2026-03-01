@@ -112,7 +112,7 @@ public sealed class RiskManager(
         }
 
         // Market hours check (crypto exempt — trades 24/5)
-        if (!(_symbolClassifier?.IsCrypto(signal.Symbol) ?? false))
+        if (!_symbolClassifier.IsCrypto(signal.Symbol))
         {
             var clock = await broker.GetClockAsync(ct);
             if (!clock.IsOpen)
