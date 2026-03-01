@@ -30,7 +30,7 @@ public interface IMarketDataClient
     bool IsCrypto(string symbol);
 
     /// <summary>
-    /// Normalises quote to standard format.
+    /// Creates a quote for the specified symbol.
     /// </summary>
     Quote CreateQuote(
         string symbol,
