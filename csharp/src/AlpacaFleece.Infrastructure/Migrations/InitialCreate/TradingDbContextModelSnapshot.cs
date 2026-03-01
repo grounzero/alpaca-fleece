@@ -113,7 +113,7 @@ namespace AlpacaFleece.Infrastructure.Migrations.InitialCreate
                         {
                             Id = 1,
                             Count = 0,
-                            LastResetAt = new DateTimeOffset(new DateTime(2026, 2, 28, 19, 7, 12, 733, DateTimeKind.Unspecified).AddTicks(3940), new TimeSpan(0, 0, 0, 0, 0))
+                            LastResetAt = DateTimeOffset.UnixEpoch
                         });
                 });
 
