@@ -13,4 +13,3 @@ global using AlpacaFleece.Core.Exceptions;
 global using AlpacaFleece.Core.Interfaces;
 global using AlpacaFleece.Core.Models;
 global using AlpacaFleece.Infrastructure.Data;
-global using Serilog;

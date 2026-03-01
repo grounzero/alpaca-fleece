@@ -33,7 +33,7 @@ public sealed class StreamPollerTests
         var opts = Substitute.For<IOptions<TradingOptions>>();
         opts.Value.Returns(new TradingOptions
         {
-            Symbols = new SymbolsOptions { Symbols = symbols }
+            Symbols = new SymbolLists { EquitySymbols = symbols }
         });
         return opts;
     }
@@ -134,13 +134,12 @@ public sealed class StreamPollerTests
             .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
                 new List<OrderIntentDto>().AsReadOnly()));
 
-        // Two symbols: one equity (AAPL), one crypto (BTC/USD)
         var opts = Options.Create(new TradingOptions
         {
-            Symbols = new SymbolsOptions
+            Symbols = new SymbolLists
             {
-                Symbols = new List<string> { "AAPL", "BTC/USD" },
-                CryptoSymbols = new List<string> { "BTC/USD" }
+                EquitySymbols = new List<string> { "AAPL", "MSFT", "GOOG" },
+                CryptoSymbols = new List<string> { "BTC/USD", "ETH/USD" }
             }
         });
 
@@ -238,7 +237,7 @@ public sealed class StreamPollerTests
     // ------------------------------------------------------------------
 
     [Fact]
-    public void BarsHandler_InitializesWithEmptyDeques()
+    public void BarsHandler_InitialisesWithEmptyDeques()
     {
         var handler = new BarsHandler(
             Substitute.For<IEventBus>(),

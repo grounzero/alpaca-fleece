@@ -2,21 +2,15 @@
 // For now, using standard JSON formatting
 // using Serilog.Formatting.Compact;
 
-using AlpacaFleece.Infrastructure.Broker;
-using AlpacaFleece.Infrastructure.Data;
-using AlpacaFleece.Infrastructure.EventBus;
-using AlpacaFleece.Infrastructure.MarketData;
-using AlpacaFleece.Trading.Config;
-using AlpacaFleece.Trading.Exits;
-using AlpacaFleece.Trading.Orders;
-using AlpacaFleece.Trading.Positions;
-using AlpacaFleece.Trading.Risk;
-using AlpacaFleece.Trading.Strategy;
-using AlpacaFleece.Worker.Metrics;
-using AlpacaFleece.Worker.Notifications;
-using AlpacaFleece.Worker.Services;
+using AlpacaFleece.Infrastructure.Symbols;
 
 var hostBuilder = Host.CreateDefaultBuilder(args)
+    // Configure scope validation based on environment:
+    // enable in Development to catch DI lifetime issues early.
+    .UseDefaultServiceProvider((context, options) =>
+    {
+        options.ValidateScopes = context.HostingEnvironment.IsDevelopment();
+    })
     .ConfigureAppConfiguration((context, config) =>
     {
         // Add environment variables with ALPACA_ prefix mapped to config sections
@@ -27,18 +21,22 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Also add standard env vars for Docker compatibility (double underscore = section separator)
         // Broker__ApiKey, Broker__SecretKey
         config.AddEnvironmentVariables();
+
+        // Note: Host.CreateDefaultBuilder already loads appsettings.json and
+        // appsettings.{Environment}.json relative to the content root, so we
+        // rely on the default behavior here to avoid duplicate JSON providers.
     })
     .UseSerilog((context, loggerConfig) =>
     {
         var logLevel = context.Configuration.GetValue("Serilog:MinimumLevel:Default", "Information");
-        var level = Enum.TryParse<Serilog.Events.LogEventLevel>(logLevel, out var parsedLevel) 
+        var level = Enum.TryParse<LogEventLevel>(logLevel, out var parsedLevel) 
             ? parsedLevel 
-            : Serilog.Events.LogEventLevel.Information;
+            : LogEventLevel.Information;
             
         loggerConfig
             .MinimumLevel.Is(level)
-            .MinimumLevel.Override("Microsoft", Serilog.Events.LogEventLevel.Warning)
-            .MinimumLevel.Override("System", Serilog.Events.LogEventLevel.Warning)
+            .MinimumLevel.Override("Microsoft", LogEventLevel.Warning)
+            .MinimumLevel.Override("System", LogEventLevel.Warning)
             .WriteTo.Console()
             .WriteTo.File(
                 "logs/alpaca-fleece.log",
@@ -49,7 +47,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     })
     .ConfigureServices((context, services) =>
     {
-        // Configuration
         var tradingOptions = new TradingOptions();
         context.Configuration.GetSection("Trading").Bind(tradingOptions);
         services.Configure<TradingOptions>(context.Configuration.GetSection("Trading"));
@@ -78,7 +75,14 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Trading (Phase 3: Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);
-        services.AddScoped<IStrategy, SmaCrossoverStrategy>();
+
+        // Symbol classifier (centralised symbol type detection using TradingOptions lists)
+        services.AddSingleton<ISymbolClassifier>(sp =>
+            new SymbolClassifier(tradingOptions.Symbols.CryptoSymbols, tradingOptions.Symbols.EquitySymbols));
+        services.AddScoped<IStrategy>(sp => new SmaCrossoverStrategy(
+            sp.GetRequiredService<IEventBus>(),
+            sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
+            tradingOptions.Symbols.CryptoSymbols));
         services.AddSingleton<PositionTracker>();
 
         // Phase 2: Data Handling
@@ -107,7 +111,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             tradingOptions,
             sp.GetRequiredService<ILogger<RiskManager>>(),
             drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
-            correlationService: sp.GetRequiredService<CorrelationService>()));
+            correlationService: sp.GetRequiredService<CorrelationService>(),
+            symbolClassifier: sp.GetRequiredService<ISymbolClassifier>()));
         services.AddScoped<IOrderManager>(sp => new OrderManager(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IRiskManager>(),

@@ -14,12 +14,12 @@ public sealed class BarsHandler(
     private const int MaxDequeSize = 500;
 
     /// <summary>
-    /// Initializes handler: loads historical bars from SQLite, then waits.
+    /// Initialises handler: loads historical bars from SQLite, then waits.
     /// </summary>
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
         await LoadHistoricalBarsAsync(stoppingToken);
-        logger.LogInformation("BarsHandler initialized");
+        logger.LogInformation("BarsHandler initialised");
         await Task.Delay(Timeout.Infinite, stoppingToken);
     }
 

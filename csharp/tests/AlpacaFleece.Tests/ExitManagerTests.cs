@@ -26,7 +26,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
                 StopLossPercentage = 0.01m,
                 ProfitTargetPercentage = 0.02m
             },
-            Symbols = new SymbolsOptions()  // uses default CryptoSymbols list
+            Symbols = new SymbolLists()  // explicit lists (empty by default)
         });
 
         // Configure market data mock to return price below ATR stop (entry 100, ATR 2 -> stop at 97)

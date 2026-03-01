@@ -17,6 +17,16 @@ public sealed class EventDispatcherService(
 
         try
         {
+            try
+            {
+                var dataHandler = serviceProvider.GetRequiredService<IDataHandler>();
+                dataHandler.Initialise();
+            }
+            catch (Exception ex)
+            {
+                logger.LogWarning(ex, "Failed to initialise DataHandler at startup");
+            }
+
             await eventBus.DispatchAsync(HandleEventAsync, stoppingToken);
         }
         catch (OperationCanceledException)
@@ -185,23 +195,13 @@ public sealed class EventDispatcherService(
 
     /// <summary>
     /// Handles bar events: routes to DataHandler for storage and history management.
+    /// DataHandler is initialised at startup; actual bar processing happens via event bus.
     /// </summary>
     private async ValueTask HandleBarEventAsync(BarEvent barEvent)
     {
         logger.LogDebug(
             "Handling BarEvent: {symbol} {timeframe} {timestamp}",
             barEvent.Symbol, barEvent.Timeframe, barEvent.Timestamp);
-
-        try
-        {
-            var dataHandler = serviceProvider.GetRequiredService<IDataHandler>();
-            // DataHandler.Initialise() sets up subscriptions; actual bar processing happens via event bus
-            dataHandler.Initialise();
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Failed to handle bar for {symbol}", barEvent.Symbol);
-        }
 
         await Task.CompletedTask;
     }

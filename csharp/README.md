@@ -94,6 +94,7 @@ dotnet build
 
 # Run tests
 dotnet test
+```
 
 ## Database migration (EF Core)
 If you need to create the initial migration locally:
@@ -101,31 +102,27 @@ If you need to create the initial migration locally:
 ```bash
 dotnet ef migrations add InitialCreate -p src/AlpacaFleece.Infrastructure -s src/AlpacaFleece.Worker
 ```
-```
 
 ### Running the Bot
 
 **Foreground (with console output):**
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
 dotnet run --project src/AlpacaFleece.Worker
 ```
 
 **Background (survives terminal disconnect):**
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
 dotnet run --project src/AlpacaFleece.Worker &
 ```
 
 **With environment variables:**
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
 ALPACA_API_KEY=your_key ALPACA_SECRET_KEY=your_secret dotnet run --project src/AlpacaFleece.Worker
 ```
 
 The application will:
 - Create `trading.db` automatically
-- Initialize all database tables
+- Initialise all database tables
 - Load position tracking data
 - Start the event loop (queries database every 2 seconds)
 - Log to `logs/alpaca-fleece.log`
@@ -167,7 +164,11 @@ Edit `src/AlpacaFleece.Worker/appsettings.json`:
     "KillSwitch": false
   },
   "Trading": {
-    "Symbols": { "Symbols": ["AAPL", "MSFT", "GOOG"] },
+    "Symbols": {
+      "CryptoSymbols": [ "BTC/USD", "ETH/USD" ],
+      "EquitySymbols": [ "AAPL", "MSFT", "GOOG" ],
+      "MinVolume": 1000000
+    },
     "RiskLimits": { "MaxDailyLoss": 500 },
     "Exit": { "StopLossMultiplier": 1.5, "ProfitTargetMultiplier": 3.0 }
   }
@@ -182,7 +183,7 @@ dotnet run --project src/AlpacaFleece.Worker
 ```
 
 **Troubleshooting:**
-- If you see "Unauthorized" errors, verify your API credentials are correct
+- Verify your API credentials are correct
 - Ensure you're using the paper trading endpoint for testing
 - Check that your Alpaca account is active and API access is enabled
 

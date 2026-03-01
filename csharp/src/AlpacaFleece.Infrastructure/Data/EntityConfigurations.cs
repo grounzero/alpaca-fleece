@@ -170,7 +170,13 @@ public sealed class CircuitBreakerStateEntityConfiguration : IEntityTypeConfigur
     {
         builder.ToTable("circuit_breaker_state");
         builder.HasKey(x => x.Id);
-        builder.HasData(new CircuitBreakerStateEntity { Id = 1, Count = 0, LastResetAt = DateTimeOffset.UtcNow });
+        // Seed with a fixed timestamp so the EF Core model is deterministic (matches generated migration snapshot).
+        builder.HasData(new CircuitBreakerStateEntity
+        {
+            Id = 1,
+            Count = 0,
+            LastResetAt = DateTimeOffset.UnixEpoch
+        });
     }
 }
 

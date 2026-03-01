@@ -11,7 +11,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task GetStateAsync_ReturnsNullForMissingKey()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var value = await repo.GetStateAsync("missing_key");
 
         Assert.Null(value);
@@ -20,7 +20,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task SetStateAsync_StoresValue()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         await repo.SetStateAsync("test_key", "test_value");
 
         var value = await repo.GetStateAsync("test_key");
@@ -30,7 +30,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task SetStateAsync_UpdatesExistingValue()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         await repo.SetStateAsync("test_key", "value1");
         await repo.SetStateAsync("test_key", "value2");
 
@@ -41,7 +41,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task GateTryAcceptAsync_AcceptsFirstTime()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var barTs = DateTimeOffset.UtcNow;
         var nowUtc = DateTimeOffset.UtcNow;
 
@@ -57,7 +57,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task GateTryAcceptAsync_RejectsSameBarDuplicate()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var barTs = DateTimeOffset.UtcNow;
         var nowUtc = DateTimeOffset.UtcNow;
 
@@ -82,7 +82,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task GateTryAcceptAsync_RespectsCooldown()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var barTs1 = DateTimeOffset.UtcNow;
         var barTs2 = barTs1.AddSeconds(1);
         var nowUtc = DateTimeOffset.UtcNow;
@@ -108,7 +108,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task GateTryAcceptAsync_AcceptsAfterCooldown()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var barTs1 = DateTimeOffset.UtcNow;
         var barTs2 = barTs1.AddSeconds(10);
         var nowUtc = DateTimeOffset.UtcNow;
@@ -134,7 +134,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task SaveOrderIntentAsync_PersistsIntent()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var clientOrderId = "test_order_123";
 
         await repo.SaveOrderIntentAsync(
@@ -158,7 +158,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task UpdateOrderIntentAsync_UpdatesStatus()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
         var clientOrderId = "test_order_456";
 
         await repo.SaveOrderIntentAsync(
@@ -185,7 +185,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task InsertFillIdempotentAsync_InsertsUniqueFill()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
 
         await repo.InsertFillIdempotentAsync(
             "alpaca_order_1",
@@ -202,7 +202,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task InsertFillIdempotentAsync_IgnoresDuplicate()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
 
         await repo.InsertFillIdempotentAsync(
             "alpaca_order_1",
@@ -227,7 +227,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task GetCircuitBreakerCountAsync_ReturnsCount()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
 
         await repo.SaveCircuitBreakerCountAsync(5);
         var count = await repo.GetCircuitBreakerCountAsync();
@@ -238,7 +238,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
     [Fact]
     public async Task ResetDailyStateAsync_ClearsCircuitBreaker()
     {
-        var repo = new StateRepository(fixture.DbContext, _logger);
+        var repo = fixture.StateRepository;
 
         await repo.SaveCircuitBreakerCountAsync(5);
         await repo.ResetDailyStateAsync();

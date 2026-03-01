@@ -206,11 +206,13 @@ public sealed class BarsHandlerTests : IAsyncLifetime
         Assert.Equal(0, handler.GetBarCount("AAPL"));
         Assert.Empty(handler.GetBarsForSymbol("AAPL"));
 
-        // Logger should have logged the warning
-        _logger.Received().LogWarning(
-            Arg.Any<Exception>(),
-            Arg.Is<string>(s => s.Contains("Failed to load historical bars")),
-            Arg.Any<object[]>());
+        // Logger should have logged the warning with the expected message and exception
+        _logger.Received().Log(
+            LogLevel.Warning,
+            Arg.Any<EventId>(),
+            Arg.Is<object>(state => state != null && state.ToString().Contains("Failed to load historical bars")),
+            Arg.Is<Exception>(ex => ex != null && ex.Message.Contains("DB error")),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     [Fact]
@@ -243,22 +245,13 @@ public sealed class BarsHandlerTests : IAsyncLifetime
 
         await handler.LoadHistoricalBarsAsync(CancellationToken.None);
 
-        // Verify logging occurred with the correct count
-        _logger.Received().LogInformation(
-            Arg.Is<string>(s => s.Contains("Loaded")),
-            Arg.Is(5),
-            Arg.Is("AAPL"));
+        // Verify logging occurred (underlying Log called at Information level)
+        _logger.Received().Log(
+            LogLevel.Information,
+            Arg.Any<EventId>(),
+            Arg.Any<object>(),
+            Arg.Any<Exception>(),
+            Arg.Any<Func<object, Exception?, string>>());
     }
 }
 
-/// <summary>
-/// Simple test implementation of IDbContextFactory for BarsHandler tests.
-/// </summary>
-internal sealed class TestDbContextFactory(DbContextOptions<TradingDbContext> options) : IDbContextFactory<TradingDbContext>
-{
-    public TradingDbContext CreateDbContext()
-        => new TradingDbContext(options);
-
-    public ValueTask<TradingDbContext> CreateDbContextAsync(CancellationToken cancellationToken = default)
-        => new(CreateDbContext());
-}

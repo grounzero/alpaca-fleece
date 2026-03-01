@@ -10,9 +10,11 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
     private readonly ILogger<RiskManager> _logger = Substitute.For<ILogger<RiskManager>>();
     private readonly TradingOptions _options = new()
     {
+        Symbols = new SymbolLists { CryptoSymbols = new List<string> { "BTC/USD" } },
         Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0 },
         Session = new SessionOptions { MarketOpenTime = TimeSpan.Zero, MarketCloseTime = new TimeSpan(23, 59, 59) }
     };
+    
 
     public async Task InitializeAsync()
     {

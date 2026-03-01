@@ -61,7 +61,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
             options,
             Substitute.For<ILogger<DrawdownMonitor>>());
 
-        // Act: Initialize loads persisted state
+        // Act: Load persisted state
         await monitor.InitialiseAsync();
 
         // Assert: Monitor correctly loads Emergency state
@@ -84,7 +84,7 @@ public sealed class DrawdownMonitorServiceTests(TradingFixture fixture) : IAsync
             options,
             Substitute.For<ILogger<DrawdownMonitor>>());
 
-        // Act: Initialize processes recovery flag
+        // Act: Processes recovery flag
         await monitor.InitialiseAsync();
 
         // Assert: Monitor resets to Normal when manual recovery is requested

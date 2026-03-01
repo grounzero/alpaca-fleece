@@ -8,7 +8,6 @@ public sealed class HousekeepingService(
     IBrokerService brokerService,
     IStateRepository stateRepository,
     PositionTracker positionTracker,
-    IOrderManager orderManager,
     ILogger<HousekeepingService> logger) : BackgroundService
 {
     private const int EquitySnapshotIntervalSeconds = 60;

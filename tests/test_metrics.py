@@ -59,8 +59,8 @@ def reset_global_metrics():
 class TestBotMetrics:
     """Test BotMetrics dataclass."""
 
-    def test_default_initialization(self):
-        """Test that BotMetrics initializes with correct defaults."""
+    def test_default_initialisation(self):
+        """Test that BotMetrics initialises with correct defaults."""
         m = BotMetrics()
 
         # Counters should be 0

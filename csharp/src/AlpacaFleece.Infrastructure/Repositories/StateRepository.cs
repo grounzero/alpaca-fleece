@@ -4,9 +4,10 @@ namespace AlpacaFleece.Infrastructure.Repositories;
 /// State repository implementation with atomic gate logic and KV store.
 /// </summary>
 public sealed class StateRepository(
-    TradingDbContext dbContext,
+    IDbContextFactory<TradingDbContext> dbContextFactory,
     ILogger<StateRepository> logger) : IStateRepository
 {
+    private IDbContextFactory<TradingDbContext> DbFactory => dbContextFactory;
     /// <summary>
     /// Gets a KV pair from bot_state.
     /// </summary>
@@ -14,6 +15,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var entity = await dbContext.BotState
                 .FirstOrDefaultAsync(x => x.Key == key, ct);
 
@@ -33,6 +35,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var entity = await dbContext.BotState
                 .FirstOrDefaultAsync(x => x.Key == key, ct);
 
@@ -73,7 +76,8 @@ public sealed class StateRepository(
     {
         try
         {
-            using var tx = await dbContext.Database.BeginTransactionAsync(
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            await using var tx = await dbContext.Database.BeginTransactionAsync(
                 System.Data.IsolationLevel.Serializable, ct);
 
             try
@@ -158,6 +162,7 @@ public sealed class StateRepository(
         try
         {
             // Idempotency: return silently if already exists
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var existing = await dbContext.OrderIntents
                 .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId, ct);
             if (existing != null)
@@ -178,7 +183,7 @@ public sealed class StateRepository(
         }
         catch (Exception ex)
         {
-            dbContext.ChangeTracker.Clear(); // prevent cascade failures from poisoned entity state
+            // No DbContext state kept between calls when using factory; nothing to clear here
             logger.LogError(ex, "Failed to save order intent {clientOrderId}", clientOrderId);
             throw new StateRepositoryException($"Failed to save order intent", ex);
         }
@@ -196,6 +201,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var intent = await dbContext.OrderIntents
                 .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId, ct);
 
@@ -226,6 +232,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var intent = await dbContext.OrderIntents
                 .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId, ct);
 
@@ -264,6 +271,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var existing = await dbContext.Fills
                 .FirstOrDefaultAsync(
                     x => x.AlpacaOrderId == alpacaOrderId && x.FillDedupeKey == dedupeKey,
@@ -304,6 +312,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var attempt = await dbContext.ExitAttempts
                 .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
 
@@ -327,6 +336,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var state = await dbContext.CircuitBreakerState
                 .FirstOrDefaultAsync(x => x.Id == 1, ct);
 
@@ -346,6 +356,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var state = await dbContext.CircuitBreakerState
                 .FirstOrDefaultAsync(x => x.Id == 1, ct);
 
@@ -379,6 +390,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var state = await dbContext.CircuitBreakerState
                 .FirstOrDefaultAsync(x => x.Id == 1, ct);
 
@@ -404,6 +416,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var attempt = await dbContext.ExitAttempts
                 .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
 
@@ -442,6 +455,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var attempt = await dbContext.ExitAttempts
                 .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
 
@@ -475,6 +489,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var existing = await dbContext.EquityCurve
                 .FirstOrDefaultAsync(x => x.Timestamp == timestamp, ct);
 
@@ -513,6 +528,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             dbContext.ReconciliationReports.Add(new ReconciliationReportEntity
             {
                 ReportDate = DateTimeOffset.UtcNow,
@@ -521,7 +537,6 @@ public sealed class StateRepository(
                 TotalPnl = 0m,
                 Status = reportJson
             });
-
             await dbContext.SaveChangesAsync(ct);
             logger.LogDebug("Reconciliation report persisted");
         }
@@ -539,6 +554,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var intents = await dbContext.OrderIntents
                 .ToListAsync(ct);
 
@@ -574,6 +590,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var positions = await dbContext.PositionTracking
                 .ToListAsync(ct);
 
@@ -599,6 +616,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var entity = await dbContext.DrawdownState
                 .FirstOrDefaultAsync(x => x.Id == 1, ct);
 
@@ -633,6 +651,7 @@ public sealed class StateRepository(
     {
         try
         {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var entity = await dbContext.DrawdownState
                 .FirstOrDefaultAsync(x => x.Id == 1, ct);
 

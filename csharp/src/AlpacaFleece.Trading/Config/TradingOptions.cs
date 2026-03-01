@@ -5,7 +5,7 @@ namespace AlpacaFleece.Trading.Config;
 /// </summary>
 public sealed class TradingOptions
 {
-    public SymbolsOptions Symbols { get; set; } = new();
+    public SymbolLists Symbols { get; set; } = new();
     public SessionOptions Session { get; set; } = new();
     public RiskLimits RiskLimits { get; set; } = new();
     public ExitOptions Exit { get; set; } = new();
@@ -16,18 +16,24 @@ public sealed class TradingOptions
 }
 
 /// <summary>
-/// Symbols configuration.
+/// Explicit symbol classification lists.
 /// </summary>
-public sealed class SymbolsOptions
+public sealed class SymbolLists
 {
-    public List<string> Symbols { get; set; } = new();
-    public int MinVolume { get; set; } = 1000000;
-
     /// <summary>
     /// Crypto symbols that trade 24/5 (exempt from market-hours checks).
-    /// Defaults to common Alpaca crypto pairs.
     /// </summary>
-    public List<string> CryptoSymbols { get; set; } = ["BTC/USD", "ETH/USD", "LTC/USD"];
+    public List<string> CryptoSymbols { get; set; } = new();
+
+    /// <summary>
+    /// Equity symbols (regular US equities) used for market-data and strategies.
+    /// </summary>
+    public List<string> EquitySymbols { get; set; } = new();
+
+    /// <summary>
+    /// Minimum bar volume used by filters (kept for compatibility of semantics).
+    /// </summary>
+    public int MinVolume { get; set; } = 1000000;
 }
 
 /// <summary>
