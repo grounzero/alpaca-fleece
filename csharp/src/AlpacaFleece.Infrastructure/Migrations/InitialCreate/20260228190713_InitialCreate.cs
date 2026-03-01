@@ -259,7 +259,7 @@ namespace AlpacaFleece.Infrastructure.Migrations.InitialCreate
             migrationBuilder.InsertData(
                 table: "circuit_breaker_state",
                 columns: new[] { "Id", "Count", "LastResetAt" },
-                values: new object[] { 1, 0, new DateTimeOffset(new DateTime(2026, 2, 28, 19, 7, 12, 733, DateTimeKind.Unspecified).AddTicks(3940), new TimeSpan(0, 0, 0, 0, 0)) });
+                values: new object[] { 1, 0, System.DateTimeOffset.UnixEpoch });
 
             migrationBuilder.InsertData(
                 table: "drawdown_state",
