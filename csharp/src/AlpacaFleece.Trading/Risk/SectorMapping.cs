@@ -48,6 +48,7 @@ public static class SectorMapping
             ["MU"] = Technology,
             ["AVGO"] = Technology,
             ["XLK"] = Technology,   // Technology Select Sector SPDR ETF
+            ["MSTR"] = Technology,  // MicroStrategy (software/Treasury BTC strategy)
 
             // ── Communication Services ────────────────────────────────────────────
             ["GOOG"] = CommunicationServices,
@@ -63,6 +64,7 @@ public static class SectorMapping
             // ── Consumer Discretionary ────────────────────────────────────────────
             ["AMZN"] = ConsumerDiscretionary,
             ["TSLA"] = ConsumerDiscretionary,
+            ["UBER"] = ConsumerDiscretionary,
             ["HD"] = ConsumerDiscretionary,
             ["MCD"] = ConsumerDiscretionary,
             ["NKE"] = ConsumerDiscretionary,
@@ -105,6 +107,7 @@ public static class SectorMapping
             ["BRK.B"] = Financials,
             ["BRK/B"] = Financials,
             ["C"] = Financials,
+            ["COIN"] = Financials,  // Coinbase (crypto exchange)
             ["XLF"] = Financials,   // Financial Select Sector SPDR ETF
 
             // ── Energy ────────────────────────────────────────────────────────────
@@ -122,13 +125,19 @@ public static class SectorMapping
             ["BA"] = Industrials,
             ["HON"] = Industrials,
             ["RTX"] = Industrials,
-            ["UNP"] = Industrials,
             ["LMT"] = Industrials,
+            ["NOC"] = Industrials,
+            ["GD"] = Industrials,
+            ["UNP"] = Industrials,
             ["XLI"] = Industrials,   // Industrial Select Sector SPDR ETF
 
             // ── Materials ─────────────────────────────────────────────────────────
             ["FCX"] = Materials,
             ["NEM"] = Materials,
+            ["GOLD"] = Materials,   // Barrick Gold
+            ["PAAS"] = Materials,   // Pan American Silver
+            ["HL"] = Materials,     // Hecla Mining (current position!)
+            ["SCCO"] = Materials,   // Southern Copper
             ["XLB"] = Materials,   // Materials Select Sector SPDR ETF
 
             // ── Utilities ─────────────────────────────────────────────────────────
@@ -157,6 +166,8 @@ public static class SectorMapping
             ["IWM"] = Equities,   // iShares Russell 2000 ETF
             ["RSP"] = Equities,   // Invesco S&P 500 Equal Weight ETF
             ["MDY"] = Equities,   // SPDR S&P MidCap 400 ETF
+            ["ARKK"] = Equities,  // ARK Innovation ETF
+            ["EEM"] = Equities,   // iShares MSCI Emerging Markets ETF
 
             // ── Bond ETFs ─────────────────────────────────────────────────────────
             ["TLT"] = Bonds,   // iShares 20+ Year Treasury Bond ETF
@@ -210,15 +221,17 @@ public static class SectorMapping
             ["TXN"] = AssetClass.Equity,  ["AMAT"] = AssetClass.Equity,
             ["LRCX"] = AssetClass.Equity, ["KLAC"] = AssetClass.Equity,
             ["MU"] = AssetClass.Equity,   ["AVGO"] = AssetClass.Equity,
+            ["MSTR"] = AssetClass.Equity,
             ["GOOG"] = AssetClass.Equity, ["GOOGL"] = AssetClass.Equity,
             ["META"] = AssetClass.Equity, ["NFLX"] = AssetClass.Equity,
             ["DIS"] = AssetClass.Equity,  ["T"] = AssetClass.Equity,
             ["VZ"] = AssetClass.Equity,   ["CMCSA"] = AssetClass.Equity,
             ["AMZN"] = AssetClass.Equity, ["TSLA"] = AssetClass.Equity,
-            ["HD"] = AssetClass.Equity,   ["MCD"] = AssetClass.Equity,
-            ["NKE"] = AssetClass.Equity,  ["SBUX"] = AssetClass.Equity,
-            ["TGT"] = AssetClass.Equity,  ["BKNG"] = AssetClass.Equity,
-            ["ABNB"] = AssetClass.Equity, ["WMT"] = AssetClass.Equity,
+            ["UBER"] = AssetClass.Equity, ["HD"] = AssetClass.Equity,
+            ["MCD"] = AssetClass.Equity,  ["NKE"] = AssetClass.Equity,
+            ["SBUX"] = AssetClass.Equity, ["TGT"] = AssetClass.Equity,
+            ["BKNG"] = AssetClass.Equity, ["ABNB"] = AssetClass.Equity,
+            ["WMT"] = AssetClass.Equity,
             ["PG"] = AssetClass.Equity,   ["KO"] = AssetClass.Equity,
             ["PEP"] = AssetClass.Equity,  ["COST"] = AssetClass.Equity,
             ["JNJ"] = AssetClass.Equity,  ["PFE"] = AssetClass.Equity,
@@ -231,14 +244,18 @@ public static class SectorMapping
             ["MS"] = AssetClass.Equity,   ["AXP"] = AssetClass.Equity,
             ["V"] = AssetClass.Equity,    ["MA"] = AssetClass.Equity,
             ["BRK.B"] = AssetClass.Equity,["BRK/B"] = AssetClass.Equity,
-            ["C"] = AssetClass.Equity,    ["XOM"] = AssetClass.Equity,
+            ["C"] = AssetClass.Equity,    ["COIN"] = AssetClass.Equity,
+            ["XOM"] = AssetClass.Equity,
             ["CVX"] = AssetClass.Equity,  ["COP"] = AssetClass.Equity,
             ["SLB"] = AssetClass.Equity,  ["OXY"] = AssetClass.Equity,
             ["CAT"] = AssetClass.Equity,  ["GE"] = AssetClass.Equity,
             ["MMM"] = AssetClass.Equity,  ["BA"] = AssetClass.Equity,
             ["HON"] = AssetClass.Equity,  ["RTX"] = AssetClass.Equity,
             ["UNP"] = AssetClass.Equity,  ["LMT"] = AssetClass.Equity,
+            ["NOC"] = AssetClass.Equity,  ["GD"] = AssetClass.Equity,
             ["FCX"] = AssetClass.Equity,  ["NEM"] = AssetClass.Equity,
+            ["GOLD"] = AssetClass.Equity, ["PAAS"] = AssetClass.Equity,
+            ["HL"] = AssetClass.Equity,   ["SCCO"] = AssetClass.Equity,
             ["NEE"] = AssetClass.Equity,  ["DUK"] = AssetClass.Equity,
             ["SO"] = AssetClass.Equity,   ["AMT"] = AssetClass.Equity,
             ["PLD"] = AssetClass.Equity,  ["EQIX"] = AssetClass.Equity,
@@ -249,7 +266,8 @@ public static class SectorMapping
             ["IVV"] = AssetClass.Equity, ["VOO"] = AssetClass.Equity,
             ["VTI"] = AssetClass.Equity, ["DIA"] = AssetClass.Equity,
             ["IWM"] = AssetClass.Equity, ["RSP"] = AssetClass.Equity,
-            ["MDY"] = AssetClass.Equity, ["XLK"] = AssetClass.Equity,
+            ["MDY"] = AssetClass.Equity, ["ARKK"] = AssetClass.Equity,
+            ["EEM"] = AssetClass.Equity, ["XLK"] = AssetClass.Equity,
             ["XLC"] = AssetClass.Equity, ["XLY"] = AssetClass.Equity,
             ["XLP"] = AssetClass.Equity, ["XLV"] = AssetClass.Equity,
             ["XLF"] = AssetClass.Equity, ["XLE"] = AssetClass.Equity,
