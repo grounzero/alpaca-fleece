@@ -17,6 +17,23 @@ public sealed class SymbolClassifier : ISymbolClassifier
 
         _cryptoSymbols = new HashSet<string>(crypto, StringComparer.OrdinalIgnoreCase);
         _equitySymbols = new HashSet<string>(equity, StringComparer.OrdinalIgnoreCase);
+
+        // Ensure the same symbol cannot be classified as both crypto and equity.
+        var overlappingSymbols = new List<string>();
+        foreach (var symbol in _cryptoSymbols)
+        {
+            if (_equitySymbols.Contains(symbol))
+            {
+                overlappingSymbols.Add(symbol);
+            }
+        }
+
+        if (overlappingSymbols.Count > 0)
+        {
+            throw new ArgumentException(
+                $"Symbols cannot be both crypto and equity: {string.Join(", ", overlappingSymbols)}",
+                nameof(cryptoSymbols));
+        }
     }
 
     public bool IsCrypto(string symbol)
