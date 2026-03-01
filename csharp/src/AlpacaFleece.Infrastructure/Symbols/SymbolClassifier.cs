@@ -8,7 +8,6 @@ namespace AlpacaFleece.Infrastructure.Symbols;
 /// </summary>
 public sealed class SymbolClassifier : ISymbolClassifier
 {
-{
     private readonly HashSet<string> _cryptoSymbols;
     private readonly HashSet<string> _equitySymbols;
 

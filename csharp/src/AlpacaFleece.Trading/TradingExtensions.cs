@@ -20,7 +20,8 @@ public static class TradingExtensions
                 sp.GetRequiredService<IEventBus>(),
                 sp.GetRequiredService<IStateRepository>(),
                 sp.GetRequiredService<ILogger<ExitManager>>(),
-                options));
+                options,
+                sp.GetRequiredService<ISymbolClassifier>()));
 
         return services;
     }

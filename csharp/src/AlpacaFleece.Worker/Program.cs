@@ -116,7 +116,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             tradingOptions,
             sp.GetRequiredService<ILogger<RiskManager>>(),
             drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
-            correlationService: sp.GetRequiredService<CorrelationService>()));
+            correlationService: sp.GetRequiredService<CorrelationService>(),
+            symbolClassifier: sp.GetRequiredService<ISymbolClassifier>()));
         services.AddScoped<IOrderManager>(sp => new OrderManager(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IRiskManager>(),
