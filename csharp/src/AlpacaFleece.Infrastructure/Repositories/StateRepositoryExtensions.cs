@@ -15,7 +15,8 @@ public static class StateRepositoryExtensions
         var connectionString = $"Data Source={databasePath}";
 
         // Use pooled factory to create DbContext instances per call. Do not register a long-lived
-        // DbContext to avoid concurrent usage across threads.
+        // DbContext to avoid concurrent usage across threads. Consumers should use
+        // IDbContextFactory<TradingDbContext> for short-lived contexts in background services.
         services.AddPooledDbContextFactory<TradingDbContext>(options =>
             options.UseSqlite(connectionString));
 

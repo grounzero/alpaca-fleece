@@ -204,7 +204,7 @@ public sealed class EventDispatcherService(
 
         try
         {
-            var dataHandler = serviceProvider.GetRequiredService<IDataHandler>();
+            _ = serviceProvider.GetRequiredService<IDataHandler>();
             // Actual bar processing happens via event bus; ensure DataHandler is initialised at startup
         }
         catch (Exception ex)

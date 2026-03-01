@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
@@ -35,7 +37,8 @@ public sealed class OrchestratorService(
 
         // Ensure database is created before proceeding
         using var scope = serviceProvider.CreateScope();
-        var dbContext = scope.ServiceProvider.GetRequiredService<TradingDbContext>();
+        var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>();
+        await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
         await dbContext.Database.EnsureCreatedAsync(cancellationToken);
 
         // Rehydrate PositionTracker from DB before the trading loop begins.

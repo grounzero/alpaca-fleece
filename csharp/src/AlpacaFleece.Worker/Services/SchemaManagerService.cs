@@ -1,3 +1,5 @@
+using Microsoft.EntityFrameworkCore;
+
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
@@ -14,7 +16,8 @@ public sealed class SchemaManagerService(
             logger.LogInformation("Applying database migrations");
 
             using var scope = serviceProvider.CreateScope();
-            var dbContext = scope.ServiceProvider.GetRequiredService<TradingDbContext>();
+            var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>();
+            await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
             await dbContext.Database.MigrateAsync(cancellationToken);
 
