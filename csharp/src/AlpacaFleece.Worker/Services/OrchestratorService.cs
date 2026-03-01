@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
-/// Orchestrator service implementing 4-phase startup via IHostedLifecycleService.
+/// Orchestrator service implementing startup via IHostedLifecycleService.
 /// Phase 1: Infrastructure (SchemaManager, reconciliation)
 /// Phase 2: Data Layer (EventBus start)
 /// Phase 3: Trading Logic (services)
@@ -31,17 +31,16 @@ public sealed class OrchestratorService(
 
     public async Task StartingAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("Phase 1: Infrastructure - Starting schema and reconciliation");
+        logger.LogInformation("Starting schema and reconciliation");
         await Task.CompletedTask;
     }
 
     public async Task StartedAsync(CancellationToken cancellationToken)
     {
-        logger.LogInformation("Phase 2-4: Data Layer, Trading Logic, Runtime - All services started");
+        logger.LogInformation("Data Layer, Trading Logic, Runtime - All services started");
 
-        // Rehydrate PositionTracker from DB after migrations have completed.
-        // Mirrors Python's PositionTracker._load_from_db() so a worker restart does not
-        // lose open-position metadata (entry price, ATR, trailing stop).
+        // Rehydrate PositionTracker from DB after migrations have completed so a worker
+        // restart does not lose open-position metadata (entry price, ATR, trailing stop).
         var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
         await positionTracker.InitialiseFromDbAsync(cancellationToken);
 
