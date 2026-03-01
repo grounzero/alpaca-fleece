@@ -22,16 +22,9 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Broker__ApiKey, Broker__SecretKey
         config.AddEnvironmentVariables();
 
-        // Load JSON configuration files, including overrides 
-        // Ensure JSON files are resolved relative to the host content root (project folder).
-        config.SetBasePath(context.HostingEnvironment.ContentRootPath);
-
-        config.AddJsonFile("appsettings.json", optional: true, reloadOnChange: true);
-        var environmentName = context.HostingEnvironment.EnvironmentName ?? string.Empty;
-        if (!string.IsNullOrWhiteSpace(environmentName))
-        {
-            config.AddJsonFile($"appsettings.{environmentName}.json", optional: true, reloadOnChange: true);
-        }
+        // Note: Host.CreateDefaultBuilder already loads appsettings.json and
+        // appsettings.{Environment}.json relative to the content root, so we
+        // rely on the default behavior here to avoid duplicate JSON providers.
     })
     .UseSerilog((context, loggerConfig) =>
     {
