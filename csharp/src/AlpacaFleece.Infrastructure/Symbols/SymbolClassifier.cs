@@ -4,10 +4,10 @@ using AlpacaFleece.Core.Interfaces;
 namespace AlpacaFleece.Infrastructure.Symbols;
 
 /// <summary>
-/// Classifies symbols as crypto or equity based on configured lists.
-/// Includes a temporary fallback to slash-based detection if lists are empty.
+/// Classifies symbols as crypto or equity based solely on the configured lists.
 /// </summary>
 public sealed class SymbolClassifier : ISymbolClassifier
+{
 {
     private readonly HashSet<string> _cryptoSymbols;
     private readonly HashSet<string> _equitySymbols;
