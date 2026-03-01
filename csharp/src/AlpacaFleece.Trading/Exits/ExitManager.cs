@@ -200,8 +200,6 @@ public class ExitManager(
         }
     }
 
-    // Crypto classification now delegated to ISymbolClassifier via DI.
-
     /// <summary>
     /// Validates ATR is a finite positive number.
     /// </summary>

@@ -280,7 +280,6 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
             _brokerMock,
             fixture.StateRepository,
             _positionTracker,
-            Substitute.For<IOrderManager>(),
             _housekeepingLogger);
 
         _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())

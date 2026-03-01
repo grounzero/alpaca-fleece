@@ -45,5 +45,3 @@ public sealed class TradingFixture : IAsyncLifetime
 public sealed class TradingDatabaseCollection : ICollectionFixture<TradingFixture>
 {
 }
-
-    

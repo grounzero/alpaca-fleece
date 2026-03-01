@@ -7,7 +7,6 @@ namespace AlpacaFleece.Tests;
 public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
 {
     private readonly IBrokerService _brokerMock = Substitute.For<IBrokerService>();
-    private readonly IOrderManager _orderManagerMock = Substitute.For<IOrderManager>();
     private readonly ILogger<PositionTracker> _positionTrackerLogger = Substitute.For<ILogger<PositionTracker>>();
     private readonly ILogger<HousekeepingService> _logger = Substitute.For<ILogger<HousekeepingService>>();
     private PositionTracker _positionTracker = null!;
@@ -21,7 +20,6 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
             _brokerMock,
             fixture.StateRepository,
             _positionTracker,
-            _orderManagerMock,
             _logger);
 
         // Setup broker mock defaults

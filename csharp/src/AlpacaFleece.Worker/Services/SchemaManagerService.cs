@@ -5,6 +5,7 @@ namespace AlpacaFleece.Worker.Services;
 /// </summary>
 public sealed class SchemaManagerService(
     IServiceProvider serviceProvider,
+    IHostEnvironment hostEnvironment,
     ILogger<SchemaManagerService> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
@@ -21,12 +22,19 @@ public sealed class SchemaManagerService(
             {
                 await dbContext.Database.MigrateAsync(cancellationToken);
             }
-            catch (Microsoft.Data.Sqlite.SqliteException sqlEx) when (sqlEx.Message?.Contains("already exists") == true)
+            catch (Microsoft.Data.Sqlite.SqliteException sqlEx) when (
+                hostEnvironment.IsDevelopment() &&
+                sqlEx.SqliteErrorCode == 1 && // SQLITE_ERROR
+                sqlEx.Message?.Contains("already exists", StringComparison.OrdinalIgnoreCase) == true)
             {
-                // Development-time repair: Some environments may have an existing schema
-                // created outside of EF migrations (e.g. EnsureCreated). If migrations
-                // attempt to re-create tables, treat as non-fatal and continue.
-                logger.LogWarning(sqlEx, "Migration encountered existing-table error; continuing in development mode");
+                // Development-only workaround: Some dev environments may have an existing schema
+                // created outside of EF migrations (e.g., manual EnsureCreated or prior schema manager).
+                // This catch specifically targets "table already exists" errors (SQLITE_ERROR code 1)
+                // and only applies in Development to avoid masking real migration failures in production.
+                logger.LogWarning(
+                    sqlEx,
+                    "[Development only] Migration encountered 'table already exists' error (SqliteErrorCode={Code}); continuing",
+                    sqlEx.SqliteErrorCode);
             }
 
             // Ensure DrawdownState table exists (for existing databases that were created before this table was added)

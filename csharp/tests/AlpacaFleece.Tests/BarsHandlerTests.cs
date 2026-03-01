@@ -212,7 +212,7 @@ public sealed class BarsHandlerTests : IAsyncLifetime
             Arg.Any<EventId>(),
             Arg.Is<object>(state => state != null && state.ToString().Contains("Failed to load historical bars")),
             Arg.Is<Exception>(ex => ex != null && ex.Message.Contains("DB error")),
-            Arg.Any<Func<object, Exception, string>>());
+            Arg.Any<Func<object, Exception?, string>>());
     }
 
     [Fact]
@@ -251,7 +251,7 @@ public sealed class BarsHandlerTests : IAsyncLifetime
             Arg.Any<EventId>(),
             Arg.Any<object>(),
             Arg.Any<Exception>(),
-            Arg.Any<Func<object, Exception, string>>());
+            Arg.Any<Func<object, Exception?, string>>());
     }
 }
 

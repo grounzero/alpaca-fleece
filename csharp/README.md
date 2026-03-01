@@ -94,13 +94,13 @@ dotnet build
 
 # Run tests
 dotnet test
+```
 
 ## Database migration (EF Core)
 If you need to create the initial migration locally:
 
 ```bash
 dotnet ef migrations add InitialCreate -p src/AlpacaFleece.Infrastructure -s src/AlpacaFleece.Worker
-```
 ```
 
 ### Running the Bot
