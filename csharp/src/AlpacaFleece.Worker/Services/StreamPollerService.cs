@@ -102,6 +102,13 @@ public sealed class StreamPollerService(
                     symbolsToPoll = allSymbolsList;
                 }
 
+                logger.LogDebug(
+                    "Bar poll tick: marketOpen={marketOpen}, crypto={cryptoCount}, equities={equityCount}, polling={pollCount}",
+                    marketOpen,
+                    cryptoSymbols.Count,
+                    equitySymbols.Count,
+                    symbolsToPoll.Count);
+
                 await PollSymbolBatchesAsync(symbolsToPoll, timeframe, ct);
 
                 // Reset backoff on success
