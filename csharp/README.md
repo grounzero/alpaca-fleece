@@ -164,7 +164,11 @@ Edit `src/AlpacaFleece.Worker/appsettings.json`:
     "KillSwitch": false
   },
   "Trading": {
-    "Symbols": { "Symbols": ["AAPL", "MSFT", "GOOG"] },
+    "Symbols": {
+      "CryptoSymbols": [ "BTC/USD", "ETH/USD" ],
+      "EquitySymbols": [ "AAPL", "MSFT", "GOOG" ],
+      "MinVolume": 1000000
+    },
     "RiskLimits": { "MaxDailyLoss": 500 },
     "Exit": { "StopLossMultiplier": 1.5, "ProfitTargetMultiplier": 3.0 }
   }

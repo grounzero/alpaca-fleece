@@ -157,7 +157,7 @@ public sealed class MarketDataClientTests
     }
 
     [Fact]
-    public void NormalizeQuote_CreatesQuoteWithCorrectValues()
+    public void CreateQuote_CreatesQuoteWithCorrectValues()
     {
         var client = CreateClient();
         var timestamp = DateTimeOffset.UtcNow;
@@ -174,7 +174,7 @@ public sealed class MarketDataClientTests
     }
 
     [Fact]
-    public void NormalizeQuote_LogsWarning_WhenHighLessThanLow()
+    public void CreateQuote_LogsWarning_WhenHighLessThanLow()
     {
         var client = CreateClient();
         var timestamp = DateTimeOffset.UtcNow;
