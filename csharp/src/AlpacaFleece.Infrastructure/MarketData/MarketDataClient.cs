@@ -29,9 +29,9 @@ public sealed class MarketDataClient(
     public bool IsCrypto(string symbol) => symbolClassifier.IsCrypto(symbol);
 
     /// <summary>
-    /// Normalises Alpaca IBar to internal Quote record.
+    /// Converts Alpaca IBar to internal Quote record.
     /// </summary>
-    public Quote NormalizeQuote(
+    public Quote CreateQuote(
         string symbol,
         decimal open,
         decimal high,
@@ -73,6 +73,17 @@ public sealed class MarketDataClient(
             if (!System.Text.RegularExpressions.Regex.IsMatch(symbol, @"^[A-Za-z0-9/\-\.]+$"))
                 throw new InvalidOperationException($"Symbol '{symbol}' contains invalid characters");
 
+            // Ensure symbol is classified to prevent silently routing to wrong API endpoint
+            var isEquity = IsEquity(symbol);
+            var isCrypto = IsCrypto(symbol);
+            
+            if (!isEquity && !isCrypto)
+            {
+                throw new InvalidOperationException(
+                    $"Symbol '{symbol}' is not classified as equity or crypto. " +
+                    "Add it to the appropriate symbol list in configuration.");
+            }
+
             using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
             cts.CancelAfter(RequestTimeoutMs);
 
@@ -81,7 +92,7 @@ public sealed class MarketDataClient(
 
             IReadOnlyList<IBar> items;
 
-            if (IsEquity(symbol))
+            if (isEquity)
             {
                 // 5 calendar days covers any weekend/holiday gap; page size 1000 fits
                 // up to ~780 bars (2 full trading days × 390 min/day) in one request.
@@ -111,7 +122,7 @@ public sealed class MarketDataClient(
             // Bars are returned ascending (oldest first); take the tail to get the most recent limit.
             var bars = items
                 .TakeLast(limit)
-                .Select(bar => NormalizeQuote(
+                .Select(bar => CreateQuote(
                     symbol,
                     bar.Open,
                     bar.High,

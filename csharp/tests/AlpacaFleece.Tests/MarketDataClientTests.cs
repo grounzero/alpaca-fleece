@@ -74,6 +74,20 @@ public sealed class MarketDataClientTests
     }
 
     [Fact]
+    public async Task GetBarsAsync_ThrowsException_WhenSymbolNotClassified()
+    {
+        // Create client with known symbol lists (AAPL, MSFT, GOOG are equities; BTCUSD, ETHUSD are crypto)
+        var client = CreateClient();
+
+        // XYZ is not in either list, should throw InvalidOperationException wrapped in MarketDataException
+        var ex = await Assert.ThrowsAsync<MarketDataException>(
+            async () => await client.GetBarsAsync("XYZ", "1Min", 50));
+
+        Assert.IsType<InvalidOperationException>(ex.InnerException);
+        Assert.Contains("not classified", ex.InnerException?.Message ?? "");
+    }
+
+    [Fact]
     public async Task GetBarsAsync_WrapsExceptionInMarketDataException()
     {
         var client = CreateClient();
@@ -148,7 +162,7 @@ public sealed class MarketDataClientTests
         var client = CreateClient();
         var timestamp = DateTimeOffset.UtcNow;
 
-        var quote = client.NormalizeQuote("AAPL", 150m, 152m, 148m, 151m, 1000000, timestamp);
+        var quote = client.CreateQuote("AAPL", 150m, 152m, 148m, 151m, 1000000, timestamp);
 
         Assert.NotNull(quote);
         Assert.Equal("AAPL", quote.Symbol);
@@ -166,7 +180,7 @@ public sealed class MarketDataClientTests
         var timestamp = DateTimeOffset.UtcNow;
 
         // Should still return quote but log warning
-        var quote = client.NormalizeQuote("AAPL", 150m, 148m, 152m, 151m, 1000000, timestamp);
+        var quote = client.CreateQuote("AAPL", 150m, 148m, 152m, 151m, 1000000, timestamp);
 
         Assert.NotNull(quote);
         Assert.Equal("AAPL", quote.Symbol);

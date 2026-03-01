@@ -32,7 +32,7 @@ public interface IMarketDataClient
     /// <summary>
     /// Normalises quote to standard format.
     /// </summary>
-    Quote NormalizeQuote(
+    Quote CreateQuote(
         string symbol,
         decimal open,
         decimal high,
