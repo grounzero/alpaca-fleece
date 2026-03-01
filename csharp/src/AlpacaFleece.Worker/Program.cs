@@ -61,29 +61,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         var brokerOptions = new BrokerOptions();
         context.Configuration.GetSection("Broker").Bind(brokerOptions);
 
-        // Fallback: if binding failed (e.g. file not found in the host config pipeline),
-        // try to load the environment-specific appsettings file directly from the
-        // content root and re-bind the Broker section. This helps when running
-        // `dotnet run` from different working directories during development.
-        if (string.IsNullOrWhiteSpace(brokerOptions.ApiKey))
-        {
-            try
-            {
-                var env = context.HostingEnvironment.EnvironmentName ?? string.Empty;
-                var envFile = Path.Combine(context.HostingEnvironment.ContentRootPath, $"appsettings.{env}.json");
-                var baseFile = Path.Combine(context.HostingEnvironment.ContentRootPath, "appsettings.json");
-                var cb = new ConfigurationBuilder();
-                if (File.Exists(baseFile)) cb.AddJsonFile(baseFile, optional: true, reloadOnChange: true);
-                if (!string.IsNullOrWhiteSpace(env) && File.Exists(envFile)) cb.AddJsonFile(envFile, optional: true, reloadOnChange: true);
-                var directCfg = cb.Build();
-                directCfg.GetSection("Broker").Bind(brokerOptions);
-            }
-            catch (Exception)
-            {
-                // ignore and let validation throw the original error below
-            }
-        }
-
         var exitOptions = new ExitOptions();
         context.Configuration.GetSection("Exit").Bind(exitOptions);
         services.Configure<ExitOptions>(context.Configuration.GetSection("Exit"));
