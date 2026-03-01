@@ -21,19 +21,7 @@ public sealed class MarketDataClient(
     /// Detects if symbol is equity (not crypto).
     /// Delegates to configured `ISymbolClassifier`.
     /// </summary>
-    public bool IsEquity(string symbol)
-    {
-        var isEquity = symbolClassifier.IsEquity(symbol);
-        var isCrypto = symbolClassifier.IsCrypto(symbol);
-
-        if (!isEquity && !isCrypto)
-        {
-            logger.LogError("Symbol '{Symbol}' is not classified as equity or crypto.", symbol);
-            throw new MarketDataException($"Symbol '{symbol}' is not classified as equity or crypto.");
-        }
-
-        return isEquity;
-    }
+    public bool IsEquity(string symbol) => symbolClassifier.IsEquity(symbol);
     /// <summary>
     /// Detects if symbol is crypto.
     /// Delegates to configured `ISymbolClassifier`.
