@@ -7,8 +7,6 @@ public sealed class StateRepository(
     IDbContextFactory<TradingDbContext> dbContextFactory,
     ILogger<StateRepository> logger) : IStateRepository
 {
-    private readonly IDbContextFactory<TradingDbContext> dbContextFactory = dbContextFactory;
-    
     private IDbContextFactory<TradingDbContext> DbFactory => dbContextFactory;
     /// <summary>
     /// Gets a KV pair from bot_state.

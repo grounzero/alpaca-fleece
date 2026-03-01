@@ -16,7 +16,7 @@ public sealed class TradingFixture : IAsyncLifetime
             .UseSqlite($"Data Source={_databasePath}")
             .Options;
 
-        // Create a shared options instance and ensure database exists using a short-lived context
+        // Create a shared options instance and ensure database exists
         DbContext = new TradingDbContext(options);
         await DbContext.Database.EnsureCreatedAsync();
 

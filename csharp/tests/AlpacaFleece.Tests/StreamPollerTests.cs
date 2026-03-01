@@ -134,13 +134,12 @@ public sealed class StreamPollerTests
             .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
                 new List<OrderIntentDto>().AsReadOnly()));
 
-        // Two symbols: one equity (AAPL), one crypto (BTC/USD)
         var opts = Options.Create(new TradingOptions
         {
             Symbols = new SymbolLists
             {
-                EquitySymbols = new List<string> { "AAPL", "BTC/USD" },
-                CryptoSymbols = new List<string> { "BTC/USD" }
+                EquitySymbols = new List<string> { "AAPL", "MSFT", "GOOG" },
+                CryptoSymbols = new List<string> { "BTC/USD", "ETH/USD" }
             }
         });
 

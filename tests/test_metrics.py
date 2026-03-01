@@ -59,7 +59,7 @@ def reset_global_metrics():
 class TestBotMetrics:
     """Test BotMetrics dataclass."""
 
-    def test_default_initialization(self):
+    def test_default_initialisation(self):
         """Test that BotMetrics initialises with correct defaults."""
         m = BotMetrics()
 

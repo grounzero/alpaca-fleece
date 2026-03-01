@@ -1,3 +1,5 @@
+using AlpacaFleece.Infrastructure.Symbols;
+
 namespace AlpacaFleece.Trading.Risk;
 
 /// <summary>
@@ -9,8 +11,6 @@ namespace AlpacaFleece.Trading.Risk;
 /// Crypto symbols (from options.Symbols.CryptoSymbols) are exempt from market-hours checks.
 /// DrawdownMonitor is optional; when null, drawdown checks are skipped.
 /// </summary>
-using AlpacaFleece.Core.Interfaces;
-using AlpacaFleece.Infrastructure.Symbols;
 
 public sealed class RiskManager(
     IBrokerService broker,

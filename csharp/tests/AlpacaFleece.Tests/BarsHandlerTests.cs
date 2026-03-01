@@ -206,12 +206,12 @@ public sealed class BarsHandlerTests : IAsyncLifetime
         Assert.Equal(0, handler.GetBarCount("AAPL"));
         Assert.Empty(handler.GetBarsForSymbol("AAPL"));
 
-        // Logger should have logged the warning (verify underlying Log call)
+        // Logger should have logged the warning with the expected message and exception
         _logger.Received().Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
-            Arg.Any<object>(),
-            Arg.Any<Exception>(),
+            Arg.Is<object>(state => state != null && state.ToString().Contains("Failed to load historical bars")),
+            Arg.Is<Exception>(ex => ex != null && ex.Message.Contains("DB error")),
             Arg.Any<Func<object, Exception, string>>());
     }
 
