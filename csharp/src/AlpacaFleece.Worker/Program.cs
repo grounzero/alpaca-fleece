@@ -9,7 +9,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     // enable in Development to catch DI lifetime issues early.
     .UseDefaultServiceProvider((context, options) =>
     {
-        options.ValidateScopes = (context.HostingEnvironment.EnvironmentName ?? string.Empty) == "Development";
+        options.ValidateScopes = context.HostingEnvironment.IsDevelopment();
     })
     .ConfigureAppConfiguration((context, config) =>
     {
