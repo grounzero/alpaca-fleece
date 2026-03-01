@@ -104,7 +104,7 @@ public class ExitManager(
             try
             {
                 // Skip check if market closed (except 24/5 crypto)
-                if (!clock.IsOpen && !(_symbolClassifier?.IsCrypto(symbol) ?? false))
+                if (!clock.IsOpen && !_symbolClassifier.IsCrypto(symbol))
                 {
                     continue;
                 }
