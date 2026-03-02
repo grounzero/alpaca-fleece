@@ -5,7 +5,6 @@ namespace AlpacaFleece.Worker.Services;
 /// </summary>
 public sealed class SchemaManagerService(
     IServiceProvider serviceProvider,
-    IHostEnvironment hostEnvironment,
     ILogger<SchemaManagerService> logger) : IHostedService
 {
     public async Task StartAsync(CancellationToken cancellationToken)
