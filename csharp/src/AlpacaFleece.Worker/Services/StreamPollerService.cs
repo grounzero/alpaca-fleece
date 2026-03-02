@@ -176,7 +176,7 @@ public sealed class StreamPollerService(
                 try
                 {
                     await PollBatchAsync(batchList, timeframe, ct);
-                    logger.LogInformation("Batch completed successfully");
+                    logger.LogDebug("Batch completed successfully");
                     break;
                 }
                 catch (Exception ex) when (retryCount < MaxRetries - 1)
