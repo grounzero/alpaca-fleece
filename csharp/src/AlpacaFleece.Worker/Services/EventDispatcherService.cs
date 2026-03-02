@@ -3,7 +3,7 @@ namespace AlpacaFleece.Worker.Services;
 /// <summary>
 /// Event dispatcher service: reads from event bus and dispatches to handlers.
 /// Priority drain: ExitSignalEvent (never dropped) → OrderUpdateEvent → SignalEvent → Others.
-/// Signal flow: BarEvent → DataHandler.OnBar() → Strategy.OnBar() → SignalEvent
+/// Signal flow: BarEvent → BarsHandler (persistence) → Strategy.OnBarAsync() → SignalEvent
 ///           → RiskManager.CheckSignalAsync() → OrderManager.SubmitSignalAsync()
 /// </summary>
 public sealed class EventDispatcherService(
