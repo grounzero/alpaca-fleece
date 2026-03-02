@@ -194,16 +194,24 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles bar events: routes to DataHandler for storage and history management.
-    /// DataHandler is initialised at startup; actual bar processing happens via event bus.
+    /// Handles bar events: routes to BarsHandler for persistence and history management.
     /// </summary>
     private async ValueTask HandleBarEventAsync(BarEvent barEvent)
     {
-        logger.LogDebug(
+        logger.LogInformation(
             "Handling BarEvent: {symbol} {timeframe} {timestamp}",
             barEvent.Symbol, barEvent.Timeframe, barEvent.Timestamp);
 
-        await Task.CompletedTask;
+        try
+        {
+            var barsHandler = serviceProvider.GetRequiredService<BarsHandler>();
+            await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
+            logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to persist bar for {symbol}", barEvent.Symbol);
+        }
     }
 
     /// <summary>
