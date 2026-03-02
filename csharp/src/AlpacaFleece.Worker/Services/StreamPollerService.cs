@@ -83,9 +83,9 @@ public sealed class StreamPollerService(
         {
             try
             {
-                logger.LogInformation("Bar poll tick starting");
+                logger.LogDebug("Bar poll tick starting");
                 var marketOpen = await IsMarketOpenAsync(ct);
-                logger.LogInformation("Market open check: {marketOpen}", marketOpen);
+                logger.LogDebug("Market open check: {marketOpen}", marketOpen);
 
                 // When market is closed: poll crypto only (24/7); when open: poll all symbols
                 List<string> symbolsToPoll;
