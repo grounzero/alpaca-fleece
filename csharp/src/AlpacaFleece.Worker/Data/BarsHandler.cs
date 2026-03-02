@@ -67,7 +67,7 @@ public sealed class BarsHandler(
     /// <summary>
     /// Handles incoming BarEvent: persists to DB and maintains deque.
     /// </summary>
-    private async ValueTask HandleBarEventAsync(BarEvent bar, CancellationToken ct)
+    public async ValueTask HandleBarEventAsync(BarEvent bar, CancellationToken ct)
     {
         try
         {

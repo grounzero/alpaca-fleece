@@ -3,7 +3,7 @@ namespace AlpacaFleece.Worker.Services;
 /// <summary>
 /// Event dispatcher service: reads from event bus and dispatches to handlers.
 /// Priority drain: ExitSignalEvent (never dropped) → OrderUpdateEvent → SignalEvent → Others.
-/// Signal flow: BarEvent → DataHandler.OnBar() → Strategy.OnBar() → SignalEvent
+/// Signal flow: BarEvent → BarsHandler (persistence) → Strategy.OnBarAsync() → SignalEvent
 ///           → RiskManager.CheckSignalAsync() → OrderManager.SubmitSignalAsync()
 /// </summary>
 public sealed class EventDispatcherService(
@@ -194,16 +194,40 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles bar events: routes to DataHandler for storage and history management.
-    /// DataHandler is initialised at startup; actual bar processing happens via event bus.
+    /// Handles bar events: persists to BarsHandler and forwards to Strategy for signal generation.
+    /// Signal flow: BarEvent → BarsHandler (persistence) → Strategy.OnBarAsync() → SignalEvent
     /// </summary>
     private async ValueTask HandleBarEventAsync(BarEvent barEvent)
     {
-        logger.LogDebug(
+        logger.LogInformation(
             "Handling BarEvent: {symbol} {timeframe} {timestamp}",
             barEvent.Symbol, barEvent.Timeframe, barEvent.Timestamp);
 
-        await Task.CompletedTask;
+        try
+        {
+            // Persist bar
+            var barsHandler = serviceProvider.GetRequiredService<BarsHandler>();
+            await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
+            logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
+
+            // Forward to strategy for signal generation (strategy handles readiness internally)
+            using var scope = serviceProvider.CreateScope();
+            var strategy = scope.ServiceProvider.GetRequiredService<IStrategy>();
+            logger.LogInformation("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
+            await strategy.OnBarAsync(barEvent, CancellationToken.None);
+        }
+        catch (Exception ex)
+        {
+            if (ex is BarsHandlerException)
+            {
+                // BarsHandler already logged this error at the appropriate level; avoid double-logging.
+                logger.LogDebug(ex, "BarsHandlerException encountered while handling bar for {symbol}", barEvent.Symbol);
+            }
+            else
+            {
+                logger.LogError(ex, "Failed to handle bar for {symbol}", barEvent.Symbol);
+            }
+        }
     }
 
     /// <summary>

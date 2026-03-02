@@ -77,32 +77,38 @@ public sealed class StreamPollerService(
         var allSymbolsList = allSymbols.ToList();
         const string timeframe = "1m";
 
+        logger.LogInformation("Bar poll loop starting with {count} symbols", allSymbolsList.Count);
+
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                logger.LogDebug("Bar poll tick starting");
                 var marketOpen = await IsMarketOpenAsync(ct);
+                logger.LogDebug("Market open check: {marketOpen}", marketOpen);
 
                 // When market is closed: poll crypto only (24/7); when open: poll all symbols
                 List<string> symbolsToPoll;
                 if (!marketOpen)
                 {
                     symbolsToPoll = allSymbolsList.Where(s => cryptoSymbols.Contains(s)).ToList();
+                    logger.LogInformation("Market closed - crypto symbols found: {count}", symbolsToPoll.Count);
                     if (symbolsToPoll.Count == 0)
                     {
-                        logger.LogDebug("Market is closed and no crypto symbols configured, skipping bar poll");
+                        logger.LogInformation("Market is closed and no crypto symbols configured, skipping bar poll");
                         await Task.Delay(TimeSpan.FromMinutes(1), ct);
                         continue;
                     }
 
-                    logger.LogDebug("Market closed — polling {count} crypto symbol(s) only", symbolsToPoll.Count);
+                    logger.LogInformation("Market closed — polling {count} crypto symbol(s): {symbols}", symbolsToPoll.Count, string.Join(", ", symbolsToPoll));
                 }
                 else
                 {
                     symbolsToPoll = allSymbolsList;
+                    logger.LogInformation("Market open — polling all {count} symbols", symbolsToPoll.Count);
                 }
 
-                logger.LogDebug(
+                logger.LogInformation(
                     "Bar poll tick: marketOpen={marketOpen}, crypto={cryptoCount}, equities={equityCount}, polling={pollCount}",
                     marketOpen,
                     cryptoSymbols.Count,
@@ -158,9 +164,11 @@ public sealed class StreamPollerService(
         string timeframe,
         CancellationToken ct)
     {
+        logger.LogInformation("PollSymbolBatchesAsync starting with {count} symbols", symbols.Count);
         foreach (var batch in symbols.Batch(SymbolBatchSize))
         {
             var batchList = batch.ToList();
+            logger.LogInformation("Processing batch of {count} symbols: {symbols}", batchList.Count, string.Join(", ", batchList));
             var retryCount = 0;
 
             while (retryCount < MaxRetries)
@@ -168,6 +176,7 @@ public sealed class StreamPollerService(
                 try
                 {
                     await PollBatchAsync(batchList, timeframe, ct);
+                    logger.LogDebug("Batch completed successfully");
                     break;
                 }
                 catch (Exception ex) when (retryCount < MaxRetries - 1)
@@ -195,7 +204,7 @@ public sealed class StreamPollerService(
         string timeframe,
         CancellationToken ct)
     {
-        logger.LogDebug("Polling batch of {Count} symbols: {Symbols}",
+        logger.LogInformation("PollBatchAsync starting with {Count} symbols: {Symbols}",
             batch.Count,
             string.Join(",", batch));
 
@@ -203,7 +212,9 @@ public sealed class StreamPollerService(
         {
             try
             {
+                logger.LogDebug("Fetching bars for {Symbol}...", symbol);
                 var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, 50, ct);
+                logger.LogDebug("Fetched {Count} bars for {Symbol}", quotes.Count, symbol);
 
                 _lastPublishedBarTs.TryGetValue(symbol, out var lastTs);
                 var newBars = 0;
@@ -228,7 +239,9 @@ public sealed class StreamPollerService(
                         Close: quote.Close,
                         Volume: quote.Volume);
 
-                    await eventBus.PublishAsync(barEvent, ct);
+                    logger.LogDebug("Publishing BarEvent for {Symbol} at {Timestamp}", barEvent.Symbol, barEvent.Timestamp);
+                    var published = await eventBus.PublishAsync(barEvent, ct);
+                    logger.LogDebug("BarEvent published: {Published} for {Symbol}", published, barEvent.Symbol);
                     lastTs = barTs;
                     newBars++;
                 }

@@ -87,6 +87,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Phase 2: Data Handling
         services.AddSingleton<IDataHandler, DataHandler>();
+        services.AddSingleton<BarsHandler>();
+        services.AddHostedService(sp => sp.GetRequiredService<BarsHandler>());
 
         // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
         services.AddExitManager(Options.Create(tradingOptions));
@@ -132,9 +134,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Phase 2: Stream Polling Service
         services.AddHostedService<StreamPollerService>();
-
-        // Phase 2: Bars Handler
-        services.AddHostedService<BarsHandler>();
 
         // Phase 4: Exit Manager Service
         services.AddHostedService<ExitManagerService>();
