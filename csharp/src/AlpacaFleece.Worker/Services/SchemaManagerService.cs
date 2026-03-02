@@ -28,7 +28,7 @@ public sealed class SchemaManagerService(
                 logger.LogInformation("EnsureCreated result: {created} (true=created, false=already existed)", created);
 
                 // Force WAL checkpoint to ensure data is persisted
-                await dbContext.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);");
+                await dbContext.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);", cancellationToken);
                 logger.LogInformation("WAL checkpoint completed");
             }
             catch (Exception ex)
