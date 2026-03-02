@@ -211,7 +211,8 @@ public sealed class EventDispatcherService(
             logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
 
             // Forward to strategy for signal generation (strategy handles readiness internally)
-            var strategy = serviceProvider.GetRequiredService<IStrategy>();
+            using var scope = serviceProvider.CreateScope();
+            var strategy = scope.ServiceProvider.GetRequiredService<IStrategy>();
             logger.LogInformation("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
             await strategy.OnBarAsync(barEvent, CancellationToken.None);
         }
