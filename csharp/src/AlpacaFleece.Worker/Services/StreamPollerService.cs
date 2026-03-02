@@ -164,9 +164,11 @@ public sealed class StreamPollerService(
         string timeframe,
         CancellationToken ct)
     {
+        logger.LogInformation("PollSymbolBatchesAsync starting with {count} symbols", symbols.Count);
         foreach (var batch in symbols.Batch(SymbolBatchSize))
         {
             var batchList = batch.ToList();
+            logger.LogInformation("Processing batch of {count} symbols: {symbols}", batchList.Count, string.Join(", ", batchList));
             var retryCount = 0;
 
             while (retryCount < MaxRetries)
@@ -174,6 +176,7 @@ public sealed class StreamPollerService(
                 try
                 {
                     await PollBatchAsync(batchList, timeframe, ct);
+                    logger.LogInformation("Batch completed successfully");
                     break;
                 }
                 catch (Exception ex) when (retryCount < MaxRetries - 1)
@@ -201,7 +204,7 @@ public sealed class StreamPollerService(
         string timeframe,
         CancellationToken ct)
     {
-        logger.LogDebug("Polling batch of {Count} symbols: {Symbols}",
+        logger.LogInformation("PollBatchAsync starting with {Count} symbols: {Symbols}",
             batch.Count,
             string.Join(",", batch));
 
@@ -209,7 +212,9 @@ public sealed class StreamPollerService(
         {
             try
             {
+                logger.LogInformation("Fetching bars for {Symbol}...", symbol);
                 var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, 50, ct);
+                logger.LogInformation("Fetched {Count} bars for {Symbol}", quotes.Count, symbol);
 
                 _lastPublishedBarTs.TryGetValue(symbol, out var lastTs);
                 var newBars = 0;
