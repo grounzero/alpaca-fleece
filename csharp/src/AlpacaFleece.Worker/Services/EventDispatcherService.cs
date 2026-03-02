@@ -217,7 +217,15 @@ public sealed class EventDispatcherService(
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to handle bar for {symbol}", barEvent.Symbol);
+            if (ex is BarsHandlerException)
+            {
+                // BarsHandler already logged this error at the appropriate level; avoid double-logging.
+                logger.LogDebug(ex, "BarsHandlerException encountered while handling bar for {symbol}", barEvent.Symbol);
+            }
+            else
+            {
+                logger.LogError(ex, "Failed to handle bar for {symbol}", barEvent.Symbol);
+            }
         }
     }
 
