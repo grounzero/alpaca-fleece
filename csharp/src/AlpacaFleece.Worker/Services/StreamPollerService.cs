@@ -77,11 +77,15 @@ public sealed class StreamPollerService(
         var allSymbolsList = allSymbols.ToList();
         const string timeframe = "1m";
 
+        logger.LogInformation("Bar poll loop starting with {count} symbols", allSymbolsList.Count);
+
         while (!ct.IsCancellationRequested)
         {
             try
             {
+                logger.LogInformation("Bar poll tick starting");
                 var marketOpen = await IsMarketOpenAsync(ct);
+                logger.LogInformation("Market open check: {marketOpen}", marketOpen);
 
                 // When market is closed: poll crypto only (24/7); when open: poll all symbols
                 List<string> symbolsToPoll;
