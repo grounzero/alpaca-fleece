@@ -212,9 +212,9 @@ public sealed class StreamPollerService(
         {
             try
             {
-                logger.LogInformation("Fetching bars for {Symbol}...", symbol);
+                logger.LogDebug("Fetching bars for {Symbol}...", symbol);
                 var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, 50, ct);
-                logger.LogInformation("Fetched {Count} bars for {Symbol}", quotes.Count, symbol);
+                logger.LogDebug("Fetched {Count} bars for {Symbol}", quotes.Count, symbol);
 
                 _lastPublishedBarTs.TryGetValue(symbol, out var lastTs);
                 var newBars = 0;
@@ -239,9 +239,9 @@ public sealed class StreamPollerService(
                         Close: quote.Close,
                         Volume: quote.Volume);
 
-                    logger.LogInformation("Publishing BarEvent for {Symbol} at {Timestamp}", barEvent.Symbol, barEvent.Timestamp);
+                    logger.LogDebug("Publishing BarEvent for {Symbol} at {Timestamp}", barEvent.Symbol, barEvent.Timestamp);
                     var published = await eventBus.PublishAsync(barEvent, ct);
-                    logger.LogInformation("BarEvent published: {Published} for {Symbol}", published, barEvent.Symbol);
+                    logger.LogDebug("BarEvent published: {Published} for {Symbol}", published, barEvent.Symbol);
                     lastTs = barTs;
                     newBars++;
                 }
@@ -252,7 +252,7 @@ public sealed class StreamPollerService(
                     _lastPublishedBarTs[symbol] = lastTs;
                 }
 
-                logger.LogInformation("Polled {Symbol}: {Total} bars, {New} new", symbol, quotes.Count, newBars);
+                logger.LogDebug("Polled {Symbol}: {Total} bars, {New} new", symbol, quotes.Count, newBars);
             }
             catch (Exception ex)
             {
