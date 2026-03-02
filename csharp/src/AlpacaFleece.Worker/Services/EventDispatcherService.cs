@@ -210,17 +210,10 @@ public sealed class EventDispatcherService(
             await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
             logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
 
-            // Forward to strategy for signal generation
+            // Forward to strategy for signal generation (strategy handles readiness internally)
             var strategy = serviceProvider.GetRequiredService<IStrategy>();
-            if (strategy.IsReady)
-            {
-                logger.LogInformation("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
-                await strategy.OnBarAsync(barEvent, CancellationToken.None);
-            }
-            else
-            {
-                logger.LogDebug("Strategy not ready yet (requires {Required} bars)", strategy.RequiredHistory);
-            }
+            logger.LogInformation("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
+            await strategy.OnBarAsync(barEvent, CancellationToken.None);
         }
         catch (Exception ex)
         {
