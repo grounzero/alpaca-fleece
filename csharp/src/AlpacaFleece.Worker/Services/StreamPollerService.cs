@@ -92,21 +92,23 @@ public sealed class StreamPollerService(
                 if (!marketOpen)
                 {
                     symbolsToPoll = allSymbolsList.Where(s => cryptoSymbols.Contains(s)).ToList();
+                    logger.LogInformation("Market closed - crypto symbols found: {count}", symbolsToPoll.Count);
                     if (symbolsToPoll.Count == 0)
                     {
-                        logger.LogDebug("Market is closed and no crypto symbols configured, skipping bar poll");
+                        logger.LogInformation("Market is closed and no crypto symbols configured, skipping bar poll");
                         await Task.Delay(TimeSpan.FromMinutes(1), ct);
                         continue;
                     }
 
-                    logger.LogDebug("Market closed — polling {count} crypto symbol(s) only", symbolsToPoll.Count);
+                    logger.LogInformation("Market closed — polling {count} crypto symbol(s): {symbols}", symbolsToPoll.Count, string.Join(", ", symbolsToPoll));
                 }
                 else
                 {
                     symbolsToPoll = allSymbolsList;
+                    logger.LogInformation("Market open — polling all {count} symbols", symbolsToPoll.Count);
                 }
 
-                logger.LogDebug(
+                logger.LogInformation(
                     "Bar poll tick: marketOpen={marketOpen}, crypto={cryptoCount}, equities={equityCount}, polling={pollCount}",
                     marketOpen,
                     cryptoSymbols.Count,
