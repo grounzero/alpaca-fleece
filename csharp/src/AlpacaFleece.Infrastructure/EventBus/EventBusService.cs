@@ -43,10 +43,12 @@ public sealed class EventBusService : IEventBus
     {
         if (_normalChannel.Writer.TryWrite(@event))
         {
+            Console.WriteLine($"[EventBus] Event written to channel: {@event.GetType().Name}");
             return new ValueTask<bool>(true);
         }
 
         Volatile.Write(ref _droppedCount, Volatile.Read(ref _droppedCount) + 1);
+        Console.WriteLine($"[EventBus] Event DROPPED: {@event.GetType().Name}");
         return new ValueTask<bool>(false);
     }
 
@@ -90,6 +92,7 @@ public sealed class EventBusService : IEventBus
 
                 if (completedTask == exitTask && await exitTask)
                 {
+                    Console.WriteLine("[EventBus] Exit signal available, reading...");
                     while (_exitChannel.Reader.TryRead(out var exitSignal))
                     {
                         await handler(exitSignal);
@@ -97,8 +100,10 @@ public sealed class EventBusService : IEventBus
                 }
                 else if (await normalTask)
                 {
+                    Console.WriteLine("[EventBus] Normal event available, reading...");
                     while (_normalChannel.Reader.TryRead(out var normalEvent))
                     {
+                        Console.WriteLine($"[EventBus] Dispatching: {normalEvent.GetType().Name}");
                         await handler(normalEvent);
                     }
                 }
