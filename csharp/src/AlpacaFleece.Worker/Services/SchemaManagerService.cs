@@ -21,7 +21,25 @@ public sealed class SchemaManagerService(
             // Temporarily using EnsureCreated instead of Migrate due to migration discovery issue
             // TODO: Fix migrations and revert to MigrateAsync
             logger.LogWarning("Using EnsureCreated instead of Migrate - migrations not being discovered");
-            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+            
+            // DEBUG: Log EF model info
+            var entities = dbContext.Model.GetEntityTypes().Select(e => e.Name).ToList();
+            logger.LogInformation("EF Model entities: {count} - {entities}", entities.Count, string.Join(", ", entities));
+            
+            try
+            {
+                var created = await dbContext.Database.EnsureCreatedAsync(cancellationToken);
+                logger.LogInformation("EnsureCreated result: {created} (true=created, false=already existed)", created);
+                
+                // DEBUG: Check if tables exist
+                var tables = await dbContext.Database.SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type='table';").ToListAsync(cancellationToken);
+                logger.LogInformation("Tables after EnsureCreated: {count} - {tables}", tables.Count, string.Join(", ", tables));
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "EnsureCreated FAILED: {message}", ex.Message);
+                throw;
+            }
 
             // Ensure DrawdownState table exists (for existing databases that were created before this table was added)
             await EnsureDrawdownStateTableAsync(dbContext, cancellationToken);
