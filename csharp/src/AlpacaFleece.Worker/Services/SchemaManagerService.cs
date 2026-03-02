@@ -34,6 +34,13 @@ public sealed class SchemaManagerService(
                 // DEBUG: Check if tables exist
                 var tables = await dbContext.Database.SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type='table';").ToListAsync(cancellationToken);
                 logger.LogInformation("Tables after EnsureCreated: {count} - {tables}", tables.Count, string.Join(", ", tables));
+                
+                // DEBUG: Force checkpoint and verify file size
+                await dbContext.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);");
+                var dbPath = dbContext.Database.GetDbConnection().ConnectionString.Replace("Data Source=", "");
+                var fileInfo = new FileInfo(dbPath);
+                logger.LogInformation("Database file: {path}, Size: {size} bytes, Exists: {exists}", 
+                    dbPath, fileInfo.Exists ? fileInfo.Length : 0, fileInfo.Exists);
             }
             catch (Exception ex)
             {
