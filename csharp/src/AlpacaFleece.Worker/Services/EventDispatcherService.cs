@@ -194,7 +194,8 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles bar events: routes to BarsHandler for persistence and history management.
+    /// Handles bar events: persists to BarsHandler and forwards to Strategy for signal generation.
+    /// Signal flow: BarEvent → BarsHandler (persistence) → Strategy.OnBarAsync() → SignalEvent
     /// </summary>
     private async ValueTask HandleBarEventAsync(BarEvent barEvent)
     {
@@ -204,13 +205,26 @@ public sealed class EventDispatcherService(
 
         try
         {
+            // Persist bar
             var barsHandler = serviceProvider.GetRequiredService<BarsHandler>();
             await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
             logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
+
+            // Forward to strategy for signal generation
+            var strategy = serviceProvider.GetRequiredService<IStrategy>();
+            if (strategy.IsReady)
+            {
+                logger.LogInformation("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
+                await strategy.OnBarAsync(barEvent, CancellationToken.None);
+            }
+            else
+            {
+                logger.LogDebug("Strategy not ready yet (requires {Required} bars)", strategy.RequiredHistory);
+            }
         }
         catch (Exception ex)
         {
-            logger.LogError(ex, "Failed to persist bar for {symbol}", barEvent.Symbol);
+            logger.LogError(ex, "Failed to handle bar for {symbol}", barEvent.Symbol);
         }
     }
 
