@@ -18,29 +18,17 @@ public sealed class SchemaManagerService(
             var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>();
             await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-            // Temporarily using EnsureCreated instead of Migrate due to migration discovery issue
-            // TODO: Fix migrations and revert to MigrateAsync
-            logger.LogWarning("Using EnsureCreated instead of Migrate - migrations not being discovered");
-            
-            // DEBUG: Log EF model info
-            var entities = dbContext.Model.GetEntityTypes().Select(e => e.Name).ToList();
-            logger.LogInformation("EF Model entities: {count} - {entities}", entities.Count, string.Join(", ", entities));
-            
+            // TODO(#70): Fix migrations and revert to MigrateAsync
+            // Currently using EnsureCreated due to migration discovery issue
+            logger.LogInformation("Using EnsureCreated instead of Migrate - migrations not being discovered");
+
             try
             {
                 var created = await dbContext.Database.EnsureCreatedAsync(cancellationToken);
-                logger.LogInformation("EnsureCreated result: {created} (true=created, false=already existed)", created);
-                
-                // DEBUG: Check if tables exist
-                var tables = await dbContext.Database.SqlQueryRaw<string>("SELECT name FROM sqlite_master WHERE type='table';").ToListAsync(cancellationToken);
-                logger.LogInformation("Tables after EnsureCreated: {count} - {tables}", tables.Count, string.Join(", ", tables));
-                
-                // DEBUG: Force checkpoint and verify file size
+                logger.LogDebug("EnsureCreated result: {created} (true=created, false=already existed)", created);
+
+                // Force WAL checkpoint to ensure data is persisted
                 await dbContext.Database.ExecuteSqlRawAsync("PRAGMA wal_checkpoint(TRUNCATE);");
-                var dbPath = dbContext.Database.GetDbConnection().ConnectionString.Replace("Data Source=", "");
-                var fileInfo = new FileInfo(dbPath);
-                logger.LogInformation("Database file: {path}, Size: {size} bytes, Exists: {exists}", 
-                    dbPath, fileInfo.Exists ? fileInfo.Length : 0, fileInfo.Exists);
             }
             catch (Exception ex)
             {

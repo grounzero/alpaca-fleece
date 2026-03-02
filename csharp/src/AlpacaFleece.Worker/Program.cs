@@ -135,9 +135,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Phase 2: Stream Polling Service
         services.AddHostedService<StreamPollerService>();
 
-        // Phase 2: Bars Handler
-        services.AddHostedService<BarsHandler>();
-
         // Phase 4: Exit Manager Service
         services.AddHostedService<ExitManagerService>();
 

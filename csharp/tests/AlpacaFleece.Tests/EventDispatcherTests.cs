@@ -12,6 +12,11 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     private readonly IOrderManager _orderManagerMock = Substitute.For<IOrderManager>();
     private readonly IDataHandler _dataHandlerMock = Substitute.For<IDataHandler>();
     private readonly IBrokerService _brokerMock = Substitute.For<IBrokerService>();
+    private readonly BarsHandler _barsHandlerMock = Substitute.For<BarsHandler>(
+        Substitute.For<IEventBus>(),
+        Substitute.For<IDbContextFactory<TradingDbContext>>(),
+        Substitute.For<ILogger<BarsHandler>>());
+    private readonly IStrategy _strategyMock = Substitute.For<IStrategy>();
 
     public async Task InitializeAsync() => await Task.CompletedTask;
 
@@ -99,6 +104,113 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     }
 
     [Fact]
+    public async Task HandleBarEventAsync_CallsBarsHandlerWithCorrectEvent()
+    {
+        // Arrange
+        var serviceProvider = CreateServiceProvider();
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+
+        var barEvent = new BarEvent(
+            Symbol: "AAPL",
+            Timeframe: "1m",
+            Timestamp: DateTimeOffset.UtcNow,
+            Open: 150m,
+            High: 152m,
+            Low: 149m,
+            Close: 151m,
+            Volume: 1000000);
+
+        // Act - Use reflection to call the private HandleBarEventAsync method
+        var method = typeof(EventDispatcherService).GetMethod(
+            "HandleBarEventAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+
+        await (method.Invoke(dispatcher, [barEvent]) as ValueTask)!;
+
+        // Assert - Verify BarsHandler was called with correct bar event
+        await _barsHandlerMock.Received(1).HandleBarEventAsync(
+            Arg.Is<BarEvent>(b =>
+                b.Symbol == barEvent.Symbol &&
+                b.Timeframe == barEvent.Timeframe &&
+                b.Open == barEvent.Open &&
+                b.High == barEvent.High &&
+                b.Low == barEvent.Low &&
+                b.Close == barEvent.Close &&
+                b.Volume == barEvent.Volume),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleBarEventAsync_CallsStrategyOnBarAsyncAfterPersistence()
+    {
+        // Arrange
+        var serviceProvider = CreateServiceProvider();
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+
+        var barEvent = new BarEvent(
+            Symbol: "AAPL",
+            Timeframe: "1m",
+            Timestamp: DateTimeOffset.UtcNow,
+            Open: 150m,
+            High: 152m,
+            Low: 149m,
+            Close: 151m,
+            Volume: 1000000);
+
+        // Act - Use reflection to call the private HandleBarEventAsync method
+        var method = typeof(EventDispatcherService).GetMethod(
+            "HandleBarEventAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+
+        await (method.Invoke(dispatcher, [barEvent]) as ValueTask)!;
+
+        // Assert - Verify strategy.OnBarAsync was called after persistence
+        await _strategyMock.Received(1).OnBarAsync(
+            Arg.Is<BarEvent>(b => b.Symbol == barEvent.Symbol && b.Timeframe == barEvent.Timeframe),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task HandleBarEventAsync_HandlesPersistenceFailureGracefully()
+    {
+        // Arrange - Make BarsHandler throw an exception
+        _barsHandlerMock.HandleBarEventAsync(Arg.Any<BarEvent>(), Arg.Any<CancellationToken>())
+            .Throws(new BarsHandlerException("Persistence failed"));
+
+        var serviceProvider = CreateServiceProvider();
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+
+        var barEvent = new BarEvent(
+            Symbol: "AAPL",
+            Timeframe: "1m",
+            Timestamp: DateTimeOffset.UtcNow,
+            Open: 150m,
+            High: 152m,
+            Low: 149m,
+            Close: 151m,
+            Volume: 1000000);
+
+        // Act & Assert - Should not throw, should handle gracefully
+        var method = typeof(EventDispatcherService).GetMethod(
+            "HandleBarEventAsync",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+
+        // Should not throw exception
+        var exception = await Record.ExceptionAsync(async () =>
+        {
+            await (method.Invoke(dispatcher, [barEvent]) as ValueTask)!;
+        });
+
+        Assert.Null(exception);
+
+        // Verify strategy was NOT called since persistence failed
+        await _strategyMock.DidNotReceive().OnBarAsync(Arg.Any<BarEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task HandleEventAsync_ContinuesOnExceptionInHandler()
     {
         // Event dispatcher should not crash on exceptions
@@ -131,6 +243,13 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     private IServiceProvider CreateServiceProvider()
     {
         var provider = Substitute.For<IServiceProvider>();
+        var scope = Substitute.For<IServiceScope>();
+        var scopeProvider = Substitute.For<IServiceProvider>();
+
+        // Set up scope factory for creating scopes
+        var scopeFactory = Substitute.For<IServiceScopeFactory>();
+        scopeFactory.CreateScope().Returns(scope);
+        scope.ServiceProvider.Returns(scopeProvider);
 
         provider.GetService(typeof(IRiskManager))
             .Returns(_riskManagerMock);
@@ -142,6 +261,14 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
             .Returns(_brokerMock);
         provider.GetService(typeof(IPositionTracker))
             .Returns(Substitute.For<IPositionTracker>());
+        provider.GetService(typeof(BarsHandler))
+            .Returns(_barsHandlerMock);
+        provider.GetService(typeof(IServiceScopeFactory))
+            .Returns(scopeFactory);
+
+        // Set up scope provider to return strategy for scoped resolution
+        scopeProvider.GetService(typeof(IStrategy))
+            .Returns(_strategyMock);
 
         return provider;
     }
