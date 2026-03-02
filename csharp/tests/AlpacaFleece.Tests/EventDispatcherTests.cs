@@ -177,7 +177,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     {
         // Arrange - Make BarsHandler throw an exception
         _barsHandlerMock.HandleBarEventAsync(Arg.Any<BarEvent>(), Arg.Any<CancellationToken>())
-            .Throws(new BarsHandlerException("Persistence failed"));
+            .Returns(System.Threading.Tasks.ValueTask.FromException(new BarsHandlerException("Persistence failed")));
 
         var serviceProvider = CreateServiceProvider();
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
