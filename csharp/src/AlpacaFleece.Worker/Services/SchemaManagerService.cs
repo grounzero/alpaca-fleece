@@ -18,24 +18,10 @@ public sealed class SchemaManagerService(
             var dbFactory = scope.ServiceProvider.GetRequiredService<IDbContextFactory<TradingDbContext>>();
             await using var dbContext = await dbFactory.CreateDbContextAsync(cancellationToken);
 
-            try
-            {
-                await dbContext.Database.MigrateAsync(cancellationToken);
-            }
-            catch (Microsoft.Data.Sqlite.SqliteException sqlEx) when (
-                hostEnvironment.IsDevelopment() &&
-                sqlEx.SqliteErrorCode == 1 && // SQLITE_ERROR
-                sqlEx.Message?.Contains("already exists", StringComparison.OrdinalIgnoreCase) == true)
-            {
-                // Development-only workaround: Some dev environments may have an existing schema
-                // created outside of EF migrations (e.g., manual EnsureCreated or prior schema manager).
-                // This catch specifically targets "table already exists" errors (SQLITE_ERROR code 1)
-                // and only applies in Development to avoid masking real migration failures in production.
-                logger.LogWarning(
-                    sqlEx,
-                    "[Development only] Migration encountered 'table already exists' error (SqliteErrorCode={Code}); continuing",
-                    sqlEx.SqliteErrorCode);
-            }
+            // Temporarily using EnsureCreated instead of Migrate due to migration discovery issue
+            // TODO: Fix migrations and revert to MigrateAsync
+            logger.LogWarning("Using EnsureCreated instead of Migrate - migrations not being discovered");
+            await dbContext.Database.EnsureCreatedAsync(cancellationToken);
 
             // Ensure DrawdownState table exists (for existing databases that were created before this table was added)
             await EnsureDrawdownStateTableAsync(dbContext, cancellationToken);
