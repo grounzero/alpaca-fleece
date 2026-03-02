@@ -21,7 +21,7 @@ public static class StateRepositoryExtensions
         services.AddDbContextFactory<TradingDbContext>(options =>
             options.UseSqlite(connectionString));
 
-        // StateRepository uses the pooled factory internally and is safe to register as singleton.
+        // StateRepository uses the DbContext factory internally and is safe to register as singleton.
         services.AddSingleton<IStateRepository, StateRepository>();
 
         return services;
