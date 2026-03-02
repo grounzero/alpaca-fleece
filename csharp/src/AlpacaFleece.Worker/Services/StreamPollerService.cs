@@ -239,9 +239,9 @@ public sealed class StreamPollerService(
                         Close: quote.Close,
                         Volume: quote.Volume);
 
-                    logger.LogDebug("Publishing BarEvent for {Symbol} at {Timestamp}", barEvent.Symbol, barEvent.Timestamp);
+                    logger.LogInformation("Publishing BarEvent for {Symbol} at {Timestamp}", barEvent.Symbol, barEvent.Timestamp);
                     var published = await eventBus.PublishAsync(barEvent, ct);
-                    logger.LogDebug("BarEvent published: {Published} for {Symbol}", published, barEvent.Symbol);
+                    logger.LogInformation("BarEvent published: {Published} for {Symbol}", published, barEvent.Symbol);
                     lastTs = barTs;
                     newBars++;
                 }
@@ -252,7 +252,7 @@ public sealed class StreamPollerService(
                     _lastPublishedBarTs[symbol] = lastTs;
                 }
 
-                logger.LogDebug("Polled {Symbol}: {Total} bars, {New} new", symbol, quotes.Count, newBars);
+                logger.LogInformation("Polled {Symbol}: {Total} bars, {New} new", symbol, quotes.Count, newBars);
             }
             catch (Exception ex)
             {
