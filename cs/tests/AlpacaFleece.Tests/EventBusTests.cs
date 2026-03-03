@@ -103,8 +103,9 @@ public sealed class EventBusTests
 
     /// <summary>
     /// Regression test for the dispatch loop bug where awaiting the wrong task
-    /// would block event processing. Ensures normal events are dispatched even
-    /// when exit signal channel is also being monitored.
+    /// would block event processing. This test exercises the race condition by
+    /// starting DispatchAsync first (so it's blocked in WaitToReadAsync), then
+    /// publishing events while it's waiting.
     /// </summary>
     [Fact]
     public async Task DispatchAsync_ProcessesNormalEventsWhenBothChannelsActive()
@@ -112,57 +113,72 @@ public sealed class EventBusTests
         var eventBus = new EventBusService();
         var processedBarEvents = new List<BarEvent>();
         var processedExitEvents = new List<ExitSignalEvent>();
+        var dispatchEnteredWait = new TaskCompletionSource();
+        var dispatchCanProceed = new TaskCompletionSource();
 
-        // Publish multiple normal events (simulating bar polling)
-        for (int i = 0; i < 5; i++)
+        // Handler that signals when first event is received
+        var handler = async (IEvent @event) =>
         {
-            var barEvent = new BarEvent(
-                Symbol: $"SYM{i}",
-                Timeframe: "1m",
-                Timestamp: DateTimeOffset.UtcNow,
-                Open: 100m + i,
-                High: 101m + i,
-                Low: 99m + i,
-                Close: 100.5m + i,
-                Volume: 1000);
-            await eventBus.PublishAsync(barEvent);
-        }
+            switch (@event)
+            {
+                case BarEvent bar:
+                    processedBarEvents.Add(bar);
+                    break;
+                case ExitSignalEvent exit:
+                    processedExitEvents.Add(exit);
+                    break;
+            }
+            await ValueTask.CompletedTask;
+        };
 
-        // Also publish an exit signal
+        // Start DispatchAsync on background task - it will block waiting for events
+        var dispatchTask = Task.Run(async () =>
+        {
+            // This handler wrapper signals that DispatchAsync has entered the wait loop
+            var wrappedHandler = async (IEvent @event) =>
+            {
+                // Signal that we're about to handle an event (DispatchAsync got one)
+                dispatchEnteredWait.TrySetResult();
+                await handler(@event);
+            };
+
+            using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            try
+            {
+                await eventBus.DispatchAsync(wrappedHandler, cts.Token);
+            }
+            catch (OperationCanceledException)
+            {
+                // Expected - we cancel after timeout
+            }
+        });
+
+        // Wait a bit to ensure DispatchAsync has drained initial queues and entered WaitToReadAsync
+        await Task.Delay(100);
+
+        // Now publish events while DispatchAsync is waiting in the WhenAny loop
+        // This exercises the code path that had the "await normalTask" bug
+        var barEvent = new BarEvent(
+            Symbol: "BTC/USD",
+            Timeframe: "1m",
+            Timestamp: DateTimeOffset.UtcNow,
+            Open: 85000m,
+            High: 85100m,
+            Low: 84900m,
+            Close: 85050m,
+            Volume: 1000);
+        await eventBus.PublishAsync(barEvent);
+
+        // Also publish an exit signal at roughly the same time
         var exitSignal = new ExitSignalEvent("AAPL", "STOP_LOSS", 145m, DateTimeOffset.UtcNow);
         await eventBus.PublishAsync(exitSignal);
 
-        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
-        try
-        {
-            await eventBus.DispatchAsync(
-                async @event =>
-                {
-                    switch (@event)
-                    {
-                        case BarEvent bar:
-                            processedBarEvents.Add(bar);
-                            break;
-                        case ExitSignalEvent exit:
-                            processedExitEvents.Add(exit);
-                            break;
-                    }
-                    await ValueTask.CompletedTask;
-                },
-                cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected timeout
-        }
-
-        // Assert all events were processed
-        Assert.Equal(5, processedBarEvents.Count);
-        Assert.Single(processedExitEvents);
+        // Wait for DispatchAsync to process the events (with timeout)
+        var completed = await Task.WhenAny(dispatchTask, Task.Delay(TimeSpan.FromSeconds(3)));
         
-        // Verify all bar symbols were processed
-        var expectedSymbols = new[] { "SYM0", "SYM1", "SYM2", "SYM3", "SYM4" };
-        var actualSymbols = processedBarEvents.Select(e => e.Symbol).OrderBy(s => s);
-        Assert.Equal(expectedSymbols, actualSymbols);
+        // Assert events were processed
+        Assert.Single(processedBarEvents);
+        Assert.Single(processedExitEvents);
+        Assert.Equal("BTC/USD", processedBarEvents[0].Symbol);
     }
 }
