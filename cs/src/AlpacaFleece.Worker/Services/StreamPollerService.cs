@@ -370,8 +370,7 @@ public sealed class StreamPollerService(
                 ct);
 
             // Record fill for filled/partial-fill transitions (idempotent by dedupe key)
-            if (order.FilledQuantity > 0 &&
-                order.Status is OrderState.Filled or OrderState.PartiallyFilled)
+            if (order is { FilledQuantity: > 0, Status: OrderState.Filled or OrderState.PartiallyFilled })
             {
                 var dedupeKey = $"{order.AlpacaOrderId}:{order.FilledQuantity}:{order.AverageFilledPrice}";
                 await stateRepository.InsertFillIdempotentAsync(

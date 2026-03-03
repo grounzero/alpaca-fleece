@@ -135,7 +135,7 @@ public sealed class EventBusTests
         var dispatchTask = Task.Run(async () =>
         {
             // This handler wrapper signals that DispatchAsync has entered the wait loop
-            var wrappedHandler = async (IEvent @event) =>
+            Func<IEvent, ValueTask> wrappedHandler = async (IEvent @event) =>
             {
                 // Signal that we're about to handle an event (DispatchAsync got one)
                 dispatchEnteredWait.TrySetResult();

@@ -36,18 +36,7 @@ public sealed class SymbolClassifier : ISymbolClassifier
         }
     }
 
-    public bool IsCrypto(string symbol)
-    {
-        if (string.IsNullOrWhiteSpace(symbol))
-            return false;
-        return _cryptoSymbols.Contains(symbol);
-    }
+    public bool IsCrypto(string symbol) => !string.IsNullOrWhiteSpace(symbol) && _cryptoSymbols.Contains(symbol);
 
-    public bool IsEquity(string symbol)
-    {
-        if (string.IsNullOrWhiteSpace(symbol))
-            return false;
-
-        return _equitySymbols.Contains(symbol);
-    }
+    public bool IsEquity(string symbol) => !string.IsNullOrWhiteSpace(symbol) && _equitySymbols.Contains(symbol);
 }

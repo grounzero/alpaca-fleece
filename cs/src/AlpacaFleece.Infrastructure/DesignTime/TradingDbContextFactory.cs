@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace AlpacaFleece.Infrastructure.Data;
+namespace AlpacaFleece.Infrastructure.DesignTime;
 
 /// <summary>
 /// Design-time factory for EF Core tools. This avoids constructing the full
@@ -13,9 +13,10 @@ public sealed class TradingDbContextFactory : IDesignTimeDbContextFactory<Tradin
         var optionsBuilder = new DbContextOptionsBuilder<TradingDbContext>();
 
         // Use the runtime base directory so EF tooling targets the same DB file the
-        // application uses at runtime (AppDomain.CurrentDomain.BaseDirectory/trading.db).
+        // application uses at runtime (AppDomain.CurrentDomain.BaseDirectory/data/trading.db).
         var runtimeBase = AppDomain.CurrentDomain.BaseDirectory ?? Directory.GetCurrentDirectory();
-        var file = Path.Combine(runtimeBase, "trading.db");
+        var file = Path.Combine(runtimeBase, "data", "trading.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         optionsBuilder.UseSqlite($"Data Source={file}");
 
         return new TradingDbContext(optionsBuilder.Options);

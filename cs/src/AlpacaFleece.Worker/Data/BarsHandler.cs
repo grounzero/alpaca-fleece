@@ -31,7 +31,7 @@ public sealed class BarsHandler(
     {
         try
         {
-            using var context = await dbContextFactory.CreateDbContextAsync(ct);
+            await using var context = await dbContextFactory.CreateDbContextAsync(ct);
 
             var symbols = await context.Bars
                 .Select(b => b.Symbol)
@@ -60,7 +60,7 @@ public sealed class BarsHandler(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to load historical bars; continuing with empty deques");
+            logger.LogWarning(ex, "Failed to load historical bars; continuing with empty deque");
         }
     }
 
@@ -108,7 +108,7 @@ public sealed class BarsHandler(
     {
         try
         {
-            using var context = await dbContextFactory.CreateDbContextAsync(ct);
+            await using var context = await dbContextFactory.CreateDbContextAsync(ct);
 
             // Check if bar already exists (idempotency)
             var existing = await context.Bars
@@ -179,7 +179,7 @@ public sealed class BarsHandler(
     }
 
     /// <summary>
-    /// Clears all deques (useful for testing).
+    /// Clears all in-memory queues (useful for testing).
     /// </summary>
     public void Clear()
     {

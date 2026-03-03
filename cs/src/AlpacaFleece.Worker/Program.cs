@@ -62,8 +62,9 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         context.Configuration.GetSection("RuntimeReconciliation").Bind(runtimeReconciliationOptions);
         services.Configure<RuntimeReconciliationOptions>(context.Configuration.GetSection("RuntimeReconciliation"));
 
-        // Database path
-        var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "trading.db");
+        // Database path - use /app/data for persistence across restarts
+        var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "trading.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
 
         // Infrastructure (Phase 1)
         services.AddBrokerServices(brokerOptions);
@@ -79,7 +80,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Symbol classifier (centralised symbol type detection using TradingOptions lists)
         services.AddSingleton<ISymbolClassifier>(sp =>
             new SymbolClassifier(tradingOptions.Symbols.CryptoSymbols, tradingOptions.Symbols.EquitySymbols));
-        services.AddScoped<IStrategy>(sp => new SmaCrossoverStrategy(
+        services.AddSingleton<IStrategy>(sp => new SmaCrossoverStrategy(
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
             tradingOptions.Symbols.CryptoSymbols));

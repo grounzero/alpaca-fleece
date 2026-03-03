@@ -30,5 +30,7 @@ global using AlpacaFleece.Worker.Data;
 global using AlpacaFleece.Worker.Metrics;
 global using AlpacaFleece.Worker.Notifications;
 global using AlpacaFleece.Worker.Services;
+global using Hangfire;
+global using Microsoft.AspNetCore.Builder;
 global using Serilog;
 global using Serilog.Events;
