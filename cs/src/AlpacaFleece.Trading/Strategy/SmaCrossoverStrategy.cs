@@ -17,6 +17,8 @@ public sealed class SmaCrossoverStrategy(
     private readonly Dictionary<string, BarHistory> _barHistories = new();
     private readonly HashSet<string> _cryptoSymbols = new(cryptoSymbols ?? []);
     private readonly object _syncLock = new();
+    // Tracks which symbols have already logged the "strategy ready" transition.
+    private readonly HashSet<string> _readySymbols = new();
 
     // SMA periods: 3 pairs for multi-timeframe analysis
     private const int FastPeriod1 = 5;
@@ -42,6 +44,9 @@ public sealed class SmaCrossoverStrategy(
     /// </summary>
     public async ValueTask OnBarAsync(BarEvent bar, CancellationToken ct = default)
     {
+        List<SignalEvent> localSignals = [];
+        IReadOnlyList<(decimal Open, decimal High, decimal Low, decimal Close, long Volume)>? localSnapshot = null;
+
         lock (_syncLock)
         {
             // Get history for symbol if needed
@@ -54,14 +59,18 @@ public sealed class SmaCrossoverStrategy(
             // Add bar to history
             history.AddBar(bar.Open, bar.High, bar.Low, bar.Close, bar.Volume);
 
-            // Not ready yet
+            // Not ready yet — debug-level: fires every bar during warmup, not actionable in prod
             if (history.Count < RequiredBars)
             {
-                logger.LogInformation(
-                    "Insufficient bars for SMA calculation: {Symbol} requires {Required}, has {Available}",
-                    bar.Symbol, RequiredBars, history.Count);
+                logger.LogDebug("Strategy not ready for {Symbol}: {Available}/{Required} bars",
+                    bar.Symbol, history.Count, RequiredBars);
                 return;
             }
+
+            // Log once per symbol when it first crosses the warmup threshold
+            if (_readySymbols.Add(bar.Symbol))
+                logger.LogInformation("Strategy ready for {Symbol}: {Required} bars accumulated",
+                    bar.Symbol, RequiredBars);
 
             // Calculate SMAs and ATR
             var fast1 = history.CalculateSma(FastPeriod1);
@@ -142,16 +151,18 @@ public sealed class SmaCrossoverStrategy(
             _previousSmaPair2[bar.Symbol] = (fast2, slow2);
             _previousSmaPair3[bar.Symbol] = (fast3, slow3);
 
-            // Capture bar snapshot for volume filter (must be inside lock; async calls are outside)
-            if (_pendingSignals.Count > 0)
-                _pendingBarSnapshot = history.GetBars();
+            // Capture signals and snapshot before releasing the lock.
+            // Locals are iterated outside the lock so async filter/publish calls are safe.
+            localSignals = signals;
+            if (localSignals.Count > 0)
+                localSnapshot = history.GetBars();
         }
 
         // Apply filters and publish signals outside the lock (async calls cannot be inside lock)
-        foreach (var signal in _pendingSignals)
+        foreach (var signal in localSignals)
         {
-            if (volumeFilter != null && _pendingBarSnapshot != null
-                && !volumeFilter.Check(_pendingBarSnapshot))
+            if (volumeFilter != null && localSnapshot != null
+                && !volumeFilter.Check(localSnapshot))
             {
                 logger.LogInformation(
                     "Volume filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
@@ -167,13 +178,7 @@ public sealed class SmaCrossoverStrategy(
 
             await eventBus.PublishAsync(signal, ct);
         }
-
-        _pendingSignals.Clear();
-        _pendingBarSnapshot = null;
     }
-
-    private readonly List<SignalEvent> _pendingSignals = new();
-    private IReadOnlyList<(decimal Open, decimal High, decimal Low, decimal Close, long Volume)>? _pendingBarSnapshot;
 
     /// <summary>
     /// Checks for SMA crossover and emits signal if detected.
@@ -245,7 +250,6 @@ public sealed class SmaCrossoverStrategy(
             Metadata: metadata);
 
         signals.Add(signal);
-        _pendingSignals.Add(signal);
     }
 
     /// <summary>

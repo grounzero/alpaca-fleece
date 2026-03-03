@@ -115,8 +115,10 @@ public sealed class ExecutionOptions
 
     /// <summary>
     /// Number of bars to fetch per poll cycle for strategy warmup.
-    /// Must be ≥ SmaCrossoverStrategy.RequiredBars (51) to guarantee sufficient history
-    /// from the first poll. Default: 100 (≈ 100 minutes of 1-min bars).
+    /// Recommended to be ≥ SmaCrossoverStrategy.RequiredBars (51) to have sufficient history
+    /// from the first poll. The worker clamps this value up to strategy.RequiredHistory at
+    /// runtime, so configuring a lower value will not cause incorrect behaviour — only a
+    /// warning log. Default: 100 (≈ 100 minutes of 1-min bars).
     /// </summary>
     public int BarHistoryDepth { get; set; } = 100;
 }

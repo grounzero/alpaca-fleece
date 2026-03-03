@@ -55,7 +55,7 @@ public sealed class TrendFilterTests
     [Fact]
     public async Task TrendFilter_Long_PassesWhen_PriceAboveDailySma()
     {
-        // SMA(5) of closes [10,11,12,13,14] = 12. Last close = 14 > 12 → BUY passes.
+        // SMA(5) of closes [11,12,13,14,15] = 13. Last close = 15 > 13 → BUY passes.
         var bars = MakeDailyBars("AAPL", 10m, 11m, 12m, 13m, 14m, 15m);
         _marketData.GetBarsAsync("AAPL", "1Day", Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IReadOnlyList<Quote>>(bars));
@@ -69,7 +69,7 @@ public sealed class TrendFilterTests
     [Fact]
     public async Task TrendFilter_Long_BlocksWhen_PriceBelowDailySma()
     {
-        // SMA(5) of closes [100,99,98,97,96] = 98. Last close = 95 < 98 → BUY blocked.
+        // SMA(5) of closes [99,98,97,96,95] = 97. Last close = 95 < 97 → BUY blocked.
         var bars = MakeDailyBars("AAPL", 100m, 99m, 98m, 97m, 96m, 95m);
         _marketData.GetBarsAsync("AAPL", "1Day", Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IReadOnlyList<Quote>>(bars));
@@ -83,7 +83,7 @@ public sealed class TrendFilterTests
     [Fact]
     public async Task TrendFilter_Short_PassesWhen_PriceBelowDailySma()
     {
-        // SMA(5) of closes [100,99,98,97,96] = 98. Last close = 95 < 98 → SELL passes.
+        // SMA(5) of closes [99,98,97,96,95] = 97. Last close = 95 < 97 → SELL passes.
         var bars = MakeDailyBars("AAPL", 100m, 99m, 98m, 97m, 96m, 95m);
         _marketData.GetBarsAsync("AAPL", "1Day", Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IReadOnlyList<Quote>>(bars));
@@ -97,7 +97,7 @@ public sealed class TrendFilterTests
     [Fact]
     public async Task TrendFilter_Short_BlocksWhen_PriceAboveDailySma()
     {
-        // SMA(5) of closes [10,11,12,13,14] = 12. Last close = 14 > 12 → SELL blocked.
+        // SMA(5) of closes [11,12,13,14,15] = 13. Last close = 15 > 13 → SELL blocked.
         var bars = MakeDailyBars("AAPL", 10m, 11m, 12m, 13m, 14m, 15m);
         _marketData.GetBarsAsync("AAPL", "1Day", Arg.Any<int>(), Arg.Any<CancellationToken>())
             .Returns(new ValueTask<IReadOnlyList<Quote>>(bars));

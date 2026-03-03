@@ -12,6 +12,7 @@ public sealed class TrendFilter(
     private readonly record struct CacheEntry(IReadOnlyList<Quote> Bars, DateTimeOffset CachedAt);
 
     private readonly Dictionary<string, CacheEntry> _cache = new(StringComparer.OrdinalIgnoreCase);
+    private readonly object _cacheLock = new();
     private static readonly TimeSpan CacheTtl = TimeSpan.FromHours(1);
 
     /// <summary>
@@ -24,7 +25,7 @@ public sealed class TrendFilter(
             return true;
 
         var bars = await GetDailyBarsAsync(symbol, ct);
-        var period = options.SignalFilters.DailySmaPeriod;
+        var period = Math.Max(1, options.SignalFilters.DailySmaPeriod);
 
         if (bars.Count < period + 1)
         {
@@ -48,13 +49,20 @@ public sealed class TrendFilter(
 
     private async ValueTask<IReadOnlyList<Quote>> GetDailyBarsAsync(string symbol, CancellationToken ct)
     {
-        if (_cache.TryGetValue(symbol, out var entry) &&
-            DateTimeOffset.UtcNow - entry.CachedAt < CacheTtl)
-            return entry.Bars;
+        lock (_cacheLock)
+        {
+            if (_cache.TryGetValue(symbol, out var entry) &&
+                DateTimeOffset.UtcNow - entry.CachedAt < CacheTtl)
+                return entry.Bars;
+        }
 
-        var limit = options.SignalFilters.DailySmaPeriod + 5;
+        var limit = Math.Max(1, options.SignalFilters.DailySmaPeriod) + 5;
         var bars = await marketDataClient.GetBarsAsync(symbol, "1Day", limit, ct);
-        _cache[symbol] = new CacheEntry(bars, DateTimeOffset.UtcNow);
+
+        lock (_cacheLock)
+        {
+            _cache[symbol] = new CacheEntry(bars, DateTimeOffset.UtcNow);
+        }
         return bars;
     }
 
@@ -84,7 +92,7 @@ public sealed class VolumeFilter(
         if (!options.SignalFilters.EnableVolumeFilter)
             return true;
 
-        var lookback = options.SignalFilters.VolumeLookbackPeriod;
+        var lookback = Math.Max(1, options.SignalFilters.VolumeLookbackPeriod);
         if (bars.Count < lookback)
             return true;
 

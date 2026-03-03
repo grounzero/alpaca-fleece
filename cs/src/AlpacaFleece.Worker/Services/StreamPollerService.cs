@@ -85,6 +85,15 @@ public sealed class StreamPollerService(
                 "BarHistoryDepth {Configured} is below the strategy minimum {Required}; clamping to {Effective}",
                 configuredDepth, strategy.RequiredHistory, effectiveDepth);
 
+        const int MaxApiBarLimit = 10_000;
+        if (effectiveDepth > MaxApiBarLimit)
+        {
+            logger.LogWarning(
+                "Effective BarHistoryDepth {Effective} exceeds the Alpaca API maximum {Max}; clamping to {Max}",
+                effectiveDepth, MaxApiBarLimit, MaxApiBarLimit);
+            effectiveDepth = MaxApiBarLimit;
+        }
+
         logger.LogInformation("Bar poll loop starting with {count} symbols", allSymbolsList.Count);
 
         while (!ct.IsCancellationRequested)
