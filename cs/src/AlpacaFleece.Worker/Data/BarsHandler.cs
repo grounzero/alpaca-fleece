@@ -10,7 +10,7 @@ public sealed class BarsHandler(
     IDbContextFactory<TradingDbContext> dbContextFactory,
     ILogger<BarsHandler> logger) : BackgroundService
 {
-    private readonly Dictionary<string, Queue<(decimal O, decimal H, decimal L, decimal C, long V)>> _symbolDequeues = new();
+    private readonly Dictionary<string, Queue<(decimal O, decimal H, decimal L, decimal C, long V)>> _symbolDeques = new();
     private const int MaxDequeSize = 500;
 
     /// <summary>
@@ -47,12 +47,12 @@ public sealed class BarsHandler(
                     .OrderBy(b => b.Timestamp)
                     .ToListAsync(ct);
 
-                lock (_symbolDequeues)
+                lock (_symbolDeques)
                 {
                     var deque = new Queue<(decimal, decimal, decimal, decimal, long)>(bars.Count);
                     foreach (var bar in bars)
                         deque.Enqueue((bar.Open, bar.High, bar.Low, bar.Close, bar.Volume));
-                    _symbolDequeues[symbol] = deque;
+                    _symbolDeques[symbol] = deque;
                 }
 
                 logger.LogInformation("Loaded {Count} historical bars for {Symbol}", bars.Count, symbol);
@@ -60,7 +60,7 @@ public sealed class BarsHandler(
         }
         catch (Exception ex)
         {
-            logger.LogWarning(ex, "Failed to load historical bars; continuing with empty dequeue");
+            logger.LogWarning(ex, "Failed to load historical bars; continuing with empty deque");
         }
     }
 
@@ -75,12 +75,12 @@ public sealed class BarsHandler(
             await PersistBarToDbAsync(bar, ct);
 
             // Maintain in-memory deque per symbol
-            lock (_symbolDequeues)
+            lock (_symbolDeques)
             {
-                if (!_symbolDequeues.TryGetValue(bar.Symbol, out var deque))
+                if (!_symbolDeques.TryGetValue(bar.Symbol, out var deque))
                 {
                     deque = new Queue<(decimal, decimal, decimal, decimal, long)>(MaxDequeSize);
-                    _symbolDequeues[bar.Symbol] = deque;
+                    _symbolDeques[bar.Symbol] = deque;
                 }
 
                 // Add to deque
@@ -158,9 +158,9 @@ public sealed class BarsHandler(
     /// </summary>
     public IReadOnlyList<(decimal O, decimal H, decimal L, decimal C, long V)> GetBarsForSymbol(string symbol)
     {
-        lock (_symbolDequeues)
+        lock (_symbolDeques)
         {
-            if (!_symbolDequeues.TryGetValue(symbol, out var deque))
+            if (!_symbolDeques.TryGetValue(symbol, out var deque))
                 return new List<(decimal, decimal, decimal, decimal, long)>();
 
             return deque.ToList().AsReadOnly();
@@ -172,9 +172,9 @@ public sealed class BarsHandler(
     /// </summary>
     public int GetBarCount(string symbol)
     {
-        lock (_symbolDequeues)
+        lock (_symbolDeques)
         {
-            return _symbolDequeues.TryGetValue(symbol, out var deque) ? deque.Count : 0;
+            return _symbolDeques.TryGetValue(symbol, out var deque) ? deque.Count : 0;
         }
     }
 
@@ -183,9 +183,9 @@ public sealed class BarsHandler(
     /// </summary>
     public void Clear()
     {
-        lock (_symbolDequeues)
+        lock (_symbolDeques)
         {
-            _symbolDequeues.Clear();
+            _symbolDeques.Clear();
         }
     }
 }
