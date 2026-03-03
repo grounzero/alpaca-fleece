@@ -8,8 +8,8 @@ public sealed record OrderInfo(
     string ClientOrderId,
     string Symbol,
     string Side, // "buy" or "sell"
-    int Quantity,
-    int FilledQuantity,
+    decimal Quantity,
+    decimal FilledQuantity,
     decimal AverageFilledPrice,
     OrderState Status,
     DateTimeOffset CreatedAt,

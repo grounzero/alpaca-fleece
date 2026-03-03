@@ -112,7 +112,7 @@ public sealed class AlpacaBrokerService(
             var positions = await tradingClient.ListPositionsAsync(ct);
             var result = positions.Select(p => new PositionInfo(
                 Symbol: p.Symbol,
-                Quantity: (int)p.Quantity,
+                Quantity: p.Quantity,
                 AverageEntryPrice: p.AverageEntryPrice,
                 CurrentPrice: p.AssetCurrentPrice ?? 0m,
                 UnrealizedPnl: p.UnrealizedProfitLoss ?? 0m,
@@ -141,7 +141,7 @@ public sealed class AlpacaBrokerService(
     public async ValueTask<OrderInfo> SubmitOrderAsync(
         string symbol,
         string side,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         string clientOrderId,
         CancellationToken ct = default)
@@ -285,8 +285,11 @@ public sealed class AlpacaBrokerService(
         ClientOrderId: order.ClientOrderId ?? string.Empty,
         Symbol: order.Symbol,
         Side: order.OrderSide == OrderSide.Buy ? "buy" : "sell",
-        Quantity: (int)order.IntegerQuantity,
-        FilledQuantity: (int)order.IntegerFilledQuantity,
+        // SDK v7.2.0 exposes integer-only quantity fields; fractional orders return null here.
+        // When IntegerQuantity is null (fractional order), fall back to 0 — a future SDK upgrade
+        // or manual JSON parsing would be needed to recover the exact fractional value.
+        Quantity: (decimal?)order.IntegerQuantity ?? 0m,
+        FilledQuantity: (decimal?)order.IntegerFilledQuantity ?? 0m,
         AverageFilledPrice: order.AverageFillPrice ?? 0m,
         Status: MapOrderStatus(order.OrderStatus),
         CreatedAt: order.CreatedAtUtc.HasValue

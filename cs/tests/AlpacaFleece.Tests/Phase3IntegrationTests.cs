@@ -53,7 +53,7 @@ public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -136,7 +136,7 @@ public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -191,7 +191,7 @@ public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifet
         await _brokerMock.Received(1).SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
@@ -225,7 +225,7 @@ public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -347,7 +347,7 @@ public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifet
         await _brokerMock.DidNotReceive().SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());

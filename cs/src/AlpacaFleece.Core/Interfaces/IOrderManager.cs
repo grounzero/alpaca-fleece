@@ -12,7 +12,7 @@ public interface IOrderManager
     /// </summary>
     ValueTask<string> SubmitSignalAsync(
         SignalEvent signal,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         CancellationToken ct = default);
 
@@ -22,7 +22,7 @@ public interface IOrderManager
     ValueTask SubmitExitAsync(
         string symbol,
         string side,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         CancellationToken ct = default);
 

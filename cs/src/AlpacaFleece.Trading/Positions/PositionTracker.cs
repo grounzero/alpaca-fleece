@@ -29,7 +29,7 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     /// <summary>
     /// Opens a position.
     /// </summary>
-    public void OpenPosition(string symbol, int quantity, decimal entryPrice, decimal atrValue)
+    public void OpenPosition(string symbol, decimal quantity, decimal entryPrice, decimal atrValue)
     {
         var pos = new PositionData(symbol, quantity, entryPrice, atrValue, entryPrice - (atrValue * 1.5m));
         _positions[symbol] = pos;

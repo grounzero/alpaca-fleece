@@ -403,7 +403,7 @@ public sealed class StreamPollerService(
             }
 
             // Publish event so OrderManager / PositionTracker can react
-            var remaining = Math.Max(0, intent.Quantity - order.FilledQuantity);
+            var remaining = Math.Max(0m, intent.Quantity - order.FilledQuantity);
             var ev = new OrderUpdateEvent(
                 AlpacaOrderId: order.AlpacaOrderId,
                 ClientOrderId: order.ClientOrderId,

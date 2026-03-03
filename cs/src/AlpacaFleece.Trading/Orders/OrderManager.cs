@@ -27,7 +27,7 @@ public sealed class OrderManager(
     /// </summary>
     public async ValueTask<string> SubmitSignalAsync(
         SignalEvent signal,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         CancellationToken ct = default)
     {
@@ -36,29 +36,36 @@ public sealed class OrderManager(
             // Step 1: Determine side (already in signal.Side as "BUY" or "SELL")
             var side = signal.Side;
 
+            // Crypto symbols allow fractional quantities (no floor to 1; minimum 0.0001).
+            var isCrypto = options.Symbols.CryptoSymbols.Contains(
+                signal.Symbol, StringComparer.OrdinalIgnoreCase);
+
             // Step 1b: Get drawdown position multiplier (Warning state reduces sizes)
             var positionMultiplier = drawdownMonitor?.GetPositionMultiplier() ?? 1.0m;
 
             // Step 1c: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
-            if (quantity == 0)
+            if (quantity == 0m)
             {
                 var account = await broker.GetAccountAsync(ct);
-                quantity = (int)PositionSizer.CalculateQuantity(
+                quantity = PositionSizer.CalculateQuantity(
                     signal,
                     accountEquity: account.PortfolioValue,
                     maxPositionPct: options.RiskLimits.MaxPositionSizePct,
                     maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
-                    stopLossPct: options.RiskLimits.StopLossPct);
+                    stopLossPct: options.RiskLimits.StopLossPct,
+                    allowFractional: isCrypto);
                 logger.LogInformation(
-                    "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0})",
-                    signal.Symbol, quantity, account.PortfolioValue);
+                    "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0}, fractional={isCrypto})",
+                    signal.Symbol, quantity, account.PortfolioValue, isCrypto);
             }
 
             // Step 1d: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
             if (positionMultiplier < 1.0m)
             {
                 var originalQty = quantity;
-                quantity = Math.Max(1, (int)(quantity * positionMultiplier));
+                quantity = isCrypto
+                    ? Math.Max(0.0001m, Math.Round(quantity * positionMultiplier, 8))
+                    : Math.Max(1m, Math.Floor(quantity * positionMultiplier));
                 if (quantity != originalQty)
                 {
                     logger.LogInformation(
@@ -216,7 +223,7 @@ public sealed class OrderManager(
     public async ValueTask SubmitExitAsync(
         string symbol,
         string side,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         CancellationToken ct = default)
     {

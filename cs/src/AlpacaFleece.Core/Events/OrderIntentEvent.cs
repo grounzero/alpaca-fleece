@@ -6,6 +6,6 @@ namespace AlpacaFleece.Core.Events;
 public sealed record OrderIntentEvent(
     string Symbol,
     string Side, // "BUY" or "SELL"
-    int Quantity,
+    decimal Quantity,
     string ClientOrderId,
     DateTimeOffset CreatedAt) : IEvent;

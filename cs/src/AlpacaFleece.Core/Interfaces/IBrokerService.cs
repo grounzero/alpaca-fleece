@@ -28,7 +28,7 @@ public interface IBrokerService
     ValueTask<OrderInfo> SubmitOrderAsync(
         string symbol,
         string side,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         string clientOrderId,
         CancellationToken ct = default);

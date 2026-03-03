@@ -154,7 +154,7 @@ public sealed class StateRepository(
         string clientOrderId,
         string symbol,
         string side,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         DateTimeOffset createdAt,
         CancellationToken ct = default)
@@ -263,7 +263,7 @@ public sealed class StateRepository(
     public async ValueTask InsertFillIdempotentAsync(
         string alpacaOrderId,
         string clientOrderId,
-        int filledQuantity,
+        decimal filledQuantity,
         decimal filledPrice,
         string dedupeKey,
         DateTimeOffset filledAt,
@@ -585,7 +585,7 @@ public sealed class StateRepository(
     /// <summary>
     /// Gets all position tracking records (symbol, qty, entry price, ATR).
     /// </summary>
-    public async ValueTask<IReadOnlyList<(string Symbol, int Quantity, decimal EntryPrice, decimal AtrValue)>>
+    public async ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>>
         GetAllPositionTrackingAsync(CancellationToken ct = default)
     {
         try
@@ -594,7 +594,7 @@ public sealed class StateRepository(
             var positions = await dbContext.PositionTracking
                 .ToListAsync(ct);
 
-            var result = new List<(string Symbol, int Quantity, decimal EntryPrice, decimal AtrValue)>(positions.Count);
+            var result = new List<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>(positions.Count);
             foreach (var pos in positions)
             {
                 result.Add((pos.Symbol, pos.CurrentQuantity, pos.EntryPrice, pos.AtrValue));

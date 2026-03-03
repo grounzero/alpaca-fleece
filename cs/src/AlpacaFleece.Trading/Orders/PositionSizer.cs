@@ -14,11 +14,16 @@ public sealed class PositionSizer
     /// <param name="signal">The signal event with current price</param>
     /// <param name="accountEquity">Total account equity</param>
     /// <param name="maxPositionPct">Max position as % of account (e.g., 0.05 = 5%)</param>
-    /// <returns>Calculated quantity, at least 1 share</returns>
+    /// <param name="allowFractional">
+    /// When true (crypto), fractional quantities are allowed — no floor, minimum 0.0001,
+    /// rounded to 8 decimal places. When false (equities), quantity is floored and minimum is 1.
+    /// </param>
+    /// <returns>Calculated quantity</returns>
     public static decimal CalculateQuantity(
         SignalEvent signal,
         decimal accountEquity,
-        decimal maxPositionPct = 0.05m)
+        decimal maxPositionPct = 0.05m,
+        bool allowFractional = false)
     {
         if (signal == null)
             throw new ArgumentNullException(nameof(signal));
@@ -32,13 +37,11 @@ public sealed class PositionSizer
         if (signal.Metadata.CurrentPrice <= 0)
             throw new ArgumentException("Current price must be positive", nameof(signal));
 
-        // Calculate max quantity based on risk limit
         var maxQty = (accountEquity * maxPositionPct) / signal.Metadata.CurrentPrice;
 
-        // Ensure at least 1 share and enforce as integer
-        var qty = Math.Max(1m, Math.Floor(maxQty));
-
-        return qty;
+        return allowFractional
+            ? Math.Max(0.0001m, Math.Round(maxQty, 8))
+            : Math.Max(1m, Math.Floor(maxQty));
     }
 
     /// <summary>
@@ -56,13 +59,18 @@ public sealed class PositionSizer
     /// <param name="maxPositionPct">Max position as fraction of equity (e.g. 0.05 = 5%)</param>
     /// <param name="maxRiskPerTradePct">Max risk per trade as fraction of equity (e.g. 0.01 = 1%)</param>
     /// <param name="stopLossPct">Expected stop-loss distance as fraction of price (e.g. 0.02 = 2%)</param>
-    /// <returns>Calculated quantity, at least 1 share</returns>
+    /// <param name="allowFractional">
+    /// When true (crypto), fractional quantities are allowed — no floor, minimum 0.0001,
+    /// rounded to 8 decimal places. When false (equities), quantity is floored and minimum is 1.
+    /// </param>
+    /// <returns>Calculated quantity</returns>
     public static decimal CalculateQuantity(
         SignalEvent signal,
         decimal accountEquity,
         decimal maxPositionPct,
         decimal maxRiskPerTradePct,
-        decimal stopLossPct)
+        decimal stopLossPct,
+        bool allowFractional = false)
     {
         if (signal == null)
             throw new ArgumentNullException(nameof(signal));
@@ -91,7 +99,10 @@ public sealed class PositionSizer
         var riskQty = (accountEquity * maxRiskPerTradePct) / (price * stopLossPct);
 
         var maxQty = Math.Min(equityQty, riskQty);
-        return Math.Max(1m, Math.Floor(maxQty));
+
+        return allowFractional
+            ? Math.Max(0.0001m, Math.Round(maxQty, 8))
+            : Math.Max(1m, Math.Floor(maxQty));
     }
 
     /// <summary>
