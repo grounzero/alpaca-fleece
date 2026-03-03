@@ -64,6 +64,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 
         // Database path - use /app/data for persistence across restarts
         var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "trading.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
 
         // Infrastructure (Phase 1)
         services.AddBrokerServices(brokerOptions);
