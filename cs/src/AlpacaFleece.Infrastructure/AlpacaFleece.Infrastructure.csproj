@@ -25,4 +25,11 @@
     <ProjectReference Include="..\AlpacaFleece.Core\AlpacaFleece.Core.csproj" />
   </ItemGroup>
 
+  <!-- Suppress the implicit **/*.resx EmbeddedResource glob that the EF Core Design package
+       injects on some platforms. This project contains no resource files; the glob would
+       otherwise cause MSB3552 on Linux CI when no .resx files are present. -->
+  <ItemGroup>
+    <EmbeddedResource Remove="**/*.resx" />
+  </ItemGroup>
+
 </Project>

@@ -11,19 +11,28 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
 
     private readonly Dictionary<string, PositionData> _positions = new();
     private readonly IStateRepository _stateRepository = stateRepository;
+    private readonly object _lock = new();
 
     /// <summary>
-    /// Gets all current positions.
+    /// Returns a snapshot of all current positions (immutable dictionary copy).
+    /// Safe to call concurrently; callers iterate the snapshot without holding the lock.
     /// </summary>
-    public IReadOnlyDictionary<string, PositionData> GetAllPositions() => _positions;
+    public IReadOnlyDictionary<string, PositionData> GetAllPositions()
+    {
+        lock (_lock)
+            return new Dictionary<string, PositionData>(_positions);
+    }
 
     /// <summary>
     /// Gets position for symbol, or null if not open.
     /// </summary>
     public PositionData? GetPosition(string symbol)
     {
-        _positions.TryGetValue(symbol, out var pos);
-        return pos;
+        lock (_lock)
+        {
+            _positions.TryGetValue(symbol, out var pos);
+            return pos;
+        }
     }
 
     /// <summary>
@@ -32,7 +41,8 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     public void OpenPosition(string symbol, decimal quantity, decimal entryPrice, decimal atrValue)
     {
         var pos = new PositionData(symbol, quantity, entryPrice, atrValue, entryPrice - (atrValue * 1.5m));
-        _positions[symbol] = pos;
+        lock (_lock)
+            _positions[symbol] = pos;
         logger.LogInformation("Position opened: {symbol} {qty} @ {price}", symbol, quantity, entryPrice);
     }
 
@@ -41,10 +51,11 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     /// </summary>
     public void ClosePosition(string symbol)
     {
-        if (_positions.Remove(symbol))
-        {
+        bool removed;
+        lock (_lock)
+            removed = _positions.Remove(symbol);
+        if (removed)
             logger.LogInformation("Position closed: {symbol}", symbol);
-        }
     }
 
     /// <summary>
@@ -52,10 +63,13 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     /// </summary>
     public void UpdateTrailingStop(string symbol, decimal newTrailingStop)
     {
-        if (_positions.TryGetValue(symbol, out var pos))
+        lock (_lock)
         {
-            pos.TrailingStopPrice = newTrailingStop;
-            pos.LastUpdateAt = DateTimeOffset.UtcNow;
+            if (_positions.TryGetValue(symbol, out var pos))
+            {
+                pos.TrailingStopPrice = newTrailingStop;
+                pos.LastUpdateAt = DateTimeOffset.UtcNow;
+            }
         }
     }
 

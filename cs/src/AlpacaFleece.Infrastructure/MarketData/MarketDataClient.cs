@@ -162,12 +162,11 @@ public sealed class MarketDataClient(
                 // Minute bars: tight window keeps the page small and bars recent.
                 // Daily/hourly bars: use the appropriate unit — AddMinutes for minutes would
                 //   return an 80-minute window for a 25-bar daily request (empty result).
-                var from = timeFrame.Unit switch
-                {
-                    BarTimeFrameUnit.Day  => into.AddDays(-(limit * 7 / 5 + 5)),
-                    BarTimeFrameUnit.Hour => into.AddHours(-(limit + 5)),
-                    _                    => into.AddMinutes(-(limit * 2 + 30))
-                };
+                //
+                // Page size is clamped to the API max (10 000). The lookback window uses the
+                // same clamped value as its width (in the relevant time unit) so the window
+                // never spans more bars than one page can return; TakeLast(limit) therefore
+                // always operates on the most recent data rather than the oldest page.
                 var rawCryptoPageSize = timeFrame.Unit switch
                 {
                     BarTimeFrameUnit.Day  => limit * 7 / 5 + 5,
@@ -175,6 +174,14 @@ public sealed class MarketDataClient(
                     _                    => limit * 2 + 30
                 };
                 var pageSize = (uint)Math.Min(rawCryptoPageSize, 10_000);
+                // Window width = pageSize (already expressed in the correct time unit by the
+                // rawCryptoPageSize formula above, so clamped pageSize gives a consistent window).
+                var from = timeFrame.Unit switch
+                {
+                    BarTimeFrameUnit.Day  => into.AddDays(-(int)pageSize),
+                    BarTimeFrameUnit.Hour => into.AddHours(-(int)pageSize),
+                    _                    => into.AddMinutes(-(int)pageSize)
+                };
                 var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize(pageSize);
                 logger.LogDebug("Crypto request: {Symbol} from {From} to {Into}, pageSize {PageSize}",
