@@ -162,7 +162,7 @@ public sealed class SmaCrossoverStrategy(
             if (volumeFilter != null && localSnapshot != null
                 && !volumeFilter.Check(localSnapshot))
             {
-                logger.LogInformation(
+                logger.LogDebug(
                     "Volume filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
                 continue;
             }

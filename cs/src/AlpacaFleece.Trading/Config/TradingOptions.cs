@@ -72,9 +72,9 @@ public sealed class RiskLimits
     /// <summary>
     /// Maximum fraction of equity to allocate to a single position (e.g. 0.05 = 5%).
     /// Used as the equity-cap in PositionSizer's dual formula.
-    /// Note: for high-priced assets (e.g. BTC/USD at ~$70 k) the minimum-qty floor of 1
-    /// can result in a position worth the full MaxPositionSizePct dollar amount; fractional-share
-    /// support is not yet implemented. Adjust this value to control single-position exposure.
+    /// Crypto symbols use fractional quantities (minimum 0.0001, 8 decimal places).
+    /// Equity symbols are floored to whole shares with a minimum of 1; if even 1 share
+    /// exceeds this cap the signal is blocked at the RISK tier.
     /// </summary>
     public decimal MaxPositionSizePct { get; set; } = 0.05m;
 

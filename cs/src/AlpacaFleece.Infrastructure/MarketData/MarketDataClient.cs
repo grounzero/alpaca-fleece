@@ -174,13 +174,14 @@ public sealed class MarketDataClient(
                     _                    => limit * 2 + 30
                 };
                 var pageSize = (uint)Math.Min(rawCryptoPageSize, 10_000);
-                // Window width = pageSize (already expressed in the correct time unit by the
-                // rawCryptoPageSize formula above, so clamped pageSize gives a consistent window).
+                // Window width derived from the clamped page size.
+                // For minute bars the window is in minutes, so multiply by the bar width
+                // (timeFrame.Value) — e.g. 80 bars of 5-min each span 400 minutes, not 80.
                 var from = timeFrame.Unit switch
                 {
                     BarTimeFrameUnit.Day  => into.AddDays(-(int)pageSize),
                     BarTimeFrameUnit.Hour => into.AddHours(-(int)pageSize),
-                    _                    => into.AddMinutes(-(int)pageSize)
+                    _                    => into.AddMinutes(-(int)pageSize * Math.Max(1, timeFrame.Value))
                 };
                 var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize(pageSize);

@@ -200,6 +200,22 @@ public sealed class RiskManager(
                 RiskTier: "RISK");
         }
 
+        // Equity position-size guard: PositionSizer floors equities to a minimum of 1 share,
+        // so if even 1 share costs more than MaxPositionSizePct of portfolio the trade would
+        // breach the configured risk cap. Crypto is exempt — fractional quantities are used.
+        if (!_symbolClassifier.IsCrypto(signal.Symbol))
+        {
+            var maxNotional = account.PortfolioValue * options.RiskLimits.MaxPositionSizePct;
+            if (signal.Metadata.CurrentPrice > maxNotional)
+            {
+                return new RiskCheckResult(
+                    AllowsSignal: false,
+                    Reason: $"Share price {signal.Metadata.CurrentPrice:F2} exceeds max position notional " +
+                            $"{maxNotional:F2} ({options.RiskLimits.MaxPositionSizePct:P0} of {account.PortfolioValue:F2})",
+                    RiskTier: "RISK");
+            }
+        }
+
         return new RiskCheckResult(
             AllowsSignal: true,
             Reason: "Risk tier passed",
