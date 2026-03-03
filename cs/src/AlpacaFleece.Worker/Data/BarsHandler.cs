@@ -108,7 +108,7 @@ public sealed class BarsHandler(
     {
         try
         {
-          await using var context = await dbContextFactory.CreateDbContextAsync(ct);
+            await using var context = await dbContextFactory.CreateDbContextAsync(ct);
 
             // Check if bar already exists (idempotency)
             var existing = await context.Bars
