@@ -15,7 +15,6 @@ public sealed class SmaCrossoverStrategy(
 {
     private readonly RegimeDetector _regimeDetector = new();
     private readonly Dictionary<string, BarHistory> _barHistories = new();
-    private readonly HashSet<string> _cryptoSymbols = new(cryptoSymbols ?? []);
     private readonly object _syncLock = new();
     // Tracks which symbols have already logged the "strategy ready" transition.
     private readonly HashSet<string> _readySymbols = new();
