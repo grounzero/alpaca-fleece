@@ -179,7 +179,7 @@ public sealed class BarsHandler(
     }
 
     /// <summary>
-    /// Clears all dequeue (useful for testing).
+    /// Clears all in-memory queues (useful for testing).
     /// </summary>
     public void Clear()
     {
