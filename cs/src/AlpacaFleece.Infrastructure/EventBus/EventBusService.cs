@@ -4,8 +4,9 @@ namespace AlpacaFleece.Infrastructure.EventBus;
 
 /// <summary>
 /// Event bus implementation with dual-channel architecture.
-/// Normal events: bounded channel, FullMode.Wait, maxsize=10000.
-/// Exit signals: unbounded channel, never dropped.
+/// Normal events: bounded channel (capacity=10000); published via TryWrite and dropped when full.
+/// FullMode.Wait is configured so TryWrite fails on full instead of silently dropping.
+/// Exit signals: unbounded channel, written with WriteAsync and never dropped.
 /// </summary>
 public sealed class EventBusService : IEventBus
 {
