@@ -116,7 +116,11 @@ public sealed class MarketDataClient(
                 {
                     BarTimeFrameUnit.Day    => limit * 7 / 5 + 5,
                     BarTimeFrameUnit.Hour   => limit + 5,
-                    BarTimeFrameUnit.Minute => limit + 5,
+                    // For minute bars the window spans multiple trading days; page size must cover
+                    // all bars in that window (daysNeeded × bars-per-day) so TakeLast(limit)
+                    // returns the most recent bars rather than the oldest page.
+                    BarTimeFrameUnit.Minute => (int)(MinuteWindowDays(limit, timeFrame.Value)
+                                                  * (390.0 / Math.Max(1, timeFrame.Value))) + 5,
                     _                      => 1000
                 };
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)

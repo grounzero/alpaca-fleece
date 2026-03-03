@@ -93,7 +93,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<IStrategy>(sp => new SmaCrossoverStrategy(
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
-            tradingOptions.Symbols.CryptoSymbols,
             trendFilter: sp.GetRequiredService<TrendFilter>(),
             volumeFilter: sp.GetRequiredService<VolumeFilter>()));
         services.AddSingleton<PositionTracker>();

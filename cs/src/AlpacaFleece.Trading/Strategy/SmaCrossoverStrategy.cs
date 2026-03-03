@@ -9,7 +9,6 @@ namespace AlpacaFleece.Trading.Strategy;
 public sealed class SmaCrossoverStrategy(
     IEventBus eventBus,
     ILogger<SmaCrossoverStrategy> logger,
-    IEnumerable<string>? cryptoSymbols = null,
     TrendFilter? trendFilter = null,
     VolumeFilter? volumeFilter = null) : IStrategy
 {
@@ -58,7 +57,7 @@ public sealed class SmaCrossoverStrategy(
             // Add bar to history
             history.AddBar(bar.Open, bar.High, bar.Low, bar.Close, bar.Volume);
 
-            // Not ready yet — debug-level: fires every bar during warmup, not actionable in prod
+            // Not ready yet
             if (history.Count < RequiredBars)
             {
                 logger.LogDebug("Strategy not ready for {Symbol}: {Available}/{Required} bars",

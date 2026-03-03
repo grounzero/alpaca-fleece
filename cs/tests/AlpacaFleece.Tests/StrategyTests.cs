@@ -429,7 +429,8 @@ public sealed class StrategyTests
         var trendFilter = new TrendFilter(marketData, opts, Substitute.For<ILogger<TrendFilter>>());
         var volumeFilter = new VolumeFilter(opts, Substitute.For<ILogger<VolumeFilter>>());
         var strategy = new SmaCrossoverStrategy(
-            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(), null, trendFilter, volumeFilter);
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            trendFilter: trendFilter, volumeFilter: volumeFilter);
 
         await RunUptrendBarsAsync(strategy);
 
@@ -459,7 +460,8 @@ public sealed class StrategyTests
 
         var volumeFilter = new VolumeFilter(opts, Substitute.For<ILogger<VolumeFilter>>());
         var strategy = new SmaCrossoverStrategy(
-            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(), null, null, volumeFilter);
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            volumeFilter: volumeFilter);
 
         // Uniform volume: current = avg = 1_000_000 < 100 × 1_000_000 = 100_000_000 → blocked
         await RunUptrendBarsAsync(strategy, volume: 1_000_000);
@@ -497,7 +499,8 @@ public sealed class StrategyTests
         var trendFilter = new TrendFilter(marketData, opts, Substitute.For<ILogger<TrendFilter>>());
         var volumeFilter = new VolumeFilter(opts, Substitute.For<ILogger<VolumeFilter>>());
         var strategy = new SmaCrossoverStrategy(
-            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(), null, trendFilter, volumeFilter);
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            trendFilter: trendFilter, volumeFilter: volumeFilter);
 
         await RunUptrendBarsAsync(strategy);
 

@@ -76,7 +76,7 @@ public sealed class TrendFilter(
             }
         }
 
-        var limit = Math.Max(1, options.SignalFilters.DailySmaPeriod) + 5;
+        var limit = Math.Min(Math.Max(1, options.SignalFilters.DailySmaPeriod) + 5, 1_000);
         var bars = await marketDataClient.GetBarsAsync(symbol, "1Day", limit, ct);
 
         lock (_cacheLock)
