@@ -14,8 +14,11 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     private readonly object _lock = new();
 
     /// <summary>
-    /// Returns a snapshot of all current positions (immutable dictionary copy).
-    /// Safe to call concurrently; callers iterate the snapshot without holding the lock.
+    /// Returns a shallow snapshot of all current positions.
+    /// The returned dictionary is a copy — adding/removing keys is safe concurrently.
+    /// The <see cref="PositionData"/> values are the live shared objects; field reads and
+    /// writes on them (e.g. <c>PendingExit</c>) are not protected by this lock and should
+    /// only be performed by a single owner (ExitManager sets PendingExit after publish).
     /// </summary>
     public IReadOnlyDictionary<string, PositionData> GetAllPositions()
     {

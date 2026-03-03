@@ -41,7 +41,9 @@ public sealed class TrendFilter(
                 symbol);
             return true;
         }
-        var period = Math.Max(1, options.SignalFilters.DailySmaPeriod);
+        // Minimum 2: with period=1 dailySma == lastClose, so lastClose > dailySma and
+        // lastClose < dailySma are both false — every signal is blocked regardless of direction.
+        var period = Math.Max(2, options.SignalFilters.DailySmaPeriod);
 
         if (bars.Count < period)
         {

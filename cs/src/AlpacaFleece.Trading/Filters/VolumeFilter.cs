@@ -17,7 +17,9 @@ public sealed class VolumeFilter(
         if (!options.SignalFilters.EnableVolumeFilter)
             return true;
 
-        var lookback = Math.Max(1, options.SignalFilters.VolumeLookbackPeriod);
+        // Minimum 2: with lookback=1 the average equals the current bar's volume, so
+        // currentVolume >= avg * multiplier (default 1.5) can never be true — every signal blocked.
+        var lookback = Math.Max(2, options.SignalFilters.VolumeLookbackPeriod);
         if (bars.Count < lookback)
             return true;
 

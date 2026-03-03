@@ -132,9 +132,11 @@ public sealed class MarketDataClient(
                     var barMinutes = Math.Max(1, timeFrame.Value);
                     var barsPerDay = tradingMinutesPerDay / barMinutes;
 
-                    // Respect the existing +5 safety margin when fitting under the 10 000 cap.
+                    // Floor (not Ceiling) so effectiveDays * barsPerDay + 5 never exceeds 10 000.
+                    // Ceiling(9995/390) = 26 → rawPageSize = 26×390+5 = 10 145 (too large).
+                    // Floor(9995/390)   = 25 → rawPageSize = 25×390+5 = 9 755 ✓
                     var maxBarsUnderCap = 10_000 - 5;
-                    var maxDaysByCap = Math.Max(1, (int)Math.Ceiling(maxBarsUnderCap / barsPerDay));
+                    var maxDaysByCap = Math.Max(1, (int)Math.Floor(maxBarsUnderCap / barsPerDay));
 
                     // Never expand beyond the originally requested window; only shrink when needed.
                     var originalDays = MinuteWindowDays(limit, timeFrame.Value);
