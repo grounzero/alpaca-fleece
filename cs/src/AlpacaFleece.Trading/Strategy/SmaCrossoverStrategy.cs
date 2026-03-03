@@ -155,7 +155,7 @@ public sealed class SmaCrossoverStrategy(
             // Locals are iterated outside the lock so async filter/publish calls are safe.
             localSignals = signals;
             if (localSignals.Count > 0)
-                localSnapshot = history.GetBars();
+                localSnapshot = history.GetBars().ToArray();
         }
 
         // Apply filters and publish signals outside the lock (async calls cannot be inside lock)
