@@ -79,7 +79,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Symbol classifier (centralised symbol type detection using TradingOptions lists)
         services.AddSingleton<ISymbolClassifier>(sp =>
             new SymbolClassifier(tradingOptions.Symbols.CryptoSymbols, tradingOptions.Symbols.EquitySymbols));
-        services.AddScoped<IStrategy>(sp => new SmaCrossoverStrategy(
+        services.AddSingleton<IStrategy>(sp => new SmaCrossoverStrategy(
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
             tradingOptions.Symbols.CryptoSymbols));
