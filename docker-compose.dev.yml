@@ -1,0 +1,33 @@
+# Development Docker Compose
+# Uses volume mounts for rapid iteration - no rebuild needed for code changes
+
+services:
+  alpaca-fleece-dev:
+    build:
+      context: ./cs
+      dockerfile: Dockerfile
+    image: alpaca-fleece-cs:dev-base
+    container_name: alpaca-fleece-dev
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - Broker__ApiKey=${ALPACA_API_KEY}
+      - Broker__SecretKey=${ALPACA_SECRET_KEY}
+    volumes:
+      # Mount source code for live editing
+      - ./cs/src:/src/src:ro
+      - ./cs/tests:/src/tests:ro
+      # Mount appsettings for easy config changes
+      - ./cs/src/AlpacaFleece.Worker/appsettings.Development.json:/app/appsettings.Development.json:ro
+      # Persist database
+      - alpaca-fleece-data:/app/data
+      # Logs
+      - ./cs/logs:/app/logs
+    working_dir: /app
+    # Override entrypoint to allow shell access
+    entrypoint: ["dotnet", "AlpacaFleece.Worker.dll"]
+    # Or use shell for debugging:
+    # entrypoint: ["sleep", "infinity"]
+
+volumes:
+  alpaca-fleece-data:
+    external: true
