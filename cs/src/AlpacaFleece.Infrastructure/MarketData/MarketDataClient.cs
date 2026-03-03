@@ -94,9 +94,13 @@ public sealed class MarketDataClient(
 
             if (isEquity)
             {
-                // 5 calendar days covers any weekend/holiday gap; page size 1000 fits
-                // up to ~780 bars (2 full trading days × 390 min/day) in one request.
-                var from = into.AddDays(-5);
+                // Minute/hourly bars: 5 calendar days covers any weekend/holiday gap.
+                // Daily bars: calendar-day equivalent of limit trading days + holiday buffer.
+                var from = timeframe.ToUpperInvariant() switch
+                {
+                    "1D" or "1DAY" => into.AddDays(-(limit * 7 / 5 + 5)),
+                    _ => into.AddDays(-5)
+                };
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize(1000);
 
@@ -111,12 +115,27 @@ public sealed class MarketDataClient(
             }
             else
             {
-                // Crypto trades 24/7; limit×2 minutes back is always sufficient.
-                var from = into.AddMinutes(-(limit * 2 + 30));
+                // Crypto trades 24/7. Window and page size are scaled to the timeframe unit so
+                // all requested bars fit in one page and none are stale.
+                // Minute bars: tight window keeps the page small and bars recent.
+                // Daily/hourly bars: use the appropriate unit — AddMinutes for minutes would
+                //   return an 80-minute window for a 25-bar daily request (empty result).
+                var from = timeframe.ToUpperInvariant() switch
+                {
+                    "1D" or "1DAY" => into.AddDays(-(limit * 7 / 5 + 5)),
+                    "1H" or "1HOUR" => into.AddHours(-(limit + 5)),
+                    _ => into.AddMinutes(-(limit * 2 + 30))
+                };
+                var pageSize = (uint)(timeframe.ToUpperInvariant() switch
+                {
+                    "1D" or "1DAY" => limit * 7 / 5 + 5,
+                    "1H" or "1HOUR" => limit + 5,
+                    _ => limit * 2 + 30
+                });
                 var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
-                    .WithPageSize((uint)(limit * 2 + 30));
-                logger.LogDebug("Crypto request: {Symbol} from {From} to {Into}, pageSize {PageSize}", 
-                    symbol, from, into, limit * 2 + 30);
+                    .WithPageSize(pageSize);
+                logger.LogDebug("Crypto request: {Symbol} from {From} to {Into}, pageSize {PageSize}",
+                    symbol, from, into, pageSize);
                 var page = await cryptoDataClient.ListHistoricalBarsAsync(request, cts.Token);
                 logger.LogDebug("Crypto response: {Symbol} returned {Count} items", symbol, page.Items.Count);
                 items = page.Items;

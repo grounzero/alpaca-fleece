@@ -35,6 +35,71 @@ public sealed class MarketDataClientTests
         return new MarketDataClient(equityClient, cryptoClient, brokerOptions, logger, symbolClassifier);
     }
 
+    // ── Daily bar lookback regression tests ──────────────────────────────────────────────────────
+
+    private static (MarketDataClient Client, IAlpacaCryptoDataClient MockCrypto) CreateCryptoOnlyClient()
+    {
+        var mockCrypto = Substitute.For<IAlpacaCryptoDataClient>();
+        var emptyPage = Substitute.For<IPage<IBar>>();
+        emptyPage.Items.Returns(new List<IBar>().AsReadOnly());
+        mockCrypto
+            .ListHistoricalBarsAsync(Arg.Any<HistoricalCryptoBarsRequest>(), Arg.Any<CancellationToken>())
+            .Returns(emptyPage);
+
+        var sc = new SymbolClassifier(new List<string> { "BTC/USD" }, new List<string>());
+        var client = new MarketDataClient(
+            Substitute.For<IAlpacaDataClient>(),
+            mockCrypto,
+            new BrokerOptions { ApiKey = "k", SecretKey = "s", IsPaperTrading = true },
+            Substitute.For<ILogger<MarketDataClient>>(),
+            sc);
+        return (client, mockCrypto);
+    }
+
+    [Fact]
+    public async Task GetBarsAsync_CryptoDailyBars_LooksBackInDays()
+    {
+        // Regression: before the fix, from = UtcNow - (25*2+30) minutes = 80 minutes back,
+        // which returns zero daily bars. After the fix, from is limit*7/5+5 = 40 days back.
+        var (client, mockCrypto) = CreateCryptoOnlyClient();
+
+        HistoricalCryptoBarsRequest? captured = null;
+        mockCrypto
+            .ListHistoricalBarsAsync(
+                Arg.Do<HistoricalCryptoBarsRequest>(r => captured = r),
+                Arg.Any<CancellationToken>())
+            .Returns(Substitute.For<IPage<IBar>>());
+
+        await client.GetBarsAsync("BTC/USD", "1Day", 25);
+
+        Assert.NotNull(captured);
+        // limit=25 → calendarDays = 25*7/5+5 = 40; from must be ≥ 39 days ago
+        Assert.True(captured.TimeInterval.From <= DateTime.UtcNow.AddDays(-39),
+            $"Expected from ≤ {DateTime.UtcNow.AddDays(-39):u}, got {captured.TimeInterval.From}");
+    }
+
+    [Fact]
+    public async Task GetBarsAsync_CryptoMinuteBars_LooksBackInMinutes()
+    {
+        // Minute bars must keep the original tight window (limit*2+30 minutes) so that
+        // TakeLast returns recent bars, not stale bars from days ago.
+        var (client, mockCrypto) = CreateCryptoOnlyClient();
+
+        HistoricalCryptoBarsRequest? captured = null;
+        mockCrypto
+            .ListHistoricalBarsAsync(
+                Arg.Do<HistoricalCryptoBarsRequest>(r => captured = r),
+                Arg.Any<CancellationToken>())
+            .Returns(Substitute.For<IPage<IBar>>());
+
+        await client.GetBarsAsync("BTC/USD", "1m", 25);
+
+        Assert.NotNull(captured);
+        // limit=25 → window = 25*2+30 = 80 minutes; from must be within the last 2 hours
+        Assert.True(captured.TimeInterval.From >= DateTime.UtcNow.AddHours(-2),
+            $"Expected from ≥ {DateTime.UtcNow.AddHours(-2):u} (tight minute window), got {captured.TimeInterval.From}");
+    }
+
     [Fact]
     public async Task GetBarsAsync_ReturnsEmptyList_WhenNoData()
     {
