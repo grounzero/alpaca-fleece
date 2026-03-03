@@ -20,6 +20,7 @@ public sealed class RiskManager(
     IMarketDataClient? marketDataClient = null,
     DrawdownMonitor? drawdownMonitor = null,
     CorrelationService? correlationService = null,
+    IPositionTracker? positionTracker = null,
     ISymbolClassifier? symbolClassifier = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
@@ -174,18 +175,29 @@ public sealed class RiskManager(
             }
         }
 
-        // Max concurrent positions check
-        var positions = await broker.GetPositionsAsync(ct);
-        if (positions.Count >= options.RiskLimits.MaxConcurrentPositions)
+        // Max concurrent positions check — PositionTracker is the source of truth when injected;
+        // fall back to broker for backwards compatibility (e.g. tests without tracker injected).
+        int positionCount;
+        bool signalSymbolTracked;
+        if (positionTracker != null)
         {
-            // Allow if this is a reversal (closing old, opening new)
-            if (!positions.Any(p => p.Symbol == signal.Symbol))
-            {
-                return new RiskCheckResult(
-                    AllowsSignal: false,
-                    Reason: $"Max concurrent positions reached: {positions.Count} >= {options.RiskLimits.MaxConcurrentPositions}",
-                    RiskTier: "RISK");
-            }
+            var tracked = positionTracker.GetAllPositions();
+            positionCount = tracked.Count;
+            signalSymbolTracked = tracked.ContainsKey(signal.Symbol);
+        }
+        else
+        {
+            var brokerPositions = await broker.GetPositionsAsync(ct);
+            positionCount = brokerPositions.Count;
+            signalSymbolTracked = brokerPositions.Any(p => p.Symbol == signal.Symbol);
+        }
+
+        if (positionCount >= options.RiskLimits.MaxConcurrentPositions && !signalSymbolTracked)
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: $"Max concurrent positions reached: {positionCount} >= {options.RiskLimits.MaxConcurrentPositions}",
+                RiskTier: "RISK");
         }
 
         // Max position size check

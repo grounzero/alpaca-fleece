@@ -271,6 +271,103 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
         Assert.True(result.AllowsSignal);
     }
 
+    [Fact]
+    public async Task CheckSignalAsync_ThrowsOnMaxConcurrentPositions_UsesTracker()
+    {
+        // Arrange: market open, tracker has 2 positions (MSFT + GOOGL), limit is 2
+        _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(
+                IsOpen: true,
+                NextOpen: DateTimeOffset.UtcNow.AddHours(15),
+                NextClose: DateTimeOffset.UtcNow.AddHours(7),
+                FetchedAt: DateTimeOffset.UtcNow));
+
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new AccountInfo(
+                AccountId: "test",
+                CashAvailable: 10000m,
+                CashReserved: 0m,
+                PortfolioValue: 100000m,
+                DayTradeCount: 0m,
+                IsTradable: true,
+                IsAccountRestricted: false,
+                FetchedAt: DateTimeOffset.UtcNow));
+
+        var trackerMock = Substitute.For<IPositionTracker>();
+        trackerMock.GetAllPositions().Returns(new Dictionary<string, PositionData>
+        {
+            ["MSFT"] = new PositionData("MSFT", 10, 300m, 2m, 297m),
+            ["GOOGL"] = new PositionData("GOOGL", 5, 2800m, 10m, 2785m)
+        });
+
+        var options = new TradingOptions
+        {
+            RiskLimits = new RiskLimits { MaxConcurrentPositions = 2 },
+            Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0 },
+            Session = new SessionOptions { MarketOpenTime = TimeSpan.Zero, MarketCloseTime = new TimeSpan(23, 59, 59) }
+        };
+        var riskManager = new RiskManager(
+            _brokerMock, fixture.StateRepository, options, _logger,
+            positionTracker: trackerMock);
+
+        var signal = CreateSignal("AAPL", "BUY");
+
+        var ex = await Assert.ThrowsAsync<RiskManagerException>(
+            () => riskManager.CheckSignalAsync(signal).AsTask());
+
+        Assert.Contains("Max concurrent positions", ex.Message);
+        // Broker position endpoint must NOT be called — tracker is the source of truth
+        _ = _brokerMock.DidNotReceive().GetPositionsAsync(Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task CheckSignalAsync_AllowsReversalWithMaxPositions_UsesTracker()
+    {
+        // Arrange: tracker has 2 positions including AAPL (reversal scenario), limit is 2
+        _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(
+                IsOpen: true,
+                NextOpen: DateTimeOffset.UtcNow.AddHours(15),
+                NextClose: DateTimeOffset.UtcNow.AddHours(7),
+                FetchedAt: DateTimeOffset.UtcNow));
+
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new AccountInfo(
+                AccountId: "test",
+                CashAvailable: 10000m,
+                CashReserved: 0m,
+                PortfolioValue: 100000m,
+                DayTradeCount: 0m,
+                IsTradable: true,
+                IsAccountRestricted: false,
+                FetchedAt: DateTimeOffset.UtcNow));
+
+        var trackerMock = Substitute.For<IPositionTracker>();
+        trackerMock.GetAllPositions().Returns(new Dictionary<string, PositionData>
+        {
+            ["AAPL"] = new PositionData("AAPL", 10, 150m, 2m, 147m),
+            ["GOOGL"] = new PositionData("GOOGL", 5, 2800m, 10m, 2785m)
+        });
+
+        var options = new TradingOptions
+        {
+            RiskLimits = new RiskLimits { MaxConcurrentPositions = 2 },
+            Filters = new FiltersOptions { MinMinutesAfterOpen = 0, MinMinutesBeforeClose = 0 },
+            Session = new SessionOptions { MarketOpenTime = TimeSpan.Zero, MarketCloseTime = new TimeSpan(23, 59, 59) }
+        };
+        var riskManager = new RiskManager(
+            _brokerMock, fixture.StateRepository, options, _logger,
+            positionTracker: trackerMock);
+
+        var signal = CreateSignal("AAPL", "SELL");
+
+        var result = await riskManager.CheckSignalAsync(signal);
+
+        Assert.True(result.AllowsSignal);
+        // Broker position endpoint must NOT be called — tracker is the source of truth
+        _ = _brokerMock.DidNotReceive().GetPositionsAsync(Arg.Any<CancellationToken>());
+    }
+
     // TIER 3: FILTER CHECKS
 
     [Fact]

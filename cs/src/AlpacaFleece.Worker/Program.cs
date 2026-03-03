@@ -97,6 +97,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             trendFilter: sp.GetRequiredService<TrendFilter>(),
             volumeFilter: sp.GetRequiredService<VolumeFilter>()));
         services.AddSingleton<PositionTracker>();
+        services.AddSingleton<IPositionTracker>(sp => sp.GetRequiredService<PositionTracker>());
 
         // Phase 2: Data Handling
         services.AddSingleton<IDataHandler, DataHandler>();
@@ -127,6 +128,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             sp.GetRequiredService<ILogger<RiskManager>>(),
             drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
             correlationService: sp.GetRequiredService<CorrelationService>(),
+            positionTracker: sp.GetRequiredService<IPositionTracker>(),
             symbolClassifier: sp.GetRequiredService<ISymbolClassifier>()));
         services.AddScoped<IOrderManager>(sp => new OrderManager(
             sp.GetRequiredService<IBrokerService>(),
