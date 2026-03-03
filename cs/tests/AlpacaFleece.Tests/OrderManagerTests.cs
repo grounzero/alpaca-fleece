@@ -15,7 +15,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         var options = new TradingOptions();
         var riskManager = Substitute.For<IRiskManager>();
         riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
-            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: null, RiskTier: "FILTERS"));
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
         var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
 
         var signal = new SignalEvent(
@@ -69,7 +69,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         var options = new TradingOptions();
         var riskManager = Substitute.For<IRiskManager>();
         riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
-            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: null, RiskTier: "FILTERS"));
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
         var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
 
         var signal = new SignalEvent(
@@ -122,7 +122,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         var options = new TradingOptions();
         var riskManager = Substitute.For<IRiskManager>();
         riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
-            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: null, RiskTier: "FILTERS"));
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
         var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
 
         var signal = new SignalEvent(
@@ -190,7 +190,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
 
         var riskManager = Substitute.For<IRiskManager>();
         riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
-            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: null, RiskTier: "FILTERS"));
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
 
         var orderManager = new OrderManager(
             _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);

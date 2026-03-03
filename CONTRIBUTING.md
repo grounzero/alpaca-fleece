@@ -15,6 +15,7 @@ make dev-setup
 Then activate the venv in your shell:
 
 ```bash
+cd py
 source .venv/bin/activate
 ```
 
@@ -29,7 +30,7 @@ Notes
 
 - `pre-commit install` is run automatically by `make dev-setup`, but you must run it once per clone if you
   skip `make dev-setup`.
-- Activation (`source .venv/bin/activate`) must be done in each new shell session where you work on the repo.
+- Activation (`cd py && source .venv/bin/activate`) must be done in each new shell session where you work on the repo.
 - CI enforces checks for PRs targeting `main` via `/.github/workflows/ci.yml`.
 
 If you prefer a different Python management tool (e.g. `pipx` or `pyenv`), adapt the steps above but ensure

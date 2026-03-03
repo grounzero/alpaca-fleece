@@ -1,3 +1,6 @@
+using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.DependencyInjection;
+
 namespace AlpacaFleece.Tests;
 
 /// <summary>
@@ -12,10 +15,6 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     private readonly IOrderManager _orderManagerMock = Substitute.For<IOrderManager>();
     private readonly IDataHandler _dataHandlerMock = Substitute.For<IDataHandler>();
     private readonly IBrokerService _brokerMock = Substitute.For<IBrokerService>();
-    private readonly BarsHandler _barsHandlerMock = Substitute.For<BarsHandler>(
-        Substitute.For<IEventBus>(),
-        Substitute.For<IDbContextFactory<TradingDbContext>>(),
-        Substitute.For<ILogger<BarsHandler>>());
     private readonly IStrategy _strategyMock = Substitute.For<IStrategy>();
 
     public async Task InitializeAsync() => await Task.CompletedTask;
@@ -47,7 +46,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
                 IsAccountRestricted: false,
                 FetchedAt: DateTimeOffset.UtcNow));
 
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         var signal = new SignalEvent(
@@ -76,7 +76,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     public async Task HandleEventAsync_ExitSignalEventHasPriority()
     {
         // ExitSignalEvent should be handled before other events
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         // Verify dispatcher is created
@@ -86,7 +87,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     [Fact]
     public async Task HandleEventAsync_BarEventRoutesToDataHandler()
     {
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         var barEvent = new BarEvent(
@@ -107,7 +109,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     public async Task HandleBarEventAsync_CallsBarsHandlerWithCorrectEvent()
     {
         // Arrange
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         var barEvent = new BarEvent(
@@ -126,26 +129,26 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         Assert.NotNull(method);
 
-        await (method.Invoke(dispatcher, [barEvent]) as ValueTask)!;
+        var result = (ValueTask)method.Invoke(dispatcher, [barEvent])!;
+        await result;
 
-        // Assert - Verify BarsHandler was called with correct bar event
-        await _barsHandlerMock.Received(1).HandleBarEventAsync(
-            Arg.Is<BarEvent>(b =>
-                b.Symbol == barEvent.Symbol &&
-                b.Timeframe == barEvent.Timeframe &&
-                b.Open == barEvent.Open &&
-                b.High == barEvent.High &&
-                b.Low == barEvent.Low &&
-                b.Close == barEvent.Close &&
-                b.Volume == barEvent.Volume),
-            Arg.Any<CancellationToken>());
+        // Assert - Verify BarsHandler stored the bar data
+        var bars = barsHandler.GetBarsForSymbol(barEvent.Symbol);
+        Assert.Single(bars);
+        var stored = bars[0];
+        Assert.Equal(barEvent.Open, stored.O);
+        Assert.Equal(barEvent.High, stored.H);
+        Assert.Equal(barEvent.Low, stored.L);
+        Assert.Equal(barEvent.Close, stored.C);
+        Assert.Equal(barEvent.Volume, stored.V);
     }
 
     [Fact]
     public async Task HandleBarEventAsync_CallsStrategyOnBarAsyncAfterPersistence()
     {
         // Arrange
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         var barEvent = new BarEvent(
@@ -164,7 +167,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
             System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
         Assert.NotNull(method);
 
-        await (method.Invoke(dispatcher, [barEvent]) as ValueTask)!;
+        var result = (ValueTask)method.Invoke(dispatcher, [barEvent])!;
+        await result;
 
         // Assert - Verify strategy.OnBarAsync was called after persistence
         await _strategyMock.Received(1).OnBarAsync(
@@ -176,10 +180,9 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     public async Task HandleBarEventAsync_HandlesPersistenceFailureGracefully()
     {
         // Arrange - Make BarsHandler throw an exception
-        _barsHandlerMock.HandleBarEventAsync(Arg.Any<BarEvent>(), Arg.Any<CancellationToken>())
-            .Returns(System.Threading.Tasks.ValueTask.FromException(new BarsHandlerException("Persistence failed")));
+        var barsHandler = CreateBarsHandler(new FailingDbContextFactory());
 
-        var serviceProvider = CreateServiceProvider();
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         var barEvent = new BarEvent(
@@ -201,7 +204,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         // Should not throw exception
         var exception = await Record.ExceptionAsync(async () =>
         {
-            await (method.Invoke(dispatcher, [barEvent]) as ValueTask)!;
+            var result = (ValueTask)method.Invoke(dispatcher, [barEvent])!;
+            await result;
         });
 
         Assert.Null(exception);
@@ -214,7 +218,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     public async Task HandleEventAsync_ContinuesOnExceptionInHandler()
     {
         // Event dispatcher should not crash on exceptions
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         // Verify dispatcher continues running despite errors
@@ -225,7 +230,8 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     public async Task HandleEventAsync_ExitSignalNeverDropped()
     {
         // Exit signals should never be soft-skipped or dropped
-        var serviceProvider = CreateServiceProvider();
+        var barsHandler = CreateBarsHandler(CreateDbContextFactory());
+        var serviceProvider = CreateServiceProvider(barsHandler);
         var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
 
         var exitSignal = new ExitSignalEvent(
@@ -240,7 +246,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
 
     // HELPER
 
-    private IServiceProvider CreateServiceProvider()
+    private IServiceProvider CreateServiceProvider(BarsHandler barsHandler)
     {
         var provider = Substitute.For<IServiceProvider>();
         var scope = Substitute.For<IServiceScope>();
@@ -262,7 +268,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         provider.GetService(typeof(IPositionTracker))
             .Returns(Substitute.For<IPositionTracker>());
         provider.GetService(typeof(BarsHandler))
-            .Returns(_barsHandlerMock);
+            .Returns(barsHandler);
         provider.GetService(typeof(IServiceScopeFactory))
             .Returns(scopeFactory);
 
@@ -271,5 +277,30 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
             .Returns(_strategyMock);
 
         return provider;
+    }
+
+    private IDbContextFactory<TradingDbContext> CreateDbContextFactory()
+    {
+        var connectionString = fixture.DbContext.Database.GetDbConnection().ConnectionString;
+        var options = new DbContextOptionsBuilder<TradingDbContext>()
+            .UseSqlite(connectionString)
+            .Options;
+        return new TestDbContextFactory(options);
+    }
+
+    private static BarsHandler CreateBarsHandler(IDbContextFactory<TradingDbContext> factory)
+        => new(
+            Substitute.For<IEventBus>(),
+            factory,
+            Substitute.For<ILogger<BarsHandler>>());
+
+    private sealed class FailingDbContextFactory : IDbContextFactory<TradingDbContext>
+    {
+        public TradingDbContext CreateDbContext()
+            => throw new InvalidOperationException("Persistence failed");
+
+        public ValueTask<TradingDbContext> CreateDbContextAsync(
+            CancellationToken cancellationToken = default)
+            => throw new InvalidOperationException("Persistence failed");
     }
 }

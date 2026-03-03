@@ -87,8 +87,15 @@ def load_env() -> EnvConfig:
     Raises:
         ConfigError: If API keys are missing or contain placeholder values
     """
-    # Load .env file - env vars override file (standard behaviour)
-    load_dotenv(override=True)
+    # Load .env from the Python project folder first, then fall back to repo root.
+    # This keeps local dev aligned with the py/ layout while remaining flexible.
+    env_path = Path(__file__).resolve().parents[1] / ".env"
+    if env_path.exists():
+        load_dotenv(dotenv_path=str(env_path), override=True)
+    else:
+        repo_env = Path(__file__).resolve().parents[2] / ".env"
+        if repo_env.exists():
+            load_dotenv(dotenv_path=str(repo_env), override=True)
 
     # Get values from environment (either from shell or .env file)
     api_key = os.getenv("ALPACA_API_KEY", "").strip()

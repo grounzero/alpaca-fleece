@@ -55,15 +55,21 @@ debug
 *.md
 !README.md
 !CONTRIBUTING.md
+!py/README.md
+!cs/README.md
 
 # Logs
 logs/
+py/logs/
 *.log
 
 # Data
 data/reconciliation_error.json
 data/reconciliation_fix.json
 data/trades.db
+py/data/reconciliation_error.json
+py/data/reconciliation_fix.json
+py/data/trades.db
 
 # Build
 dist/
@@ -92,6 +98,8 @@ agents/
 # Runtime files
 data/*.pid
 data/metrics.json
+py/data/*.pid
+py/data/metrics.json
 
 # Backup files
 *.backup

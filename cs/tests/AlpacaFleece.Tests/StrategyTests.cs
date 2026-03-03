@@ -18,7 +18,6 @@ public sealed class StrategyTests
         }
 
         var sma5 = history.CalculateSma(5);
-        var expectedSma5 = (105m + 106m + 107m + 108m + 109m) / 5m; // 107
 
         Assert.Equal(107m, sma5);
     }
@@ -276,13 +275,8 @@ public sealed class StrategyTests
         var eventBus = Substitute.For<IEventBus>();
         var logger = Substitute.For<ILogger<SmaCrossoverStrategy>>();
 
-        var signalEmitted = false;
         eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
-            .Returns(_ =>
-            {
-                signalEmitted = true;
-                return new ValueTask<bool>(true);
-            });
+            .Returns(_ => new ValueTask<bool>(true));
 
         var strategy = new SmaCrossoverStrategy(eventBus, logger);
 

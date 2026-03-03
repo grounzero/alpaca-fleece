@@ -229,7 +229,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
         Assert.Equal(DrawdownLevel.Normal, previous);
         Assert.Equal(DrawdownLevel.Normal, current);
         Assert.Equal(0m, pct);
-        _brokerMock.DidNotReceive().GetAccountAsync(Arg.Any<CancellationToken>());
+        await _brokerMock.DidNotReceive().GetAccountAsync(Arg.Any<CancellationToken>());
     }
 
     // ─── Transitions reported ───────────────────────────────────────────────────

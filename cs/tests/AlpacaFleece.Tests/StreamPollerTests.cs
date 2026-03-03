@@ -203,7 +203,7 @@ public sealed class StreamPollerTests
         Assert.Equal(3, batches.Count);
         Assert.Equal(3, batches[0].Count());
         Assert.Equal(3, batches[1].Count());
-        Assert.Equal(1, batches[2].Count());
+        Assert.Single(batches[2]);
     }
 
     [Fact]

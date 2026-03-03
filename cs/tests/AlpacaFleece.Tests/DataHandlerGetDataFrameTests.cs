@@ -27,7 +27,7 @@ public sealed class DataHandlerGetDataFrameTests
     }
 
     [Fact]
-    public void GetDataFrame_WithHistory_ReturnsQuotes()
+    public async Task GetDataFrame_WithHistory_ReturnsQuotes()
     {
         var bar = new BarEvent(
             Symbol: "AAPL",
@@ -39,7 +39,7 @@ public sealed class DataHandlerGetDataFrameTests
             Close: 101m,
             Volume: 1000);
 
-        _dataHandler.OnBarAsync(bar, CancellationToken.None).GetAwaiter().GetResult();
+        await _dataHandler.OnBarAsync(bar, CancellationToken.None);
 
         var result = _dataHandler.GetDataFrame("AAPL");
 
@@ -54,13 +54,13 @@ public sealed class DataHandlerGetDataFrameTests
     }
 
     [Fact]
-    public void GetDataFrame_MultipleSymbols_ReturnsCorrectSymbol()
+    public async Task GetDataFrame_MultipleSymbols_ReturnsCorrectSymbol()
     {
         var bar1 = new BarEvent("AAPL", "1m", DateTimeOffset.UtcNow, 100m, 102m, 99m, 101m, 1000);
         var bar2 = new BarEvent("MSFT", "1m", DateTimeOffset.UtcNow, 200m, 202m, 199m, 201m, 2000);
 
-        _dataHandler.OnBarAsync(bar1, CancellationToken.None).GetAwaiter().GetResult();
-        _dataHandler.OnBarAsync(bar2, CancellationToken.None).GetAwaiter().GetResult();
+        await _dataHandler.OnBarAsync(bar1, CancellationToken.None);
+        await _dataHandler.OnBarAsync(bar2, CancellationToken.None);
 
         var aapl = _dataHandler.GetDataFrame("AAPL");
         var msft = _dataHandler.GetDataFrame("MSFT");
@@ -74,7 +74,7 @@ public sealed class DataHandlerGetDataFrameTests
     }
 
     [Fact]
-    public void GetDataFrame_MultipleBars_PreservesOrder()
+    public async Task GetDataFrame_MultipleBars_PreservesOrder()
     {
         var now = DateTimeOffset.UtcNow;
         for (var i = 0; i < 5; i++)
@@ -89,7 +89,7 @@ public sealed class DataHandlerGetDataFrameTests
                 Close: 101m + i,
                 Volume: 1000 + i);
 
-            _dataHandler.OnBarAsync(bar, CancellationToken.None).GetAwaiter().GetResult();
+            await _dataHandler.OnBarAsync(bar, CancellationToken.None);
         }
 
         var result = _dataHandler.GetDataFrame("AAPL");

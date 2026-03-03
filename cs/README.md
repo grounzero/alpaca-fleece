@@ -24,7 +24,7 @@ The solution is organized into 5 projects:
 ## Project Structure
 
 ```
-csharp/
+cs/
 ├── AlpacaFleece.sln
 ├── src/
 │   ├── AlpacaFleece.Core/
@@ -84,7 +84,7 @@ There are a few small stub services included for incremental development (see `S
 ### Installation
 
 ```bash
-cd /Users/me/git/alpaca-fleece/csharp
+cd /Users/me/git/alpaca-fleece/cs
 
 # Restore dependencies
 dotnet restore

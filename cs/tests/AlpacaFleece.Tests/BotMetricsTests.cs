@@ -148,7 +148,7 @@ public sealed class BotMetricsTests
     }
 
     [Fact]
-    public void Counters_AreThreadSafe()
+    public async Task Counters_AreThreadSafe()
     {
         // Arrange
         var metrics = new BotMetrics(_logger);
@@ -166,7 +166,7 @@ public sealed class BotMetricsTests
             }));
         }
 
-        Task.WaitAll(tasks.ToArray());
+        await Task.WhenAll(tasks);
 
         // Assert
         Assert.Equal(1000, metrics.SignalsGenerated);

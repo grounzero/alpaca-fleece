@@ -1,15 +1,15 @@
-# Multi-stage build for AlpacaFleece
-FROM mcr.microsoft.com/dotnet/sdk:10.0-preview-alpine AS build
+# Multi-stage build for AlpacaFleece C# Worker
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
 # Copy project files
-COPY ["csharp/src/AlpacaFleece.Core/AlpacaFleece.Core.csproj", "src/AlpacaFleece.Core/"]
-COPY ["csharp/src/AlpacaFleece.Infrastructure/AlpacaFleece.Infrastructure.csproj", "src/AlpacaFleece.Infrastructure/"]
-COPY ["csharp/src/AlpacaFleece.Trading/AlpacaFleece.Trading.csproj", "src/AlpacaFleece.Trading/"]
-COPY ["csharp/src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj", "src/AlpacaFleece.Worker/"]
+COPY ["src/AlpacaFleece.Core/AlpacaFleece.Core.csproj", "src/AlpacaFleece.Core/"]
+COPY ["src/AlpacaFleece.Infrastructure/AlpacaFleece.Infrastructure.csproj", "src/AlpacaFleece.Infrastructure/"]
+COPY ["src/AlpacaFleece.Trading/AlpacaFleece.Trading.csproj", "src/AlpacaFleece.Trading/"]
+COPY ["src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj", "src/AlpacaFleece.Worker/"]
 
 # Copy source files
-COPY ["csharp/src/", "src/"]
+COPY ["src/", "src/"]
 
 # Restore and build
 RUN dotnet restore "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj"
@@ -21,7 +21,7 @@ RUN dotnet publish "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
     -c Release -o /app/publish
 
 # Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 WORKDIR /app
 
 # Install SQLite, timezone data, and process utilities for healthcheck
