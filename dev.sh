@@ -91,7 +91,7 @@ run_tests() {
 }
 
 show_logs() {
-    docker logs -f alpaca-fleece-dev 2>&1 | grep -E "DBG|INF|WRN|ERR" | tail -50
+    docker logs --tail 50 -f alpaca-fleece-dev 2>&1 | grep -E "DBG|INF|WRN|ERR"
 }
 
 stop_dev() {
