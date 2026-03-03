@@ -62,8 +62,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         context.Configuration.GetSection("RuntimeReconciliation").Bind(runtimeReconciliationOptions);
         services.Configure<RuntimeReconciliationOptions>(context.Configuration.GetSection("RuntimeReconciliation"));
 
-        // Database path
-        var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "trading.db");
+        // Database path - use /app/data for persistence across restarts
+        var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "trading.db");
 
         // Infrastructure (Phase 1)
         services.AddBrokerServices(brokerOptions);
