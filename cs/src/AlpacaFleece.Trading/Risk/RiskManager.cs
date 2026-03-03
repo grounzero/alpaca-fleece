@@ -200,17 +200,6 @@ public sealed class RiskManager(
                 RiskTier: "RISK");
         }
 
-        // Max position size check
-        const decimal defaultMaxPositionPct = 0.05m; // 5% of account per position
-        var maxQty = (account.PortfolioValue * defaultMaxPositionPct) / signal.Metadata.CurrentPrice;
-        if (maxQty < 1)
-        {
-            return new RiskCheckResult(
-                AllowsSignal: false,
-                Reason: $"Position size too small for account: max_qty={maxQty:F2}",
-                RiskTier: "RISK");
-        }
-
         return new RiskCheckResult(
             AllowsSignal: true,
             Reason: "Risk tier passed",

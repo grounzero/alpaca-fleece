@@ -46,7 +46,7 @@ public sealed class OrderManager(
                 quantity = (int)PositionSizer.CalculateQuantity(
                     signal,
                     accountEquity: account.PortfolioValue,
-                    maxPositionPct: options.RiskLimits.MaxRiskPerTradePct,
+                    maxPositionPct: options.RiskLimits.MaxPositionSizePct,
                     maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
                     stopLossPct: options.RiskLimits.StopLossPct);
                 logger.LogInformation(

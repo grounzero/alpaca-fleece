@@ -70,6 +70,15 @@ public sealed class RiskLimits
     public decimal StopLossPct { get; set; } = 0.02m;
 
     /// <summary>
+    /// Maximum fraction of equity to allocate to a single position (e.g. 0.05 = 5%).
+    /// Used as the equity-cap in PositionSizer's dual formula.
+    /// Note: for high-priced assets (e.g. BTC/USD at ~$70 k) the minimum-qty floor of 1
+    /// can result in a position worth the full MaxPositionSizePct dollar amount; fractional-share
+    /// support is not yet implemented. Adjust this value to control single-position exposure.
+    /// </summary>
+    public decimal MaxPositionSizePct { get; set; } = 0.05m;
+
+    /// <summary>
     /// Minimum signal confidence threshold (0-1). Signals below this are soft-skipped (FILTER tier).
     /// </summary>
     public decimal MinSignalConfidence { get; set; } = 0.5m;
