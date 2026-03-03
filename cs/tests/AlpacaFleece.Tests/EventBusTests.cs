@@ -100,4 +100,69 @@ public sealed class EventBusTests
 
         Assert.NotEmpty(processedEvents);
     }
+
+    /// <summary>
+    /// Regression test for the dispatch loop bug where awaiting the wrong task
+    /// would block event processing. Ensures normal events are dispatched even
+    /// when exit signal channel is also being monitored.
+    /// </summary>
+    [Fact]
+    public async Task DispatchAsync_ProcessesNormalEventsWhenBothChannelsActive()
+    {
+        var eventBus = new EventBusService();
+        var processedBarEvents = new List<BarEvent>();
+        var processedExitEvents = new List<ExitSignalEvent>();
+
+        // Publish multiple normal events (simulating bar polling)
+        for (int i = 0; i < 5; i++)
+        {
+            var barEvent = new BarEvent(
+                Symbol: $"SYM{i}",
+                Timeframe: "1m",
+                Timestamp: DateTimeOffset.UtcNow,
+                Open: 100m + i,
+                High: 101m + i,
+                Low: 99m + i,
+                Close: 100.5m + i,
+                Volume: 1000);
+            await eventBus.PublishAsync(barEvent);
+        }
+
+        // Also publish an exit signal
+        var exitSignal = new ExitSignalEvent("AAPL", "STOP_LOSS", 145m, DateTimeOffset.UtcNow);
+        await eventBus.PublishAsync(exitSignal);
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(2));
+        try
+        {
+            await eventBus.DispatchAsync(
+                async @event =>
+                {
+                    switch (@event)
+                    {
+                        case BarEvent bar:
+                            processedBarEvents.Add(bar);
+                            break;
+                        case ExitSignalEvent exit:
+                            processedExitEvents.Add(exit);
+                            break;
+                    }
+                    await ValueTask.CompletedTask;
+                },
+                cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected timeout
+        }
+
+        // Assert all events were processed
+        Assert.Equal(5, processedBarEvents.Count);
+        Assert.Single(processedExitEvents);
+        
+        // Verify all bar symbols were processed
+        var expectedSymbols = new[] { "SYM0", "SYM1", "SYM2", "SYM3", "SYM4" };
+        var actualSymbols = processedBarEvents.Select(e => e.Symbol).OrderBy(s => s);
+        Assert.Equal(expectedSymbols, actualSymbols);
+    }
 }

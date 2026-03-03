@@ -95,7 +95,7 @@ public sealed class EventBusService : IEventBus
                         await handler(exitSignal);
                     }
                 }
-                else if (await normalTask)
+                else if (completedTask == normalTask && await normalTask)
                 {
                     while (_normalChannel.Reader.TryRead(out var normalEvent))
                     {
