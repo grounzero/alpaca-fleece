@@ -64,11 +64,13 @@ public sealed class MarketDataClientTests
         var (client, mockCrypto) = CreateCryptoOnlyClient();
 
         HistoricalCryptoBarsRequest? captured = null;
+        var emptyPage = Substitute.For<IPage<IBar>>();
+        emptyPage.Items.Returns(new List<IBar>().AsReadOnly());
         mockCrypto
             .ListHistoricalBarsAsync(
                 Arg.Do<HistoricalCryptoBarsRequest>(r => captured = r),
                 Arg.Any<CancellationToken>())
-            .Returns(Substitute.For<IPage<IBar>>());
+            .Returns(emptyPage);
 
         await client.GetBarsAsync("BTC/USD", "1Day", 25);
 
@@ -86,11 +88,13 @@ public sealed class MarketDataClientTests
         var (client, mockCrypto) = CreateCryptoOnlyClient();
 
         HistoricalCryptoBarsRequest? captured = null;
+        var emptyPage = Substitute.For<IPage<IBar>>();
+        emptyPage.Items.Returns(new List<IBar>().AsReadOnly());
         mockCrypto
             .ListHistoricalBarsAsync(
                 Arg.Do<HistoricalCryptoBarsRequest>(r => captured = r),
                 Arg.Any<CancellationToken>())
-            .Returns(Substitute.For<IPage<IBar>>());
+            .Returns(emptyPage);
 
         await client.GetBarsAsync("BTC/USD", "1m", 25);
 

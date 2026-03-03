@@ -94,15 +94,25 @@ public sealed class MarketDataClient(
 
             if (isEquity)
             {
-                // Minute/hourly bars: 5 calendar days covers any weekend/holiday gap.
-                // Daily bars: calendar-day equivalent of limit trading days + holiday buffer.
-                var from = timeframe.ToUpperInvariant() switch
+                // Window and page size are scaled to the timeframe so all requested bars fit in
+                // one page. Daily bars need a calendar-day window; minute bars use a 5-day window
+                // that comfortably covers multiple trading sessions. Page size is clamped to the
+                // API maximum of 10 000.
+                var upperTf = timeframe.ToUpperInvariant();
+                var from = upperTf switch
                 {
-                    "1D" or "1DAY" => into.AddDays(-(limit * 7 / 5 + 5)),
-                    _ => into.AddDays(-5)
+                    "1D" or "1DAY"   => into.AddDays(-(limit * 7 / 5 + 5)),
+                    "1H" or "1HOUR"  => into.AddHours(-(limit + 5)),
+                    _                => into.AddDays(-5)
+                };
+                var rawPageSize = upperTf switch
+                {
+                    "1D" or "1DAY"   => limit * 7 / 5 + 5,
+                    "1H" or "1HOUR"  => limit + 5,
+                    _                => 1000
                 };
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
-                    .WithPageSize(1000);
+                    .WithPageSize((uint)Math.Min(rawPageSize, 10_000));
 
                 // Use IEX feed for paper trading (SIP requires paid subscription)
                 if (brokerOptions.IsPaperTrading)
@@ -126,12 +136,13 @@ public sealed class MarketDataClient(
                     "1H" or "1HOUR" => into.AddHours(-(limit + 5)),
                     _ => into.AddMinutes(-(limit * 2 + 30))
                 };
-                var pageSize = (uint)(timeframe.ToUpperInvariant() switch
+                var rawCryptoPageSize = timeframe.ToUpperInvariant() switch
                 {
-                    "1D" or "1DAY" => limit * 7 / 5 + 5,
-                    "1H" or "1HOUR" => limit + 5,
-                    _ => limit * 2 + 30
-                });
+                    "1D" or "1DAY"   => limit * 7 / 5 + 5,
+                    "1H" or "1HOUR"  => limit + 5,
+                    _                => limit * 2 + 30
+                };
+                var pageSize = (uint)Math.Min(rawCryptoPageSize, 10_000);
                 var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize(pageSize);
                 logger.LogDebug("Crypto request: {Symbol} from {From} to {Into}, pageSize {PageSize}",
