@@ -29,7 +29,7 @@ public sealed class TrendFilter(
 
         if (bars.Count < period + 1)
         {
-            logger.LogWarning(
+            logger.LogDebug(
                 "TrendFilter: insufficient daily history for {Symbol} ({Count} bars, need {Need}) — passing signal",
                 symbol, bars.Count, period + 1);
             return true;
@@ -37,7 +37,19 @@ public sealed class TrendFilter(
 
         var dailySma = CalculateSma(bars, period);
         var lastClose = bars[^1].Close;
-        var passes = side == "BUY" ? lastClose > dailySma : lastClose < dailySma;
+
+        bool passes;
+        if (string.Equals(side, "BUY", StringComparison.OrdinalIgnoreCase))
+            passes = lastClose > dailySma;
+        else if (string.Equals(side, "SELL", StringComparison.OrdinalIgnoreCase))
+            passes = lastClose < dailySma;
+        else
+        {
+            logger.LogWarning(
+                "TrendFilter: unknown side '{Side}' for {Symbol} — passing signal",
+                side, symbol);
+            return true;
+        }
 
         if (!passes)
             logger.LogDebug(
@@ -51,9 +63,13 @@ public sealed class TrendFilter(
     {
         lock (_cacheLock)
         {
-            if (_cache.TryGetValue(symbol, out var entry) &&
-                DateTimeOffset.UtcNow - entry.CachedAt < CacheTtl)
-                return entry.Bars;
+            if (_cache.TryGetValue(symbol, out var entry))
+            {
+                if (DateTimeOffset.UtcNow - entry.CachedAt < CacheTtl)
+                    return entry.Bars;
+                // Entry expired — evict now so the dictionary doesn't grow unbounded
+                _cache.Remove(symbol);
+            }
         }
 
         var limit = Math.Max(1, options.SignalFilters.DailySmaPeriod) + 5;
