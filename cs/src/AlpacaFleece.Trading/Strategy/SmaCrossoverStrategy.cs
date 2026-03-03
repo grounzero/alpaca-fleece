@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Trading.Strategy;
 
 /// <summary>
-/// Multi-timeframe SMA crossover strategy with full ATR wiring (#35 fix).
+/// Multi-timeframe SMA crossover strategy with full ATR wiring and regime detection.
 /// Uses 3 SMA pairs: (5,15), (10,30), (20,50).
 /// Emits signals based on crossovers with confidence scoring.
 /// Requires 51 bars minimum (20 + 14 ATR + buffer).
@@ -79,7 +79,7 @@ public sealed class SmaCrossoverStrategy(
             var slow3 = history.CalculateSma(SlowPeriod3);
             var atr = history.CalculateAtr(AtrPeriod);
 
-            // Validate ATR (FIX FOR #35)
+            // Validate ATR before using it in signals; if invalid, log and set to 0 to avoid misleading values in metadata
             if (atr <= 0)
             {
                 logger.LogWarning("Invalid ATR for {symbol}: {atr}", bar.Symbol, atr);
