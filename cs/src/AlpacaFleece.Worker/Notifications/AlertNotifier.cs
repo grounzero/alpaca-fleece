@@ -11,7 +11,6 @@ public sealed class AlertNotifier(
     TradingOptions tradingOptions)
 {
     private readonly NotificationOptions _options = options.Value;
-    private readonly TradingOptions _tradingOptions = tradingOptions;
     private const int MaxRetries = 3;
 
     /// <summary>
@@ -163,7 +162,7 @@ public sealed class AlertNotifier(
 
         var action = currentLevel switch
         {
-            DrawdownLevel.Warning => $"Position sizes reduced to {_tradingOptions.Drawdown.WarningPositionMultiplier:P0}.",
+            DrawdownLevel.Warning => $"Position sizes reduced to {tradingOptions.Drawdown.WarningPositionMultiplier:P0}.",
             DrawdownLevel.Halt => "No new positions allowed.",
             DrawdownLevel.Emergency => "Closing all positions immediately.",
             _ => "Normal trading resumed."
@@ -322,7 +321,7 @@ public sealed class NotificationOptions
     /// <summary>
     /// Enable/disable notifications (default: false).
     /// </summary>
-    public bool Enabled { get; set; } = false;
+    public bool Enabled { get; set; }
 
     /// <summary>
     /// Notification channel (default: Silent).
