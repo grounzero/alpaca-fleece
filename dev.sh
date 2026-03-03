@@ -14,7 +14,10 @@ NC='\033[0m' # No Color
 
 # Load env vars
 if [ -f .env ]; then
-    export $(grep -v '^#' .env | xargs)
+    # Safely load variables from .env: let the shell handle parsing/quoting
+    set -a
+    . .env
+    set +a
 fi
 
 usage() {
