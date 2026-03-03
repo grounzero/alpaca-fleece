@@ -45,13 +45,13 @@ public sealed class OrchestratorService(
         await positionTracker.InitialiseFromDbAsync(cancellationToken);
 
         // Register signal handlers
-        Console.CancelKeyPress += (sender, args) =>
+        Console.CancelKeyPress += (_, args) =>
         {
             args.Cancel = true;
             logger.LogInformation("SIGINT received, initiating graceful shutdown");
         };
 
-        AppDomain.CurrentDomain.ProcessExit += (sender, args) =>
+        AppDomain.CurrentDomain.ProcessExit += (_, args) =>
         {
             logger.LogInformation("SIGTERM received, initiating graceful shutdown");
         };

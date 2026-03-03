@@ -274,7 +274,7 @@ public sealed class RiskManager(
             try
             {
                 var snapshot = await marketDataClient.GetSnapshotAsync(signal.Symbol, ct);
-                if (snapshot != null && snapshot.BidPrice > 0 && snapshot.AskPrice > 0)
+                if (snapshot is { BidPrice: > 0, AskPrice: > 0 })
                 {
                     var spread = (snapshot.AskPrice - snapshot.BidPrice) / snapshot.BidPrice;
                     if (spread > options.Filters.MaxSpreadPct)

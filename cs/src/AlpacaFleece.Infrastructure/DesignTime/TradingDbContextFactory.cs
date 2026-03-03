@@ -1,6 +1,6 @@
 using Microsoft.EntityFrameworkCore.Design;
 
-namespace AlpacaFleece.Infrastructure.Data;
+namespace AlpacaFleece.Infrastructure.DesignTime;
 
 /// <summary>
 /// Design-time factory for EF Core tools. This avoids constructing the full

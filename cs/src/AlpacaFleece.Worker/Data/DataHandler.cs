@@ -11,7 +11,7 @@ public sealed class DataHandler(
     ILogger<DataHandler> logger) : IDataHandler
 {
     private readonly Dictionary<string, BarHistory> _barHistories = new();
-    private readonly object _syncLock = new();
+    private readonly Lock _syncLock = new();
 
     /// <summary>
     /// Initialises handler (no-op, EventDispatcher handles event routing).
@@ -73,7 +73,7 @@ public sealed class DataHandler(
                 return;
             }
 
-            using (context)
+            await using (context)
             {
                 var barEntity = new BarEntity
                 {

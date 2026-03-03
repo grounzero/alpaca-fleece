@@ -6,7 +6,7 @@ namespace AlpacaFleece.Infrastructure.MarketData;
 /// <summary>
 /// DI extensions for market data services.
 /// </summary>
-public static class MarketDataExtensionss
+public static class MarketDataExtensions
 {
     /// <summary>
     /// Registers MarketDataClient and Alpaca data clients in DI.

@@ -83,12 +83,4 @@ public sealed class BarHistory(int maxSize)
 
         return trSum / period;
     }
-
-    /// <summary>
-    /// Clears all bars.
-    /// </summary>
-    public void Clear()
-    {
-        _bars.Clear();
-    }
 }

@@ -31,7 +31,7 @@ public sealed class BarsHandler(
     {
         try
         {
-            using var context = await dbContextFactory.CreateDbContextAsync(ct);
+          await using var context = await dbContextFactory.CreateDbContextAsync(ct);
 
             var symbols = await context.Bars
                 .Select(b => b.Symbol)
@@ -108,7 +108,7 @@ public sealed class BarsHandler(
     {
         try
         {
-            using var context = await dbContextFactory.CreateDbContextAsync(ct);
+          await using var context = await dbContextFactory.CreateDbContextAsync(ct);
 
             // Check if bar already exists (idempotency)
             var existing = await context.Bars

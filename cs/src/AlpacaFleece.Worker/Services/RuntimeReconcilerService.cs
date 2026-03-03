@@ -13,7 +13,7 @@ public sealed class RuntimeReconcilerService(
     IOptions<RuntimeReconciliationOptions> options) : BackgroundService
 {
     private readonly RuntimeReconciliationOptions _options = options.Value;
-    private int _consecutiveFailures = 0;
+    private int _consecutiveFailures;
 
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
     {
@@ -78,7 +78,7 @@ public sealed class RuntimeReconcilerService(
 
             foreach (var tracked in trackedPositions)
             {
-                if (!alpacaPositions.Any(ap => ap.Symbol == tracked.Key))
+                if (alpacaPositions.All(ap => ap.Symbol != tracked.Key))
                 {
                     discrepancies.Add($"Position {tracked.Key} tracked but not in Alpaca");
                 }

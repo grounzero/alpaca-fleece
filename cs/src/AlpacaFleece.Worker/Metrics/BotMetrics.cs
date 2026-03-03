@@ -16,7 +16,7 @@ public sealed class BotMetrics(ILogger<BotMetrics> logger)
     private decimal _dailyPnl;
     private int _dailyTradeCount;
     private decimal _equityValue;
-    private readonly object _decimalLock = new object();
+    private readonly Lock _decimalLock = new();
     private readonly DateTimeOffset _sessionStartTime = DateTimeOffset.UtcNow;
 
     #region Counter Properties (Thread-Safe)
