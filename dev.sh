@@ -87,7 +87,7 @@ run_tests() {
         -v "$(pwd)/cs/tests:/src/tests:ro" \
         -w /src \
         mcr.microsoft.com/dotnet/sdk:10.0-alpine \
-        dotnet test AlpacaFleece.Tests/AlpacaFleece.Tests.csproj
+        dotnet test tests/AlpacaFleece.Tests/AlpacaFleece.Tests.csproj
 }
 
 show_logs() {
