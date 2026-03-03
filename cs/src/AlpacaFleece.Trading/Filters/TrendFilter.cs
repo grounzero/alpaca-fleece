@@ -27,11 +27,11 @@ public sealed class TrendFilter(
         var bars = await GetDailyBarsAsync(symbol, ct);
         var period = Math.Max(1, options.SignalFilters.DailySmaPeriod);
 
-        if (bars.Count < period + 1)
+        if (bars.Count < period)
         {
             logger.LogDebug(
                 "TrendFilter: insufficient daily history for {Symbol} ({Count} bars, need {Need}) — passing signal",
-                symbol, bars.Count, period + 1);
+                symbol, bars.Count, period);
             return true;
         }
 
