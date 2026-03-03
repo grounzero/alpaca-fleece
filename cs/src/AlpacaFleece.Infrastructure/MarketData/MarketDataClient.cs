@@ -99,17 +99,46 @@ public sealed class MarketDataClient(
                 // that comfortably covers multiple trading sessions. Page size is clamped to the
                 // API maximum of 10 000.
                 var upperTf = timeframe.ToUpperInvariant();
+
+                // Treat minute timeframes explicitly so the window and page size scale with the limit.
+                var isMinute = upperTf.Contains("MIN", StringComparison.Ordinal);
+                var minuteMultiplier = 1;
+                if (isMinute)
+                {
+                    var unitIndex = upperTf.IndexOf("MIN", StringComparison.Ordinal);
+                    if (unitIndex > 0)
+                    {
+                        var numberPart = upperTf.Substring(0, unitIndex);
+                        if (Int32.TryParse(numberPart, out var parsed) && parsed > 0)
+                        {
+                            minuteMultiplier = parsed;
+                        }
+                    }
+                }
+
+                static int GetMinuteWindowDays(int limit, int minuteMultiplier)
+                {
+                    const double tradingMinutesPerDay = 390.0; // Approx. US equity regular session
+                    var minutesPerBar = Math.Max(1, minuteMultiplier);
+                    var barsPerDay = tradingMinutesPerDay / minutesPerBar;
+                    var daysNeeded = (int)Math.Ceiling(limit / barsPerDay) + 2; // Safety margin
+                    return Math.Max(daysNeeded, 5); // Never use less than 5 days (existing behavior)
+                }
+
                 var from = upperTf switch
                 {
-                    "1D" or "1DAY"   => into.AddDays(-(limit * 7 / 5 + 5)),
-                    "1H" or "1HOUR"  => into.AddHours(-(limit + 5)),
-                    _                => into.AddDays(-5)
+                    "1D" or "1DAY"        => into.AddDays(-(limit * 7 / 5 + 5)),
+                    "1H" or "1HOUR"       => into.AddHours(-(limit + 5)),
+                    _ when isMinute       => into.AddDays(-GetMinuteWindowDays(limit, minuteMultiplier)),
+                    _                     => into.AddDays(-5)
                 };
+
                 var rawPageSize = upperTf switch
                 {
-                    "1D" or "1DAY"   => limit * 7 / 5 + 5,
-                    "1H" or "1HOUR"  => limit + 5,
-                    _                => 1000
+                    "1D" or "1DAY"        => limit * 7 / 5 + 5,
+                    "1H" or "1HOUR"       => limit + 5,
+                    _ when isMinute       => limit + 5,
+                    _                     => 1000
                 };
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize((uint)Math.Min(rawPageSize, 10_000));
