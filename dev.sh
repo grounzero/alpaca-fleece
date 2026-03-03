@@ -24,8 +24,8 @@ usage() {
     echo "Usage: $0 [command]"
     echo ""
     echo "Commands:"
-    echo "  build     - Build base dev image (run once)"
-    echo "  run       - Run with volume mounts (fast iteration)"
+    echo "  build     - Build base dev image (required after code changes)"
+    echo "  run       - Run with volume mounts (data/config persistence only)"
     echo "  shell     - Start container with shell for debugging"
     echo "  test      - Run tests with volume mounts"
     echo "  logs      - Show container logs"
@@ -34,7 +34,7 @@ usage() {
     echo ""
     echo "Examples:"
     echo "  $0 build && $0 run     # First time setup"
-    echo "  $0 run                  # After code changes (no rebuild)"
+    echo "  $0 build && $0 run     # After code changes (requires rebuild)"
     echo "  $0 test                 # Run tests"
 }
 
