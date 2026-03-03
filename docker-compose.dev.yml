@@ -1,5 +1,5 @@
 # Development Docker Compose
-# Uses volume mounts for rapid iteration - no rebuild needed for code changes
+# Uses volume mounts for easier config, logs, and source inspection; code changes still require an image rebuild
 
 services:
   alpaca-fleece-dev:
