@@ -94,51 +94,30 @@ public sealed class MarketDataClient(
 
             if (isEquity)
             {
-                // Window and page size are scaled to the timeframe so all requested bars fit in
-                // one page. Daily bars need a calendar-day window; minute bars use a 5-day window
-                // that comfortably covers multiple trading sessions. Page size is clamped to the
-                // API maximum of 10 000.
-                var upperTf = timeframe.ToUpperInvariant();
-
-                // Treat minute timeframes explicitly so the window and page size scale with the limit.
-                var isMinute = upperTf.Contains("MIN", StringComparison.Ordinal);
-                var minuteMultiplier = 1;
-                if (isMinute)
+                // Window and page size are derived from the already-mapped BarTimeFrame so the
+                // unit is always correct regardless of input format ("1m", "1MIN", etc.).
+                // Page size is clamped to the API maximum of 10 000.
+                static int MinuteWindowDays(int limit, int barMinutes)
                 {
-                    var unitIndex = upperTf.IndexOf("MIN", StringComparison.Ordinal);
-                    if (unitIndex > 0)
-                    {
-                        var numberPart = upperTf.Substring(0, unitIndex);
-                        if (Int32.TryParse(numberPart, out var parsed) && parsed > 0)
-                        {
-                            minuteMultiplier = parsed;
-                        }
-                    }
+                    const double tradingMinutesPerDay = 390.0; // US equity regular session
+                    var barsPerDay = tradingMinutesPerDay / Math.Max(1, barMinutes);
+                    var daysNeeded = (int)Math.Ceiling(limit / barsPerDay) + 2; // safety margin
+                    return Math.Max(daysNeeded, 5); // never less than 5 days
                 }
 
-                static int GetMinuteWindowDays(int limit, int minuteMultiplier)
+                var from = timeFrame.Unit switch
                 {
-                    const double tradingMinutesPerDay = 390.0; // Approx. US equity regular session
-                    var minutesPerBar = Math.Max(1, minuteMultiplier);
-                    var barsPerDay = tradingMinutesPerDay / minutesPerBar;
-                    var daysNeeded = (int)Math.Ceiling(limit / barsPerDay) + 2; // Safety margin
-                    return Math.Max(daysNeeded, 5); // Never use less than 5 days (existing behavior)
-                }
-
-                var from = upperTf switch
-                {
-                    "1D" or "1DAY"        => into.AddDays(-(limit * 7 / 5 + 5)),
-                    "1H" or "1HOUR"       => into.AddHours(-(limit + 5)),
-                    _ when isMinute       => into.AddDays(-GetMinuteWindowDays(limit, minuteMultiplier)),
-                    _                     => into.AddDays(-5)
+                    BarTimeFrameUnit.Day    => into.AddDays(-(limit * 7 / 5 + 5)),
+                    BarTimeFrameUnit.Hour   => into.AddHours(-(limit + 5)),
+                    BarTimeFrameUnit.Minute => into.AddDays(-MinuteWindowDays(limit, timeFrame.Value)),
+                    _                      => into.AddDays(-5)
                 };
-
-                var rawPageSize = upperTf switch
+                var rawPageSize = timeFrame.Unit switch
                 {
-                    "1D" or "1DAY"        => limit * 7 / 5 + 5,
-                    "1H" or "1HOUR"       => limit + 5,
-                    _ when isMinute       => limit + 5,
-                    _                     => 1000
+                    BarTimeFrameUnit.Day    => limit * 7 / 5 + 5,
+                    BarTimeFrameUnit.Hour   => limit + 5,
+                    BarTimeFrameUnit.Minute => limit + 5,
+                    _                      => 1000
                 };
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize((uint)Math.Min(rawPageSize, 10_000));
@@ -159,17 +138,17 @@ public sealed class MarketDataClient(
                 // Minute bars: tight window keeps the page small and bars recent.
                 // Daily/hourly bars: use the appropriate unit — AddMinutes for minutes would
                 //   return an 80-minute window for a 25-bar daily request (empty result).
-                var from = timeframe.ToUpperInvariant() switch
+                var from = timeFrame.Unit switch
                 {
-                    "1D" or "1DAY" => into.AddDays(-(limit * 7 / 5 + 5)),
-                    "1H" or "1HOUR" => into.AddHours(-(limit + 5)),
-                    _ => into.AddMinutes(-(limit * 2 + 30))
+                    BarTimeFrameUnit.Day  => into.AddDays(-(limit * 7 / 5 + 5)),
+                    BarTimeFrameUnit.Hour => into.AddHours(-(limit + 5)),
+                    _                    => into.AddMinutes(-(limit * 2 + 30))
                 };
-                var rawCryptoPageSize = timeframe.ToUpperInvariant() switch
+                var rawCryptoPageSize = timeFrame.Unit switch
                 {
-                    "1D" or "1DAY"   => limit * 7 / 5 + 5,
-                    "1H" or "1HOUR"  => limit + 5,
-                    _                => limit * 2 + 30
+                    BarTimeFrameUnit.Day  => limit * 7 / 5 + 5,
+                    BarTimeFrameUnit.Hour => limit + 5,
+                    _                    => limit * 2 + 30
                 };
                 var pageSize = (uint)Math.Min(rawCryptoPageSize, 10_000);
                 var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
