@@ -103,6 +103,7 @@ clean_dev() {
     echo -e "${RED}Cleaning up dev environment...${NC}"
     docker stop alpaca-fleece-dev 2>/dev/null || true
     docker rm alpaca-fleece-dev 2>/dev/null || true
+    docker volume rm alpaca-fleece-data 2>/dev/null || true
     echo -e "${GREEN}Cleanup complete${NC}"
 }
 
