@@ -28,7 +28,19 @@ public sealed class TrendFilter(
         if (!options.SignalFilters.EnableDailyTrendFilter)
             return true;
 
-        var bars = await GetDailyBarsAsync(symbol, ct);
+        IReadOnlyList<Quote> bars;
+        try
+        {
+            bars = await GetDailyBarsAsync(symbol, ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(
+                ex,
+                "TrendFilter: failed to fetch daily bars for {Symbol} — passing signal",
+                symbol);
+            return true;
+        }
         var period = Math.Max(1, options.SignalFilters.DailySmaPeriod);
 
         if (bars.Count < period)
