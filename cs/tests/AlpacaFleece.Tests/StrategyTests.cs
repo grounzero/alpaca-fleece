@@ -368,4 +368,190 @@ public sealed class StrategyTests
         await eventBus.DidNotReceive()
             .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
     }
+
+    // ─── Filter integration tests ─────────────────────────────────────────────────
+
+    /// <summary>Builds a daily Quote list with the given close prices (6 bars, SMA period 5).</summary>
+    private static IReadOnlyList<Quote> DailyBars(string symbol, decimal[] closes)
+    {
+        var baseDate = new DateTimeOffset(2024, 1, 1, 0, 0, 0, TimeSpan.Zero);
+        var bars = new List<Quote>();
+        for (var i = 0; i < closes.Length; i++)
+        {
+            var c = closes[i];
+            bars.Add(new Quote(symbol, baseDate.AddDays(i), c, c + 1m, c - 1m, c, 1_000_000));
+        }
+        return bars.AsReadOnly();
+    }
+
+    /// <summary>Runs 51 uptrend bars through strategy (guarantees a BUY crossover).</summary>
+    private static async Task RunUptrendBarsAsync(SmaCrossoverStrategy strategy, long volume = 1_000_000)
+    {
+        for (var i = 0; i < 51; i++)
+        {
+            var close = 100m + (i * 1.5m);
+            var bar = new BarEvent(
+                Symbol: "AAPL",
+                Timeframe: "1m",
+                Timestamp: DateTimeOffset.UtcNow.AddMinutes(i),
+                Open: close - 0.5m,
+                High: close + 1m,
+                Low: close - 1m,
+                Close: close,
+                Volume: volume);
+            await strategy.OnBarAsync(bar);
+        }
+    }
+
+    [Fact]
+    public async Task SmaCrossoverStrategy_BlocksSignal_WhenTrendFilterFails()
+    {
+        // Daily bars: SMA(5) of [99,98,97,96,95] = 97; last close 95 < 97 → BUY blocked.
+        var eventBus = Substitute.For<IEventBus>();
+        var marketData = Substitute.For<IMarketDataClient>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var dailyBars = DailyBars("AAPL", [100m, 99m, 98m, 97m, 96m, 95m]);
+        marketData.GetBarsAsync("AAPL", "1Day", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<Quote>>(dailyBars));
+
+        var opts = new TradingOptions
+        {
+            SignalFilters = new SignalFilterOptions
+            {
+                EnableDailyTrendFilter = true,
+                DailySmaPeriod = 5,
+                EnableVolumeFilter = false,
+            },
+        };
+
+        var trendFilter = new TrendFilter(marketData, opts, Substitute.For<ILogger<TrendFilter>>());
+        var volumeFilter = new VolumeFilter(opts, Substitute.For<ILogger<VolumeFilter>>());
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(), null, trendFilter, volumeFilter);
+
+        await RunUptrendBarsAsync(strategy);
+
+        // BUY crossover detected but trend filter blocks it
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SmaCrossoverStrategy_BlocksSignal_WhenVolumeFilterFails()
+    {
+        // VolumeMultiplier=100 means current must be 100× average — effectively always blocks.
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var opts = new TradingOptions
+        {
+            SignalFilters = new SignalFilterOptions
+            {
+                EnableDailyTrendFilter = false,
+                EnableVolumeFilter = true,
+                VolumeLookbackPeriod = 5,
+                VolumeMultiplier = 100m,
+            },
+        };
+
+        var volumeFilter = new VolumeFilter(opts, Substitute.For<ILogger<VolumeFilter>>());
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(), null, null, volumeFilter);
+
+        // Uniform volume: current = avg = 1_000_000 < 100 × 1_000_000 = 100_000_000 → blocked
+        await RunUptrendBarsAsync(strategy, volume: 1_000_000);
+
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SmaCrossoverStrategy_EmitsSignal_WhenBothFilterPass()
+    {
+        // Daily bars: SMA(5) of [91,92,93,94,95] = 93; last close 95 > 93 → BUY passes.
+        // VolumeMultiplier=0.1 ensures uniform volume passes (current ≥ 0.1 × avg always).
+        var eventBus = Substitute.For<IEventBus>();
+        var marketData = Substitute.For<IMarketDataClient>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var dailyBars = DailyBars("AAPL", [90m, 91m, 92m, 93m, 94m, 95m]);
+        marketData.GetBarsAsync("AAPL", "1Day", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<Quote>>(dailyBars));
+
+        var opts = new TradingOptions
+        {
+            SignalFilters = new SignalFilterOptions
+            {
+                EnableDailyTrendFilter = true,
+                DailySmaPeriod = 5,
+                EnableVolumeFilter = true,
+                VolumeLookbackPeriod = 5,
+                VolumeMultiplier = 0.1m,
+            },
+        };
+
+        var trendFilter = new TrendFilter(marketData, opts, Substitute.For<ILogger<TrendFilter>>());
+        var volumeFilter = new VolumeFilter(opts, Substitute.For<ILogger<VolumeFilter>>());
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(), null, trendFilter, volumeFilter);
+
+        await RunUptrendBarsAsync(strategy);
+
+        // Both filters pass → at least one signal published
+        await eventBus.Received()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SmaCrossoverStrategy_EmitsSignal_WhenFiltersDisabled()
+    {
+        // No filters provided — signals emitted as normal (regression guard).
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>());
+
+        await RunUptrendBarsAsync(strategy);
+
+        await eventBus.Received()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SmaCrossoverStrategy_NoSignal_With50Bars_OneLessThanRequired()
+    {
+        // Boundary test: 50 bars = RequiredBars - 1. Strategy must stay in insufficient
+        // state and emit no signal. This is the exact count produced by the pre-fix
+        // StreamPoller fetch (hardcoded limit=50 < RequiredBars=51).
+        var eventBus = Substitute.For<IEventBus>();
+        var logger = Substitute.For<ILogger<SmaCrossoverStrategy>>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var strategy = new SmaCrossoverStrategy(eventBus, logger);
+
+        for (var i = 0; i < 50; i++)
+        {
+            var close = 100m + i;
+            await strategy.OnBarAsync(new BarEvent(
+                Symbol: "AAPL",
+                Timeframe: "1m",
+                Timestamp: DateTimeOffset.UtcNow.AddMinutes(i),
+                Open: close,
+                High: close + 1,
+                Low: close - 1,
+                Close: close,
+                Volume: 1_000_000));
+        }
+
+        Assert.False(strategy.IsReady, "Strategy must not be ready with 50 bars (RequiredBars=51)");
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
 }

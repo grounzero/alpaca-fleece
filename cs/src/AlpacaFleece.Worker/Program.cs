@@ -80,10 +80,22 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Symbol classifier (centralised symbol type detection using TradingOptions lists)
         services.AddSingleton<ISymbolClassifier>(sp =>
             new SymbolClassifier(tradingOptions.Symbols.CryptoSymbols, tradingOptions.Symbols.EquitySymbols));
+
+        // Signal quality filters (must be registered before SmaCrossoverStrategy)
+        services.AddSingleton(sp => new TrendFilter(
+            sp.GetRequiredService<IMarketDataClient>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<TrendFilter>>()));
+        services.AddSingleton(sp => new VolumeFilter(
+            tradingOptions,
+            sp.GetRequiredService<ILogger<VolumeFilter>>()));
+
         services.AddSingleton<IStrategy>(sp => new SmaCrossoverStrategy(
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
-            tradingOptions.Symbols.CryptoSymbols));
+            tradingOptions.Symbols.CryptoSymbols,
+            trendFilter: sp.GetRequiredService<TrendFilter>(),
+            volumeFilter: sp.GetRequiredService<VolumeFilter>()));
         services.AddSingleton<PositionTracker>();
 
         // Phase 2: Data Handling

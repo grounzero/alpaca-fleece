@@ -15,16 +15,19 @@ public sealed class StreamPollerTests
         IStateRepository? stateRepository = null,
         IEventBus? eventBus = null,
         IOptions<TradingOptions>? options = null,
+        IStrategy? strategy = null,
         ILogger<StreamPollerService>? logger = null,
         List<string>? symbols = null)
     {
         var opts = options ?? BuildOptions(symbols ?? []);
+        var strat = strategy ?? Substitute.For<IStrategy>();
         return new StreamPollerService(
             marketDataClient ?? Substitute.For<IMarketDataClient>(),
             brokerService ?? Substitute.For<IBrokerService>(),
             stateRepository ?? Substitute.For<IStateRepository>(),
             eventBus ?? Substitute.For<IEventBus>(),
             opts,
+            strat,
             logger ?? Substitute.For<ILogger<StreamPollerService>>());
     }
 
@@ -149,6 +152,7 @@ public sealed class StreamPollerTests
             stateRepository,
             Substitute.For<IEventBus>(),
             opts,
+            Substitute.For<IStrategy>(),
             Substitute.For<ILogger<StreamPollerService>>());
 
         // Start with a generous timeout; cancel only after we've confirmed crypto was polled

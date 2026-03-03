@@ -12,5 +12,6 @@ global using AlpacaFleece.Core.Interfaces;
 global using AlpacaFleece.Core.Models;
 global using AlpacaFleece.Trading.Config;
 global using AlpacaFleece.Trading.Exits;
+global using AlpacaFleece.Trading.Filters;
 global using AlpacaFleece.Trading.Positions;
 global using AlpacaFleece.Trading.Risk;

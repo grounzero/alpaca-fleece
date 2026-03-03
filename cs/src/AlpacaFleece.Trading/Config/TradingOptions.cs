@@ -13,6 +13,7 @@ public sealed class TradingOptions
     public FiltersOptions Filters { get; set; } = new();
     public DrawdownOptions Drawdown { get; set; } = new();
     public CorrelationLimitsOptions CorrelationLimits { get; set; } = new();
+    public SignalFilterOptions SignalFilters { get; set; } = new();
 }
 
 /// <summary>
@@ -111,6 +112,13 @@ public sealed class ExecutionOptions
 {
     public bool DryRun { get; set; } = false;
     public bool KillSwitch { get; set; } = false;
+
+    /// <summary>
+    /// Number of bars to fetch per poll cycle for strategy warmup.
+    /// Must be ≥ SmaCrossoverStrategy.RequiredBars (51) to guarantee sufficient history
+    /// from the first poll. Default: 100 (≈ 100 minutes of 1-min bars).
+    /// </summary>
+    public int BarHistoryDepth { get; set; } = 100;
 }
 
 /// <summary>
@@ -195,6 +203,39 @@ public sealed class DrawdownOptions
     /// Drawdown check interval in seconds (default: 60).
     /// </summary>
     public int CheckIntervalSeconds { get; set; } = 60;
+}
+
+/// <summary>
+/// Signal quality filter configuration (daily trend bias and volume confirmation).
+/// </summary>
+public sealed class SignalFilterOptions
+{
+    /// <summary>
+    /// When true, signals are only passed when price is on the correct side of the daily SMA.
+    /// Default: false (disabled) — enable via appsettings.json.
+    /// </summary>
+    public bool EnableDailyTrendFilter { get; set; } = false;
+
+    /// <summary>
+    /// SMA period used for the daily trend filter (default: 20).
+    /// </summary>
+    public int DailySmaPeriod { get; set; } = 20;
+
+    /// <summary>
+    /// When true, signals are only passed when current-bar volume exceeds the rolling average.
+    /// Default: false (disabled) — enable via appsettings.json.
+    /// </summary>
+    public bool EnableVolumeFilter { get; set; } = false;
+
+    /// <summary>
+    /// Rolling lookback period (in bars) for the volume average (default: 20).
+    /// </summary>
+    public int VolumeLookbackPeriod { get; set; } = 20;
+
+    /// <summary>
+    /// Current volume must be ≥ average × VolumeMultiplier to pass (default: 1.5).
+    /// </summary>
+    public decimal VolumeMultiplier { get; set; } = 1.5m;
 }
 
 /// <summary>

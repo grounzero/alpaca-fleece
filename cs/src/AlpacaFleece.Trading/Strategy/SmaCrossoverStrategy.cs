@@ -9,7 +9,9 @@ namespace AlpacaFleece.Trading.Strategy;
 public sealed class SmaCrossoverStrategy(
     IEventBus eventBus,
     ILogger<SmaCrossoverStrategy> logger,
-    IEnumerable<string>? cryptoSymbols = null) : IStrategy
+    IEnumerable<string>? cryptoSymbols = null,
+    TrendFilter? trendFilter = null,
+    VolumeFilter? volumeFilter = null) : IStrategy
 {
     private readonly RegimeDetector _regimeDetector = new();
     private readonly Dictionary<string, BarHistory> _barHistories = new();
@@ -55,8 +57,9 @@ public sealed class SmaCrossoverStrategy(
             // Not ready yet
             if (history.Count < RequiredBars)
             {
-                logger.LogDebug("Strategy not ready for {symbol}: {count}/{required} bars",
-                    bar.Symbol, history.Count, RequiredBars);
+                logger.LogInformation(
+                    "Insufficient bars for SMA calculation: {Symbol} requires {Required}, has {Available}",
+                    bar.Symbol, RequiredBars, history.Count);
                 return;
             }
 
@@ -138,17 +141,39 @@ public sealed class SmaCrossoverStrategy(
             _previousSmaPair1[bar.Symbol] = (fast1, slow1);
             _previousSmaPair2[bar.Symbol] = (fast2, slow2);
             _previousSmaPair3[bar.Symbol] = (fast3, slow3);
+
+            // Capture bar snapshot for volume filter (must be inside lock; async calls are outside)
+            if (_pendingSignals.Count > 0)
+                _pendingBarSnapshot = history.GetBars();
         }
 
-        // Publish signals asynchronously
+        // Apply filters and publish signals outside the lock (async calls cannot be inside lock)
         foreach (var signal in _pendingSignals)
         {
+            if (volumeFilter != null && _pendingBarSnapshot != null
+                && !volumeFilter.Check(_pendingBarSnapshot))
+            {
+                logger.LogInformation(
+                    "Volume filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
+                continue;
+            }
+
+            if (trendFilter != null && !await trendFilter.CheckAsync(signal.Symbol, signal.Side, ct))
+            {
+                logger.LogInformation(
+                    "Trend filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
+                continue;
+            }
+
             await eventBus.PublishAsync(signal, ct);
         }
+
         _pendingSignals.Clear();
+        _pendingBarSnapshot = null;
     }
 
     private readonly List<SignalEvent> _pendingSignals = new();
+    private IReadOnlyList<(decimal Open, decimal High, decimal Low, decimal Close, long Volume)>? _pendingBarSnapshot;
 
     /// <summary>
     /// Checks for SMA crossover and emits signal if detected.
