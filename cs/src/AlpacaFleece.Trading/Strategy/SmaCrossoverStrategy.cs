@@ -169,7 +169,7 @@ public sealed class SmaCrossoverStrategy(
 
             if (trendFilter != null && !await trendFilter.CheckAsync(signal.Symbol, signal.Side, ct))
             {
-                logger.LogInformation(
+                logger.LogDebug(
                     "Trend filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
                 continue;
             }
