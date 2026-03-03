@@ -115,7 +115,10 @@ public sealed class MarketDataClient(
                 var from = into.AddMinutes(-(limit * 2 + 30));
                 var request = new HistoricalCryptoBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize((uint)(limit * 2 + 30));
+                logger.LogInformation("Crypto request: {Symbol} from {From} to {Into}, pageSize {PageSize}", 
+                    symbol, from, into, limit * 2 + 30);
                 var page = await cryptoDataClient.ListHistoricalBarsAsync(request, cts.Token);
+                logger.LogInformation("Crypto response: {Symbol} returned {Count} items", symbol, page.Items.Count);
                 items = page.Items;
             }
 

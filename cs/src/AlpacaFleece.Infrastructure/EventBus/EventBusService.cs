@@ -1,8 +1,10 @@
+using System.Threading.Channels;
+
 namespace AlpacaFleece.Infrastructure.EventBus;
 
 /// <summary>
 /// Event bus implementation with dual-channel architecture.
-/// Normal events: bounded channel, FullMode.DropWrite, maxsize=10000.
+/// Normal events: bounded channel, FullMode.Wait, maxsize=10000.
 /// Exit signals: unbounded channel, never dropped.
 /// </summary>
 public sealed class EventBusService : IEventBus
@@ -17,7 +19,6 @@ public sealed class EventBusService : IEventBus
     {
         var normalOptions = new BoundedChannelOptions(normalChannelCapacity)
         {
-            // Use Wait mode so TryWrite returns false (not true) when channel is full
             FullMode = BoundedChannelFullMode.Wait,
             AllowSynchronousContinuations = false
         };
@@ -74,17 +75,18 @@ public sealed class EventBusService : IEventBus
             await handler(normalEvent);
         }
 
-        // Wait for new events with backoff
-        using var cts = CancellationTokenSource.CreateLinkedTokenSource(ct);
-        cts.CancelAfter(TimeSpan.FromSeconds(5));
-
-        try
+        // Wait for new events
+        while (!ct.IsCancellationRequested)
         {
-            while (!ct.IsCancellationRequested)
+            // Create a fresh timeout token for each iteration
+            using var timeoutCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+            using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(ct, timeoutCts.Token);
+            
+            try
             {
                 // Check for exit signal
-                var exitTask = _exitChannel.Reader.WaitToReadAsync(cts.Token).AsTask();
-                var normalTask = _normalChannel.Reader.WaitToReadAsync(cts.Token).AsTask();
+                var exitTask = _exitChannel.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
+                var normalTask = _normalChannel.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
 
                 var completedTask = await Task.WhenAny(exitTask, normalTask).ConfigureAwait(false);
 
@@ -102,13 +104,16 @@ public sealed class EventBusService : IEventBus
                         await handler(normalEvent);
                     }
                 }
-
-                cts.CancelAfter(TimeSpan.FromSeconds(5));
             }
-        }
-        catch (OperationCanceledException)
-        {
-            // Normal timeout, continue
+            catch (OperationCanceledException)
+            {
+                // Only rethrow if the main CT was cancelled, not the timeout
+                if (ct.IsCancellationRequested)
+                {
+                    throw;
+                }
+                // Otherwise, it's just a timeout - continue the loop
+            }
         }
     }
 }
