@@ -31,7 +31,7 @@ public sealed class BarsHandler(
     {
         try
         {
-          await using var context = await dbContextFactory.CreateDbContextAsync(ct);
+            await using var context = await dbContextFactory.CreateDbContextAsync(ct);
 
             var symbols = await context.Bars
                 .Select(b => b.Symbol)
