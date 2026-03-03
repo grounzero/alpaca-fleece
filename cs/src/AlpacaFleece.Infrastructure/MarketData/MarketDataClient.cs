@@ -123,6 +123,26 @@ public sealed class MarketDataClient(
                                                   * (390.0 / Math.Max(1, timeFrame.Value))) + 5,
                     _                      => 1000
                 };
+
+                // If the estimated minute-bar window would require more than the API max page size,
+                // shrink the window so that a single page still contains the *latest* bars.
+                if (timeFrame.Unit == BarTimeFrameUnit.Minute && rawPageSize > 10_000)
+                {
+                    const double tradingMinutesPerDay = 390.0; // US equity regular session
+                    var barMinutes = Math.Max(1, timeFrame.Value);
+                    var barsPerDay = tradingMinutesPerDay / barMinutes;
+
+                    // Respect the existing +5 safety margin when fitting under the 10 000 cap.
+                    var maxBarsUnderCap = 10_000 - 5;
+                    var maxDaysByCap = Math.Max(1, (int)Math.Ceiling(maxBarsUnderCap / barsPerDay));
+
+                    // Never expand beyond the originally requested window; only shrink when needed.
+                    var originalDays = MinuteWindowDays(limit, timeFrame.Value);
+                    var effectiveDays = Math.Min(originalDays, maxDaysByCap);
+
+                    from = into.AddDays(-effectiveDays);
+                    rawPageSize = (int)(effectiveDays * barsPerDay) + 5;
+                }
                 var request = new HistoricalBarsRequest(symbol, from, into, timeFrame)
                     .WithPageSize((uint)Math.Min(rawPageSize, 10_000));
 
