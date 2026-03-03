@@ -48,14 +48,15 @@ dotnet build AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
 dotnet watch --project AlpacaFleece.Worker run
 ```
 
-### Option 2: Shell Access + Build Inside
+### Option 2: Shell Access (Runtime Container)
 ```bash
 ./dev.sh shell
 
-# Inside container:
-cd /src
-dotnet build src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
-dotnet run --project src/AlpacaFleece.Worker
+# Inside container (runtime only, no SDK):
+# - Check logs: cat /app/logs/*.log
+# - View config: cat /app/appsettings.json
+# - Database: sqlite3 /app/data/trading.db
+# Note: dotnet build/run won't work (SDK not included)
 ```
 
 ### Option 3: Volume Mounts (Config, Data, Logs, Source Tree)
