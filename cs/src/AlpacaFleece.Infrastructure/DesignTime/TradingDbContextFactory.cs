@@ -16,6 +16,7 @@ public sealed class TradingDbContextFactory : IDesignTimeDbContextFactory<Tradin
         // application uses at runtime (AppDomain.CurrentDomain.BaseDirectory/data/trading.db).
         var runtimeBase = AppDomain.CurrentDomain.BaseDirectory ?? Directory.GetCurrentDirectory();
         var file = Path.Combine(runtimeBase, "data", "trading.db");
+        Directory.CreateDirectory(Path.GetDirectoryName(file)!);
         optionsBuilder.UseSqlite($"Data Source={file}");
 
         return new TradingDbContext(optionsBuilder.Options);
