@@ -207,7 +207,7 @@ public sealed class EventDispatcherService(
         {
             // Persist bar
             var barsHandler = serviceProvider.GetRequiredService<BarsHandler>();
-            await barsHandler.##HandleBarEventAsync(barEvent, CancellationToken.None);
+            await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
             logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
 
             // Forward to strategy for signal generation (strategy handles readiness internally)

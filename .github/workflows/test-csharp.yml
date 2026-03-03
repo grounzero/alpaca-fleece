@@ -1,0 +1,40 @@
+name: Test and Build (C#)
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'cs/**'
+      - '.github/workflows/test-csharp.yml'
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    defaults:
+      run:
+        working-directory: cs
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore dependencies
+        run: dotnet restore AlpacaFleece.sln
+
+      - name: Build
+        run: dotnet build AlpacaFleece.sln --no-restore --configuration Release
+
+      - name: Run tests
+        run: dotnet test AlpacaFleece.sln --no-build --configuration Release --verbosity normal --collect:"XPlat Code Coverage"
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v3
+        with:
+          files: ./cs/**/coverage.cobertura.xml
+          flags: unittests-csharp
+          fail_ci_if_error: false

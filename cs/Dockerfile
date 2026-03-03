@@ -1,15 +1,15 @@
-# Multi-stage build for AlpacaFleece
+# Multi-stage build for AlpacaFleece C# Worker
 FROM mcr.microsoft.com/dotnet/sdk:10.0-preview-alpine AS build
 WORKDIR /src
 
 # Copy project files
-COPY ["cs/src/AlpacaFleece.Core/AlpacaFleece.Core.csproj", "src/AlpacaFleece.Core/"]
-COPY ["cs/src/AlpacaFleece.Infrastructure/AlpacaFleece.Infrastructure.csproj", "src/AlpacaFleece.Infrastructure/"]
-COPY ["cs/src/AlpacaFleece.Trading/AlpacaFleece.Trading.csproj", "src/AlpacaFleece.Trading/"]
-COPY ["cs/src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj", "src/AlpacaFleece.Worker/"]
+COPY ["src/AlpacaFleece.Core/AlpacaFleece.Core.csproj", "src/AlpacaFleece.Core/"]
+COPY ["src/AlpacaFleece.Infrastructure/AlpacaFleece.Infrastructure.csproj", "src/AlpacaFleece.Infrastructure/"]
+COPY ["src/AlpacaFleece.Trading/AlpacaFleece.Trading.csproj", "src/AlpacaFleece.Trading/"]
+COPY ["src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj", "src/AlpacaFleece.Worker/"]
 
 # Copy source files
-COPY ["cs/src/", "src/"]
+COPY ["src/", "src/"]
 
 # Restore and build
 RUN dotnet restore "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj"

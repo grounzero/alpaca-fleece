@@ -1,14 +1,20 @@
-.PHONY: help start stop restart status daemon-start daemon-stop daemon-restart daemon-status systemd-install systemd-start systemd-stop systemd-status test clean spawn-agent instantiate-agent list-agents
+.PHONY: help start stop restart status daemon-start daemon-stop daemon-restart daemon-status systemd-install systemd-start systemd-stop systemd-status test test-py test-cs clean spawn-agent instantiate-agent list-agents build-cs run-cs
 
 # Default target
 help:
 	@echo "Alpaca Trading Bot - Process Management"
 	@echo ""
-	@echo "Shell-based (setsid method):"
-	@echo "  make start        - Start bot with setsid (survives disconnect)"
-	@echo "  make stop         - Stop the bot"
-	@echo "  make restart      - Restart the bot"
-	@echo "  make status       - Check bot status"
+	@echo "Python Bot Commands:"
+	@echo "  make start        - Start Python bot with setsid (survives disconnect)"
+	@echo "  make stop         - Stop the Python bot"
+	@echo "  make restart      - Restart the Python bot"
+	@echo "  make status       - Check Python bot status"
+	@echo "  make test-py      - Run Python tests"
+	@echo ""
+	@echo "C# Worker Commands:"
+	@echo "  make build-cs     - Build C# worker"
+	@echo "  make run-cs       - Run C# worker"
+	@echo "  make test-cs      - Run C# tests"
 	@echo ""
 	@echo "Python daemon (double-fork):"
 	@echo "  make daemon-start  - Start bot as daemon"
@@ -29,34 +35,34 @@ help:
 	@echo "  make instantiate-agent AGENT=python-dev - Create project agent from template"
 	@echo ""
 	@echo "Other:"
-	@echo "  make test         - Run tests"
+	@echo "  make test         - Run all tests (Python + C#)"
 	@echo "  make clean        - Clean up"
 
 # Shell-based (setsid) method - RECOMMENDED for simple use
 start:
-	./bot.sh start
+	cd py && ./bot.sh start
 
 stop:
-	./bot.sh stop
+	cd py && ./bot.sh stop
 
 restart:
-	./bot.sh restart
+	cd py && ./bot.sh restart
 
 status:
-	./bot.sh status
+	cd py && ./bot.sh status
 
 # Python daemon method (double-fork technique)
 daemon-start:
-	.venv/bin/python daemon.py start
+	cd py && .venv/bin/python daemon.py start
 
 daemon-stop:
-	.venv/bin/python daemon.py stop
+	cd py && .venv/bin/python daemon.py stop
 
 daemon-restart:
-	.venv/bin/python daemon.py restart
+	cd py && .venv/bin/python daemon.py restart
 
 daemon-status:
-	.venv/bin/python daemon.py status
+	cd py && .venv/bin/python daemon.py status
 
 # Systemd user service method (most robust)
 systemd-install:
@@ -111,24 +117,40 @@ instantiate-agent:
 	@python $(AGENTS_DIR)/instantiate-agent.py $(AGENT)
 
 # Development
-test:
-	.venv/bin/pytest tests/ -v
+test: test-py test-cs
+
+test-py:
+	cd py && .venv/bin/pytest tests/ -v
+
+test-cs:
+	cd cs && dotnet test --verbosity normal
+
+build-cs:
+	cd cs && dotnet build src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
+
+run-cs:
+	cd cs && ASPNETCORE_ENVIRONMENT=Development dotnet run --project src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
 
 clean:
-	find . -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
-	find . -type f -name "*.pyc" -delete 2>/dev/null || true
-	find . -type f -name ".coverage" -delete 2>/dev/null || true
-	rm -rf data/alpaca_bot.pid 2>/dev/null || true
+	find py -type d -name __pycache__ -exec rm -rf {} + 2>/dev/null || true
+	find py -type f -name "*.pyc" -delete 2>/dev/null || true
+	find py -type f -name ".coverage" -delete 2>/dev/null || true
+	rm -rf py/data/alpaca_bot.pid 2>/dev/null || true
+	cd cs && dotnet clean 2>/dev/null || true
 
 dev-setup:
-	@echo "Creating virtualenv in .venv and installing development dependencies..."
-	python3 -m venv .venv
-	. .venv/bin/activate && python -m pip install --upgrade pip setuptools wheel
-	@if [ -f requirements-dev.txt ]; then \
-		. .venv/bin/activate && pip install -r requirements-dev.txt; \
+	@echo "Creating virtualenv in py/.venv and installing Python development dependencies..."
+	cd py && python3 -m venv .venv
+	cd py && . .venv/bin/activate && python -m pip install --upgrade pip setuptools wheel
+	@if [ -f py/requirements-dev.txt ]; then \
+		cd py && . .venv/bin/activate && pip install -r requirements-dev.txt; \
 	fi
-	. .venv/bin/activate && pip install pre-commit || true
+	cd py && . .venv/bin/activate && pip install pre-commit || true
 	# Install pre-commit hooks into the default .git/hooks directory
-	. .venv/bin/activate && pre-commit install || true
-	. .venv/bin/activate && pre-commit install --hook-type pre-push || true
-	@echo "Done. Activate with: source .venv/bin/activate"
+	cd py && . .venv/bin/activate && pre-commit install || true
+	cd py && . .venv/bin/activate && pre-commit install --hook-type pre-push || true
+	@echo "Python setup done. Activate with: cd py && source .venv/bin/activate"
+	@echo ""
+	@echo "Restoring C# packages..."
+	cd cs && dotnet restore
+	@echo "C# setup done."

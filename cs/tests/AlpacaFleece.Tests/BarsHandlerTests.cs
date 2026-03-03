@@ -210,7 +210,7 @@ public sealed class BarsHandlerTests : IAsyncLifetime
         _logger.Received().Log(
             LogLevel.Warning,
             Arg.Any<EventId>(),
-            Arg.Is<object>(state => state != null && state.ToString().Contains("Failed to load historical bars")),
+            Arg.Is<object>(state => state != null && (state!.ToString() ?? "").Contains("Failed to load historical bars")),
             Arg.Is<Exception>(ex => ex != null && ex.Message.Contains("DB error")),
             Arg.Any<Func<object, Exception?, string>>());
     }

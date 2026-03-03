@@ -1,11 +1,55 @@
 version: '3.8'
 
 services:
-  alpaca-fleece:
+  # Python Trading Bot
+  alpaca-fleece-py:
     build:
-      context: .
+      context: ./py
       dockerfile: Dockerfile
-    container_name: alpaca-fleece-bot
+    container_name: alpaca-fleece-py-bot
+
+    env_file:
+      - ./py/.env
+
+    environment:
+      PYTHONUNBUFFERED: 1
+      ALPACA_API_KEY: ${ALPACA_API_KEY}
+      ALPACA_SECRET_KEY: ${ALPACA_SECRET_KEY}
+      ALPACA_BASE_URL: ${ALPACA_BASE_URL:-https://paper-api.alpaca.markets}
+      ALPACA_PAPER: ${ALPACA_PAPER:-true}
+      KILL_SWITCH: ${KILL_SWITCH:-false}
+      DATABASE_PATH: ${DATABASE_PATH:-data/trades.db}
+      CONFIG_PATH: ${CONFIG_PATH:-config/trading.yaml}
+
+    volumes:
+      - alpaca-data-py:/app/data
+      - alpaca-logs-py:/app/logs
+      - ./py/config/trading.yaml:/app/config/trading.yaml:ro
+
+    restart: unless-stopped
+
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "orchestrator.py"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: json-file
+      options:
+        max-size: "100m"
+        max-file: "10"
+
+  # C# Trading Worker
+  alpaca-fleece-cs:
+    build:
+      context: ./cs
+      dockerfile: Dockerfile
+    container_name: alpaca-fleece-cs-worker
+
+    env_file:
+      - ./py/.env
 
     environment:
       ASPNETCORE_ENVIRONMENT: Production
@@ -20,8 +64,8 @@ services:
       DAILY_LOSS_LIMIT: ${DAILY_LOSS_LIMIT:-1000.00}
 
     volumes:
-      - alpaca-data:/app/data
-      - ./config/trading.yaml:/app/config/trading.yaml:ro
+      - alpaca-data-cs:/app/data
+      - alpaca-logs-cs:/app/logs
 
     ports:
       - "8080:8080"  # Health checks endpoint
@@ -42,5 +86,11 @@ services:
         max-file: "10"
 
 volumes:
-  alpaca-data:
+  alpaca-data-py:
+    driver: local
+  alpaca-logs-py:
+    driver: local
+  alpaca-data-cs:
+    driver: local
+  alpaca-logs-cs:
     driver: local

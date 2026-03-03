@@ -244,7 +244,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
 
         var orderUpdate = new OrderUpdateEvent(
             AlpacaOrderId: "alpaca_123",
-            ClientOrderId: null,
+            ClientOrderId: "",
             Symbol: "AAPL",
             Side: "BUY",
             FilledQuantity: 100,
