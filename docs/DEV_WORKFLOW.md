@@ -58,14 +58,14 @@ dotnet build src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
 dotnet run --project src/AlpacaFleece.Worker
 ```
 
-### Option 3: Volume Mounts for Config Only (Current)
+### Option 3: Volume Mounts (Config, Data, Logs, Source Tree)
 The volume mounts in `./dev.sh run` are useful for:
 - SQLite database persistence (`/app/data`)
 - Log files (`/app/logs`)
 - Runtime config changes (appsettings)
+- C# source tree convenience mount (`./cs/src` → `/src`) for browsing/building inside the container
 
-**Not for:** Source code changes (requires rebuild)
-
+**Important:** Even though the source tree is mounted, the container entrypoint still runs the pre-built DLL baked into the image. Editing source code locally will not change the running bot until you rebuild the image (e.g., `./dev.sh build && ./dev.sh run`).
 ## Docker Compose Alternative
 
 ```bash
