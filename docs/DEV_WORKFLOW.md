@@ -1,14 +1,12 @@
 # C# Development Workflow
 
-Fast iteration with volume mounts - no Docker rebuilds needed for code changes.
-
 ## Quick Start
 
 ```bash
-# 1. Build base image (once)
+# 1. Build base image
 ./dev.sh build
 
-# 2. Run with volume mounts (instant code changes)
+# 2. Run bot
 ./dev.sh run
 
 # 3. View logs
@@ -19,31 +17,54 @@ Fast iteration with volume mounts - no Docker rebuilds needed for code changes.
 
 | Command | Description |
 |---------|-------------|
-| `./dev.sh build` | Build base dev image |
-| `./dev.sh run` | Run bot with volume mounts |
+| `./dev.sh build` | Build dev image |
+| `./dev.sh run` | Run bot (uses pre-built DLL) |
 | `./dev.sh shell` | Start container with shell access |
 | `./dev.sh test` | Run unit tests |
 | `./dev.sh logs` | Show container logs |
-| `./dev.sh stop` | Stop dev container |
+| `./dev.sh stop` | Stop container |
 | `./dev.sh clean` | Remove container and volumes |
 
-## How It Works
+## Important: Code Changes Require Rebuild
 
-The dev workflow uses Docker volume mounts to map your local source code into the container:
+The container runs a **pre-built DLL** (`/app/AlpacaFleece.Worker.dll`).
 
+**After editing C# source code, you must rebuild:**
+```bash
+./dev.sh build && ./dev.sh run
 ```
-Host: ./cs/src/  →  Container: /src/src (read-only)
+
+**Why?** Volume mounts don't affect the compiled binary. The DLL is built at image creation time.
+
+## Fast Iteration Options
+
+### Option 1: Local Build (Fastest)
+```bash
+# Build locally (no Docker)
+cd cs/src
+dotnet build AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
+
+# Or with watch for auto-rebuild on save
+dotnet watch --project AlpacaFleece.Worker run
 ```
 
-**Benefits:**
-- Edit code locally with your IDE
-- Changes are immediately visible in container
-- No rebuild needed for code changes
-- 10x faster iteration than `docker build`
+### Option 2: Shell Access + Build Inside
+```bash
+./dev.sh shell
 
-**Limitations:**
-- Requires rebuild if you add new files (csproj changes)
-- Best for code edits, not structural changes
+# Inside container:
+cd /src
+dotnet build src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj
+dotnet run --project src/AlpacaFleece.Worker
+```
+
+### Option 3: Volume Mounts for Config Only (Current)
+The volume mounts in `./dev.sh run` are useful for:
+- SQLite database persistence (`/app/data`)
+- Log files (`/app/logs`)
+- Runtime config changes (appsettings)
+
+**Not for:** Source code changes (requires rebuild)
 
 ## Docker Compose Alternative
 
@@ -51,8 +72,8 @@ Host: ./cs/src/  →  Container: /src/src (read-only)
 # Build and run
 docker-compose -f docker-compose.dev.yml up --build
 
-# Just run (after initial build)
-docker-compose -f docker-compose.dev.yml up
+# Rebuild after code changes
+docker-compose -f docker-compose.dev.yml up --build
 ```
 
 ## Debugging
@@ -67,9 +88,18 @@ docker-compose -f docker-compose.dev.yml up
 # - Database: sqlite3 /app/data/trading.db
 ```
 
-## Production Build
+## Testing
 
-When ready for production:
+```bash
+# Run tests locally (fastest)
+cd cs/src
+dotnet test AlpacaFleece.Tests/AlpacaFleece.Tests.csproj
+
+# Or in container
+./dev.sh test
+```
+
+## Production Build
 
 ```bash
 # Full build (no volume mounts)
