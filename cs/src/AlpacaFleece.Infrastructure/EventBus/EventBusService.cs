@@ -91,6 +91,8 @@ public sealed class EventBusService : IEventBus
 
                 var completedTask = await Task.WhenAny(exitTask, normalTask).ConfigureAwait(false);
 
+                // Cancel the linked CTS so the non-selected wait is cancelled
+                linkedCts.Cancel();
                 if (completedTask == exitTask && await exitTask)
                 {
                     while (_exitChannel.Reader.TryRead(out var exitSignal))
