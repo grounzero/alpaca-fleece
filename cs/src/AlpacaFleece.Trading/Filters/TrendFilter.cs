@@ -2,10 +2,10 @@ namespace AlpacaFleece.Trading.Filters;
 
 /// <summary>
 /// Filters signals based on daily trend direction.
-/// Compares the most recent completed daily bar's close to a simple moving average of daily closes.
+/// Compares the most recent daily bar's close to a simple moving average of daily closes.
 /// A BUY signal passes when close &gt; SMA; a SELL signal passes when close &lt; SMA.
-/// Using the last daily close (rather than the current intraday price) is intentional: it reflects
-/// the confirmed daily trend direction and avoids reacting to transient intraday moves.
+/// Uses the latest available daily close to reflect the daily trend direction, and may include
+/// the current trading day's bar depending on the data provider's behavior.
 /// Caches daily bars per symbol with a 1-hour TTL to avoid repeated API calls.
 /// </summary>
 public sealed class TrendFilter(
