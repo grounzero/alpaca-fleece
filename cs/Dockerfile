@@ -1,5 +1,5 @@
 # Multi-stage build for AlpacaFleece C# Worker
-FROM mcr.microsoft.com/dotnet/sdk:10.0-preview-alpine AS build
+FROM mcr.microsoft.com/dotnet/sdk:10.0-alpine AS build
 WORKDIR /src
 
 # Copy project files
@@ -21,7 +21,7 @@ RUN dotnet publish "src/AlpacaFleece.Worker/AlpacaFleece.Worker.csproj" \
     -c Release -o /app/publish
 
 # Runtime image
-FROM mcr.microsoft.com/dotnet/aspnet:10.0-preview-alpine
+FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
 WORKDIR /app
 
 # Install SQLite, timezone data, and process utilities for healthcheck
