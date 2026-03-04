@@ -18,6 +18,10 @@ public sealed class OrderIntentEntityConfiguration : IEntityTypeConfiguration<Or
         builder.Property(x => x.LimitPrice).HasPrecision(10, 4);
         builder.Property(x => x.Status).HasMaxLength(20).IsRequired();
         builder.Property(x => x.AtrSeed).HasPrecision(10, 4);
+        // O-2: Order state transition timestamps (nullable — set once on first transition).
+        builder.Property(x => x.AcceptedAt).HasColumnName("accepted_at").IsRequired(false);
+        builder.Property(x => x.FilledAt).HasColumnName("filled_at").IsRequired(false);
+        builder.Property(x => x.CanceledAt).HasColumnName("canceled_at").IsRequired(false);
     }
 }
 

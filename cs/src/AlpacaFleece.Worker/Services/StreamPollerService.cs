@@ -29,12 +29,23 @@ public sealed class StreamPollerService(
     private const int MaxRetries = 3;
     private const int BaseBackoffMs = 100;
     private const int OrderPollConcurrency = 10;
+    // H-3: After the first warmup poll, subsequent polls only need the latest bars.
+    // Full history (effectiveDepth) is requested until the symbol is warmed; then WarmPollDepth.
+    private const int WarmPollDepth = 5;
     private int _backoffMs = BaseBackoffMs;
     private readonly Random _random = new();
+
+    // R-4: Known timeframe strings — used to validate configured timeframes at startup.
+    private static readonly HashSet<string> KnownTimeframes = new(StringComparer.OrdinalIgnoreCase)
+        { "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w" };
 
     // Bar deduplication: tracks the timestamp of the last bar published per symbol.
     // Prevents re-publishing bars we've already emitted in a previous poll cycle.
     private readonly Dictionary<string, DateTimeOffset> _lastPublishedBarTs = new();
+
+    // H-3: Symbols that have completed at least one full-depth warmup poll.
+    // Once warmed, only WarmPollDepth bars are requested per cycle to reduce API payload.
+    private readonly HashSet<string> _warmedSymbols = new(StringComparer.OrdinalIgnoreCase);
 
     // Partial-fill deduplication: tracks cumulative filled qty per client order ID.
     // Allows emitting OrderUpdateEvent when filled qty increases even if status is unchanged
@@ -82,6 +93,14 @@ public sealed class StreamPollerService(
         foreach (var s in equitySymbols) allSymbols.Add(s);
         var allSymbolsList = allSymbols.ToList();
         const string timeframe = "1m";
+
+        // R-4: Validate that the configured timeframe is a known value.
+        // Unknown timeframes would silently produce wrong data; log a WARNING so operators can fix it.
+        if (!KnownTimeframes.Contains(timeframe))
+            logger.LogWarning(
+                "Timeframe '{timeframe}' is not a recognised value ({known}). " +
+                "Bar data may be incorrect or empty.",
+                timeframe, string.Join(", ", KnownTimeframes));
 
         var configuredDepth = tradingOptions.Value.Execution.BarHistoryDepth;
         var effectiveDepth = Math.Max(configuredDepth, strategy.RequiredHistory);
@@ -221,8 +240,9 @@ public sealed class StreamPollerService(
 
     /// <summary>
     /// Fetches the latest bars for a single batch and publishes a BarEvent per symbol.
+    /// Internal so tests can call it directly without waiting for the 1-minute poll cadence.
     /// </summary>
-    private async Task PollBatchAsync(
+    internal async Task PollBatchAsync(
         List<string> batch,
         string timeframe,
         int barDepth,
@@ -236,8 +256,10 @@ public sealed class StreamPollerService(
         {
             try
             {
-                logger.LogDebug("Fetching bars for {Symbol}...", symbol);
-                var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, barDepth, ct);
+                // H-3: Use full history depth on first (warmup) poll; subsequent polls fetch only WarmPollDepth bars.
+                var symbolDepth = _warmedSymbols.Contains(symbol) ? WarmPollDepth : barDepth;
+                logger.LogDebug("Fetching bars for {Symbol} (depth={Depth}, warmed={Warmed})...", symbol, symbolDepth, _warmedSymbols.Contains(symbol));
+                var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, symbolDepth, ct);
                 logger.LogDebug("Fetched {Count} bars for {Symbol}", quotes.Count, symbol);
 
                 _lastPublishedBarTs.TryGetValue(symbol, out var lastTs);
@@ -253,9 +275,10 @@ public sealed class StreamPollerService(
                         continue;
                     }
 
+                    // R-4: Normalise timeframe to uppercase for consistent clientOrderId generation.
                     var barEvent = new BarEvent(
                         Symbol: quote.Symbol,
-                        Timeframe: timeframe,
+                        Timeframe: timeframe.ToUpperInvariant(),
                         Timestamp: barTs,
                         Open: quote.Open,
                         High: quote.High,
@@ -274,6 +297,8 @@ public sealed class StreamPollerService(
                 if (newBars > 0)
                 {
                     _lastPublishedBarTs[symbol] = lastTs;
+                    // H-3: Mark symbol as warmed after first successful poll with new bars.
+                    _warmedSymbols.Add(symbol);
                 }
 
                 logger.LogDebug("Polled {Symbol}: {Total} bars, {New} new", symbol, quotes.Count, newBars);
@@ -373,17 +398,19 @@ public sealed class StreamPollerService(
                 return;
             }
 
-            // Adapter fault guard: SDK v7.2.0 cannot read fractional filled quantities.
-            // A terminal-fill with FilledQuantity=0 indicates a crypto fill that cannot be
-            // processed correctly. Trip the circuit breaker so no new orders are placed.
+            // C-5: Adapter fault guard — SDK v7.2.0 cannot read fractional filled quantities.
+            // A terminal-fill with FilledQuantity=0 indicates a crypto fill where the integer
+            // quantity field is null. Instead of tripping the circuit breaker, use the persisted
+            // intent quantity as a fallback so the position can be opened/closed correctly.
+            // TODO: remove fallback after upgrading Alpaca.Markets SDK to ≥ 8.x.
             if (AlpacaBrokerService.IsFractionalFault(order))
             {
                 logger.LogError(
                     "Adapter fault: order {ClientOrderId} ({AlpacaId}) status={Status} but FilledQuantity=0. " +
-                    "Fractional fill cannot be read with SDK v7.2.0. Tripping circuit breaker.",
-                    intent.ClientOrderId, intent.AlpacaOrderId, order.Status);
-                await stateRepository.SaveCircuitBreakerCountAsync(5, ct);
-                return;
+                    "Using intent quantity {IntentQty} as fallback (SDK v7.2.0 limitation).",
+                    intent.ClientOrderId, intent.AlpacaOrderId, order.Status, intent.Quantity);
+                order = order with { FilledQuantity = intent.Quantity };
+                // Do NOT trip the circuit breaker — this is a read-side SDK limitation, not a trading error.
             }
 
             // Emit when status changes OR when filled qty increases (catches PartiallyFilled

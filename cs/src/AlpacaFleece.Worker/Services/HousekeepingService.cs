@@ -8,7 +8,8 @@ public sealed class HousekeepingService(
     IBrokerService brokerService,
     IStateRepository stateRepository,
     IServiceScopeFactory scopeFactory,
-    ILogger<HousekeepingService> logger) : BackgroundService
+    ILogger<HousekeepingService> logger,
+    HealthCheckService? healthCheckService = null) : BackgroundService
 {
     private const int EquitySnapshotIntervalSeconds = 60;
 
@@ -118,15 +119,44 @@ public sealed class HousekeepingService(
             var account = await brokerService.GetAccountAsync(ct);
             var snapshotTime = DateTimeOffset.UtcNow;
 
+            // O-1: Read the actual daily realised PnL from the KV store (accumulated by EventDispatcherService on fills).
+            var dailyPnlStr = await stateRepository.GetStateAsync("daily_realized_pnl", ct);
+            var dailyPnl = decimal.TryParse(dailyPnlStr, out var parsed) ? parsed : 0m;
+
             await stateRepository.InsertEquitySnapshotAsync(
                 snapshotTime,
                 account.PortfolioValue,
                 account.CashAvailable,
-                0m, // Daily PnL - would calculate from positions
+                dailyPnl,
                 ct);
 
-            logger.LogDebug("Equity snapshot taken: portfolio={portfolio} cash={cash} at {time}",
-                account.PortfolioValue, account.CashAvailable, snapshotTime);
+            logger.LogDebug(
+                "Equity snapshot taken: portfolio={portfolio} cash={cash} dailyPnl={dailyPnl} at {time}",
+                account.PortfolioValue, account.CashAvailable, dailyPnl, snapshotTime);
+
+            // O-3: Write health check result to data/health.json if the health check service is registered.
+            if (healthCheckService != null)
+            {
+                try
+                {
+                    var healthReport = await healthCheckService.CheckHealthAsync(new HealthCheckContext(), ct);
+                    var dataDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+                    Directory.CreateDirectory(dataDir);
+                    var healthPath = Path.Combine(dataDir, "health.json");
+                    var healthJson = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        Status = healthReport.Status.ToString(),
+                        CheckedAt = snapshotTime,
+                        Description = healthReport.Description,
+                        Data = healthReport.Data
+                    }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                    await File.WriteAllTextAsync(healthPath, healthJson, ct);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to write health check result");
+                }
+            }
         }
         catch (Exception ex)
         {
@@ -144,7 +174,8 @@ public sealed class HousekeepingService(
             while (!stoppingToken.IsCancellationRequested)
             {
                 var nextResetTime = CalculateNextResetTime();
-                var delayMs = (nextResetTime - DateTimeOffset.Now).TotalMilliseconds;
+                // C-1: Use UtcNow for delay calculation (nextResetTime is already in UTC).
+                var delayMs = (nextResetTime - DateTimeOffset.UtcNow).TotalMilliseconds;
 
                 if (delayMs > 0)
                 {
@@ -156,11 +187,13 @@ public sealed class HousekeepingService(
                     // Check if already reset today (prevent duplicate resets)
                     var lastResetDate = await stateRepository.GetStateAsync(
                         "daily_reset_date", stoppingToken);
-                    var todayStr = DateTimeOffset.Now.ToString("yyyy-MM-dd");
+                    // C-1: Format the ET-local date, not the server local time.
+                    var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+                    var todayStr = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, etZone).ToString("yyyy-MM-dd");
 
                     if (lastResetDate != todayStr)
                     {
-                        logger.LogInformation("Daily reset at {time}", DateTimeOffset.Now);
+                        logger.LogInformation("Daily reset at {time}", DateTimeOffset.UtcNow);
                         await stateRepository.ResetDailyStateAsync(stoppingToken);
                         await stateRepository.SetStateAsync(
                             "daily_reset_date", todayStr, stoppingToken);
@@ -184,13 +217,15 @@ public sealed class HousekeepingService(
     /// </summary>
     private static DateTimeOffset CalculateNextResetTime()
     {
-        var estZone = TimeZoneInfo.FindSystemTimeZoneById("Eastern Standard Time");
-        var nowEst = TimeZoneInfo.ConvertTime(DateTimeOffset.Now, estZone);
+        // C-1: Use IANA timezone ID "America/New_York" for cross-platform compatibility
+        // (works on Linux/macOS Docker and Windows; "Eastern Standard Time" is Windows-only).
+        var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+        var nowEt = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, etZone);
 
-        var nextReset = nowEst.Date.AddHours(9).AddMinutes(30);
+        var nextReset = nowEt.Date.AddHours(9).AddMinutes(30);
 
         // If already past 09:30 today, schedule for next weekday
-        if (nowEst.TimeOfDay >= new TimeSpan(9, 30, 0))
+        if (nowEt.TimeOfDay >= new TimeSpan(9, 30, 0))
         {
             nextReset = nextReset.AddDays(1);
         }
@@ -201,7 +236,7 @@ public sealed class HousekeepingService(
             nextReset = nextReset.AddDays(1);
         }
 
-        // Convert back to UTC
-        return TimeZoneInfo.ConvertTime(nextReset, estZone, TimeZoneInfo.Utc);
+        // Convert back to UTC (TimeZoneInfo.ConvertTime handles DST correctly)
+        return TimeZoneInfo.ConvertTimeToUtc(nextReset, etZone);
     }
 }

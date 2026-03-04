@@ -40,6 +40,12 @@ public class ExitManager(
     private readonly Dictionary<string, int> _priceFetchFailures = new();
     private const int MaxPriceFailures = 3;
 
+    // R-3: Cache the market clock to avoid an Alpaca API call on every 30-second exit check cycle.
+    // The clock is refreshed at most once per minute (60s TTL).
+    private ClockInfo? _cachedClock;
+    private DateTimeOffset _clockCacheTime = DateTimeOffset.MinValue;
+    private static readonly TimeSpan ClockCacheTtl = TimeSpan.FromSeconds(60);
+
     /// <summary>
     /// Main execution loop — run this in a hosted service background task.
     /// </summary>
@@ -102,7 +108,21 @@ public class ExitManager(
     {
         var signals = new List<ExitSignalEvent>();
 
-        var clock = await brokerService.GetClockAsync(ct);
+        // R-3: Use cached clock if fresh (< 60s); otherwise fetch and cache a new one.
+        // Reduces Alpaca clock API calls from once per 30s cycle to at most once per minute.
+        ClockInfo clock;
+        var now = DateTimeOffset.UtcNow;
+        if (_cachedClock != null && now - _clockCacheTime < ClockCacheTtl)
+        {
+            clock = _cachedClock;
+        }
+        else
+        {
+            clock = await brokerService.GetClockAsync(ct);
+            _cachedClock = clock;
+            _clockCacheTime = now;
+        }
+
         var positions = positionTracker.GetAllPositions();
 
         foreach (var (symbol, posData) in positions)

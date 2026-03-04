@@ -28,6 +28,7 @@ global using AlpacaFleece.Trading.Positions;
 global using AlpacaFleece.Trading.Risk;
 global using AlpacaFleece.Trading.Strategy;
 global using AlpacaFleece.Worker.Data;
+global using AlpacaFleece.Worker.Health;
 global using AlpacaFleece.Worker.Metrics;
 global using AlpacaFleece.Worker.Notifications;
 global using AlpacaFleece.Worker.Services;

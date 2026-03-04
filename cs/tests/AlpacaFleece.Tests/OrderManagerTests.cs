@@ -581,4 +581,80 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
             Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
+
+    // ─── C-2: Flatten submits market orders (limitPrice=0m) ─────────────────────
+
+    [Fact]
+    public async Task FlattenPositions_SubmitsMarketOrders()
+    {
+        // Arrange
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>
+            {
+                new("MSFT", 50m, 300m, 310m, 500m, 0.016m, DateTimeOffset.UtcNow)
+            }.AsReadOnly() as IReadOnlyList<PositionInfo>);
+
+        decimal capturedLimitPrice = -1m;
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedLimitPrice = callInfo.ArgAt<decimal>(3);
+                return new ValueTask<OrderInfo>(new OrderInfo(
+                    "alpaca_market_flat", "test", "MSFT", "SELL", 50m, 0m, 0m,
+                    OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+            });
+
+        // Act
+        var submitted = await orderManager.FlattenPositionsAsync();
+
+        // Assert: one order submitted with limitPrice=0m (market order)
+        Assert.Equal(1, submitted);
+        Assert.Equal(0m, capturedLimitPrice);
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            "MSFT", "SELL", 50m, 0m, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ─── H-1: SubmitExit idempotency ─────────────────────────────────────────────
+
+    [Fact]
+    public async Task SubmitExit_AlreadySubmitted_SkipsBroker()
+    {
+        // Arrange: save an intent with an AlpacaOrderId already set (simulates broker already received it)
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        // Derive the same clientOrderId that SubmitExitAsync would generate for today
+        var nowUtc = DateTimeOffset.UtcNow;
+        var dateKey = nowUtc.ToString("yyyyMMdd");
+        var dayTs = new DateTimeOffset(nowUtc.Year, nowUtc.Month, nowUtc.Day, 0, 0, 0, TimeSpan.Zero);
+        var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
+            strategy: "exit",
+            symbol: "TSLA",
+            timeframe: dateKey,
+            signalTimestamp: dayTs,
+            side: "sell");
+
+        // Persist intent with AlpacaOrderId already set (as if broker already received it)
+        await fixture.StateRepository.SaveOrderIntentAsync(
+            clientOrderId, "TSLA", "SELL", 25m, 0m, nowUtc);
+        await fixture.StateRepository.UpdateOrderIntentAsync(
+            clientOrderId, "alpaca_already_submitted", OrderState.Accepted, nowUtc);
+
+        // Act: call SubmitExitAsync — should detect existing AlpacaOrderId and skip broker
+        await orderManager.SubmitExitAsync("TSLA", "SELL", 25m, 0m);
+
+        // Assert: broker.SubmitOrderAsync never called (idempotency guard)
+        await _brokerMock.DidNotReceive().SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
 }

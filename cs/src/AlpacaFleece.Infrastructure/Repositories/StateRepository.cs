@@ -214,6 +214,12 @@ public sealed class StateRepository(
             intent.Status = status.ToString();
             intent.UpdatedAt = updatedAt;
 
+            // O-2: Stamp the first-seen transition timestamp (??= preserves the earliest timestamp).
+            intent.AcceptedAt ??= status == OrderState.Accepted ? updatedAt : null;
+            intent.FilledAt ??= status == OrderState.Filled ? updatedAt : null;
+            intent.CanceledAt ??= status is OrderState.Canceled or OrderState.Expired or OrderState.Rejected
+                ? updatedAt : null;
+
             await dbContext.SaveChangesAsync(ct);
         }
         catch (StateRepositoryException)

@@ -20,6 +20,11 @@ public sealed class OrderIntentEntity
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
     public decimal? AtrSeed { get; set; }
+
+    // O-2: State transition timestamps — preserved on first transition (??= idiom in StateRepository).
+    public DateTimeOffset? AcceptedAt { get; set; }
+    public DateTimeOffset? FilledAt { get; set; }
+    public DateTimeOffset? CanceledAt { get; set; }
 }
 
 /// <summary>
