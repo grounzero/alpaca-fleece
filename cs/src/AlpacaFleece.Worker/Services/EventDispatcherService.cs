@@ -146,6 +146,18 @@ public sealed class EventDispatcherService(
                     var intent = await stateRepo.GetOrderIntentAsync(updateEvent.ClientOrderId);
                     var atr = intent?.AtrSeed ?? 0m;
 
+                    if (atr <= 0m)
+                    {
+                        // AtrSeed missing (pre-migration intent or unexpected path). ExitManager
+                        // skips positions with AtrValue ≤ 0, leaving this position unprotected.
+                        // Log an error so the operator can investigate; the fill is still recorded.
+                        logger.LogError(
+                            "BUY fill for {Symbol} has no ATR seed (intent={ClientOrderId}). " +
+                            "Position will open with AtrValue=0 and will be skipped by ExitManager — " +
+                            "manual exit monitoring required.",
+                            updateEvent.Symbol, updateEvent.ClientOrderId);
+                    }
+
                     await positionTracker.OpenPositionAsync(
                         updateEvent.Symbol,
                         updateEvent.FilledQuantity,

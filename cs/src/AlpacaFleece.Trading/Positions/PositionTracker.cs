@@ -112,20 +112,31 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     /// </summary>
     public async ValueTask InitialiseFromDbAsync(CancellationToken ct = default)
     {
-        var rows = await _stateRepository.GetAllPositionTrackingAsync(ct);
-        var loaded = 0;
-
-        foreach (var (symbol, quantity, entryPrice, atrValue, trailingStop) in rows)
+        // Hold the semaphore for the full rehydration so a concurrent OpenPositionAsync or
+        // ClosePositionAsync (e.g. from RuntimeReconcilerService) cannot interleave with the
+        // startup load and leave DB and in-memory state inconsistent.
+        await _positionSemaphore.WaitAsync(ct);
+        try
         {
-            if (quantity > 0)
-            {
-                // Use the persisted trailing stop so any tightening across restarts is preserved.
-                OpenPositionInMemory(symbol, quantity, entryPrice, atrValue, trailingStop);
-                loaded++;
-            }
-        }
+            var rows = await _stateRepository.GetAllPositionTrackingAsync(ct);
+            var loaded = 0;
 
-        logger.LogInformation("PositionTracker rehydrated {count} position(s) from database", loaded);
+            foreach (var (symbol, quantity, entryPrice, atrValue, trailingStop) in rows)
+            {
+                if (quantity > 0)
+                {
+                    // Use the persisted trailing stop so any tightening across restarts is preserved.
+                    OpenPositionInMemory(symbol, quantity, entryPrice, atrValue, trailingStop);
+                    loaded++;
+                }
+            }
+
+            logger.LogInformation("PositionTracker rehydrated {count} position(s) from database", loaded);
+        }
+        finally
+        {
+            _positionSemaphore.Release();
+        }
     }
 
     /// <summary>
