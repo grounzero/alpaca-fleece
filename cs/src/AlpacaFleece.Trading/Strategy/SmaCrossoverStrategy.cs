@@ -10,11 +10,13 @@ public sealed class SmaCrossoverStrategy(
     IEventBus eventBus,
     ILogger<SmaCrossoverStrategy> logger,
     TrendFilter? trendFilter = null,
-    VolumeFilter? volumeFilter = null) : IStrategy
+    VolumeFilter? volumeFilter = null,
+    ExecutionOptions? executionOptions = null) : IStrategy
 {
     private readonly RegimeDetector _regimeDetector = new();
     private readonly Dictionary<string, BarHistory> _barHistories = new();
     private readonly object _syncLock = new();
+    private readonly int _maxBarAgeMinutes = executionOptions?.MaxBarAgeMinutes ?? 3;
     // Tracks which symbols have already logged the "strategy ready" transition.
     private readonly HashSet<string> _readySymbols = new();
 
@@ -93,6 +95,26 @@ public sealed class SmaCrossoverStrategy(
                 "Bar: {symbol} | P1:({fast1:F2},{slow1:F2}) P2:({fast2:F2},{slow2:F2}) P3:({fast3:F2},{slow3:F2}) | Regime={regime} | ATR={atr:F2}",
                 bar.Symbol, fast1, slow1, fast2, slow2, fast3, slow3, regime.RegimeType, atr);
 
+            // Staleness gate: stale bars are suppressed (no signals) but we still update
+            // the previous-SMA dicts so the NEXT fresh bar compares against current indicators.
+            // Without this, _previousSmaPair* stays (0,0) after a restart replay and the first
+            // fresh bar always looks like a crossover (prevFast=0 ≤ prevSlow=0, fastSma > slowSma).
+            if (_maxBarAgeMinutes > 0)
+            {
+                var ageMinutes = (DateTimeOffset.UtcNow - bar.Timestamp).TotalMinutes;
+                if (ageMinutes > _maxBarAgeMinutes)
+                {
+                    logger.LogDebug(
+                        "Bar {Symbol} suppressed: age {Age:F1}min > threshold {Max}min — indicators updated, no signal",
+                        bar.Symbol, ageMinutes, _maxBarAgeMinutes);
+                    // Update previous states so the next fresh bar sees the correct prior SMAs.
+                    _previousSmaPair1[bar.Symbol] = (fast1, slow1);
+                    _previousSmaPair2[bar.Symbol] = (fast2, slow2);
+                    _previousSmaPair3[bar.Symbol] = (fast3, slow3);
+                    return;
+                }
+            }
+
             // Generate signals based on crossovers
             var signals = new List<SignalEvent>();
 
@@ -144,7 +166,7 @@ public sealed class SmaCrossoverStrategy(
                 _previousSmaPair3,
                 "pair3");
 
-            // Update previous states
+            // Update previous states for crossover comparison on the next bar.
             _previousSmaPair1[bar.Symbol] = (fast1, slow1);
             _previousSmaPair2[bar.Symbol] = (fast2, slow2);
             _previousSmaPair3[bar.Symbol] = (fast3, slow3);

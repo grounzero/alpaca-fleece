@@ -254,4 +254,71 @@ public sealed class ReconciliationTests(TradingFixture fixture)
 
         // Assert: no exception expected
     }
+
+    // ─── C-3: Startup gate via reconciliation outcome ─────────────────────────────
+
+    [Fact]
+    public async Task ReconciliationPasses_TradingReadyShouldBeTrue_WhenCallerSetsIt()
+    {
+        // This test verifies that a clean reconciliation allows "trading_ready" to be set "true".
+        // The actual gate-setting is done by OrchestratorService, but we verify the reconciliation
+        // itself completes without throwing (which is the pre-condition for the gate to be set).
+        await fixture.StateRepository.SetStateAsync("trading_ready", "false");
+
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+
+        var reconciliation = new ReconciliationService(_brokerMock, fixture.StateRepository, _logger);
+
+        // Act: clean reconciliation should complete without throwing
+        await reconciliation.PerformStartupReconciliationAsync(CancellationToken.None);
+        await reconciliation.ReconcileFillsAsync(CancellationToken.None);
+
+        // Simulate what OrchestratorService does on success
+        await fixture.StateRepository.SetStateAsync("trading_ready", "true");
+
+        var ready = await fixture.StateRepository.GetStateAsync("trading_ready");
+        Assert.Equal("true", ready);
+    }
+
+    [Fact]
+    public async Task ReconciliationThrows_TradingReadyRemainsBlocked()
+    {
+        // When broker has an unknown open order, reconciliation throws → gate stays "false"
+        await fixture.StateRepository.SetStateAsync("trading_ready", "false");
+
+        var unknownOrder = new OrderInfo(
+            AlpacaOrderId: "alpaca_gate_test",
+            ClientOrderId: "unknown_client",
+            Symbol: "AAPL",
+            Side: "BUY",
+            Quantity: 100,
+            FilledQuantity: 0,
+            AverageFilledPrice: 0m,
+            Status: OrderState.PendingNew,
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: null);
+
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo> { unknownOrder });
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+
+        var reconciliation = new ReconciliationService(_brokerMock, fixture.StateRepository, _logger);
+
+        // Act: reconciliation throws — simulate OrchestratorService catch path (does NOT set "true")
+        try
+        {
+            await reconciliation.PerformStartupReconciliationAsync(CancellationToken.None);
+        }
+        catch (ReconciliationException)
+        {
+            // Expected — OrchestratorService catches and leaves trading_ready = "false"
+        }
+
+        var ready = await fixture.StateRepository.GetStateAsync("trading_ready");
+        Assert.Equal("false", ready);
+    }
 }

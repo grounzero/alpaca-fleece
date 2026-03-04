@@ -123,31 +123,74 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles order update events (updates position tracker, etc.).
+    /// Handles order update events: opens/closes positions on fill, clears PendingExit.
     /// </summary>
     private async ValueTask HandleOrderUpdateEventAsync(OrderUpdateEvent updateEvent)
     {
         logger.LogInformation(
-            "Handling OrderUpdateEvent: {symbol} {status}",
-            updateEvent.Symbol, updateEvent.Status);
+            "Handling OrderUpdateEvent: {symbol} {status} {side}",
+            updateEvent.Symbol, updateEvent.Status, updateEvent.Side);
 
         try
         {
-            var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
+            var positionTracker = serviceProvider.GetRequiredService<IPositionTracker>();
+            var exitManager = serviceProvider.GetRequiredService<ExitManager>();
 
-            // Update position based on order status
             if (updateEvent.Status == OrderState.Filled)
             {
-                // Update position tracker with filled quantity and price
-                positionTracker.UpdateTrailingStop(updateEvent.Symbol, updateEvent.AverageFilledPrice);
+                var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
+
+                if (string.Equals(updateEvent.Side, "BUY", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Look up the stored ATR seed from the original signal intent
+                    var intent = await stateRepo.GetOrderIntentAsync(updateEvent.ClientOrderId);
+                    var atr = intent?.AtrSeed ?? 0m;
+
+                    if (atr <= 0m)
+                    {
+                        // AtrSeed missing (pre-migration intent or unexpected path). ExitManager
+                        // skips positions with AtrValue ≤ 0, leaving this position unprotected.
+                        // Log an error so the operator can investigate; the fill is still recorded.
+                        logger.LogError(
+                            "BUY fill for {Symbol} has no ATR seed (intent={ClientOrderId}). " +
+                            "Position will open with AtrValue=0 and will be skipped by ExitManager — " +
+                            "manual exit monitoring required.",
+                            updateEvent.Symbol, updateEvent.ClientOrderId);
+                    }
+
+                    await positionTracker.OpenPositionAsync(
+                        updateEvent.Symbol,
+                        updateEvent.FilledQuantity,
+                        updateEvent.AverageFilledPrice,
+                        atr);
+                    await stateRepo.IncrementDailyTradeCountAsync();
+                }
+                else
+                {
+                    // Capture entry price BEFORE closing to compute realised PnL
+                    var pos = positionTracker.GetPosition(updateEvent.Symbol);
+                    if (pos != null && updateEvent.FilledQuantity > 0 && updateEvent.AverageFilledPrice > 0)
+                    {
+                        var pnl = (updateEvent.AverageFilledPrice - pos.EntryPrice) * updateEvent.FilledQuantity;
+                        await stateRepo.AddDailyRealizedPnlAsync(pnl);
+                    }
+
+                    // SELL fill — exit; zero out the position
+                    await positionTracker.ClosePositionAsync(updateEvent.Symbol);
+                    await stateRepo.IncrementDailyTradeCountAsync();
+                }
+
+            }
+            else if (updateEvent.Status is OrderState.Canceled or OrderState.Expired or OrderState.Rejected)
+            {
+                // Terminal failure states — clear PendingExit so ExitManager can retry
+                await exitManager.HandleOrderUpdateAsync(updateEvent, CancellationToken.None);
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to handle order update for {symbol}", updateEvent.Symbol);
         }
-
-        await Task.CompletedTask;
     }
 
     /// <summary>

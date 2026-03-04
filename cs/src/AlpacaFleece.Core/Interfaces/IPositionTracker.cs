@@ -17,14 +17,14 @@ public interface IPositionTracker
     PositionData? GetPosition(string symbol);
 
     /// <summary>
-    /// Opens a position.
+    /// Opens a position (persists to DB then updates in-memory state).
     /// </summary>
-    void OpenPosition(string symbol, decimal quantity, decimal entryPrice, decimal atrValue);
+    ValueTask OpenPositionAsync(string symbol, decimal quantity, decimal entryPrice, decimal atrValue, CancellationToken ct = default);
 
     /// <summary>
-    /// Closes a position.
+    /// Closes a position (zeros DB row then removes from in-memory state).
     /// </summary>
-    void ClosePosition(string symbol);
+    ValueTask ClosePositionAsync(string symbol, CancellationToken ct = default);
 
     /// <summary>
     /// Updates trailing stop for a position.

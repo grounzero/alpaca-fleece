@@ -38,7 +38,8 @@ public interface IStateRepository
         decimal quantity,
         decimal limitPrice,
         DateTimeOffset createdAt,
-        CancellationToken ct = default);
+        CancellationToken ct = default,
+        decimal? atrSeed = null);
 
     /// <summary>
     /// Updates an existing order intent status.
@@ -83,6 +84,16 @@ public interface IStateRepository
     ValueTask SaveCircuitBreakerCountAsync(int count, CancellationToken ct = default);
 
     /// <summary>
+    /// Atomically increments daily_trade_count by 1.
+    /// </summary>
+    ValueTask IncrementDailyTradeCountAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically adds pnlDelta to daily_realized_pnl (negative value = loss).
+    /// </summary>
+    ValueTask AddDailyRealizedPnlAsync(decimal pnlDelta, CancellationToken ct = default);
+
+    /// <summary>
     /// Resets daily state (circuit breaker, trade count, etc.).
     /// </summary>
     ValueTask ResetDailyStateAsync(CancellationToken ct = default);
@@ -122,8 +133,20 @@ public interface IStateRepository
     /// <summary>
     /// Gets all position tracking records from the database.
     /// </summary>
-    ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>>
+    ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)>>
         GetAllPositionTrackingAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Upserts a position tracking row (find-or-create on Symbol).
+    /// Set qty/entryPrice/atr/trailingStop to 0 to mark a position as closed.
+    /// </summary>
+    ValueTask UpsertPositionTrackingAsync(
+        string symbol,
+        decimal qty,
+        decimal entryPrice,
+        decimal atrValue,
+        decimal trailingStop,
+        CancellationToken ct = default);
 
     /// <summary>
     /// Gets the persisted drawdown state (peak equity, current drawdown, level).
@@ -166,4 +189,5 @@ public record OrderIntentDto(
     decimal LimitPrice,
     OrderState Status,
     DateTimeOffset CreatedAt,
-    DateTimeOffset? UpdatedAt);
+    DateTimeOffset? UpdatedAt,
+    decimal? AtrSeed = null);

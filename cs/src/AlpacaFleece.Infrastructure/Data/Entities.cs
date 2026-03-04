@@ -19,6 +19,7 @@ public sealed class OrderIntentEntity
     public string Status { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset? UpdatedAt { get; set; }
+    public decimal? AtrSeed { get; set; }
 }
 
 /// <summary>

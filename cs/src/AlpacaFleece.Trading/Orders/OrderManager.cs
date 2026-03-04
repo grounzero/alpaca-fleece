@@ -135,7 +135,7 @@ public sealed class OrderManager(
                 }
             }
 
-            // Step 7: Persist intent BEFORE submission (crash recovery)
+            // Step 7: Persist intent BEFORE submission (crash recovery); store ATR seed for fill-time position open
             await stateRepository.SaveOrderIntentAsync(
                 clientOrderId,
                 signal.Symbol,
@@ -143,7 +143,8 @@ public sealed class OrderManager(
                 quantity,
                 limitPrice,
                 DateTimeOffset.UtcNow,
-                ct);
+                ct,
+                atrSeed: signal.Metadata.Atr ?? signal.Metadata.AtrValue);
 
             logger.LogInformation("Order intent persisted: {id}", clientOrderId);
 

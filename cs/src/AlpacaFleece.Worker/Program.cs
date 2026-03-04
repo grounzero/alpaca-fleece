@@ -94,7 +94,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
             trendFilter: sp.GetRequiredService<TrendFilter>(),
-            volumeFilter: sp.GetRequiredService<VolumeFilter>()));
+            volumeFilter: sp.GetRequiredService<VolumeFilter>(),
+            executionOptions: tradingOptions.Execution));
         services.AddSingleton<PositionTracker>();
         services.AddSingleton<IPositionTracker>(sp => sp.GetRequiredService<PositionTracker>());
 
@@ -142,7 +143,10 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddScoped<IReconciliationService, ReconciliationService>();
 
         // Worker services
-        services.AddHostedService<OrchestratorService>();
+        services.AddHostedService(sp => new OrchestratorService(
+            sp.GetRequiredService<ILogger<OrchestratorService>>(),
+            sp,
+            sp.GetRequiredService<IStateRepository>()));
         services.AddHostedService<EventDispatcherService>();
         services.AddHostedService<SchemaManagerService>();
 
@@ -156,7 +160,11 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddHostedService<RuntimeReconcilerService>();
 
         // Phase 6: Housekeeping Service
-        services.AddHostedService<HousekeepingService>();
+        services.AddHostedService(sp => new HousekeepingService(
+            sp.GetRequiredService<IBrokerService>(),
+            sp.GetRequiredService<IStateRepository>(),
+            sp.GetRequiredService<IServiceScopeFactory>(),
+            sp.GetRequiredService<ILogger<HousekeepingService>>()));
 
         // Drawdown monitor service
         services.AddHostedService<DrawdownMonitorService>();

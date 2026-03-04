@@ -43,7 +43,11 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
             options);
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        // Zero out AAPL position_tracking row so subsequent tests see no open position.
+        await _positionTracker.ClosePositionAsync("AAPL");
+    }
 
     [Fact]
     public async Task CheckPositionsAsync_AtrStopLossTriggersCorrectly()
@@ -51,7 +55,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -71,7 +75,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -90,7 +94,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
         var position = _positionTracker.GetPosition("AAPL")!;
         position.PendingExit = true;
 
@@ -109,7 +113,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
     {
         // Arrange: open position with invalid (zero) ATR
         var entryPrice = 100m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, 0m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, 0m);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -127,7 +131,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(false, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -145,7 +149,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
         var position = _positionTracker.GetPosition("AAPL")!;
         position.PendingExit = true;
 
@@ -173,7 +177,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
         var position = _positionTracker.GetPosition("AAPL")!;
         position.PendingExit = true;
 
@@ -201,7 +205,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -280,7 +284,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange: call CheckPositions which internally uses GetCurrentPriceAsync
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
@@ -299,7 +303,7 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange: Bug 1 — PartiallyFilled is non-terminal; PendingExit must NOT be cleared
         var entryPrice = 100m;
         var atrValue = 2m;
-        _positionTracker.OpenPosition("AAPL", 100, entryPrice, atrValue);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, entryPrice, atrValue);
         var position = _positionTracker.GetPosition("AAPL")!;
         position.PendingExit = true;
 

@@ -9,7 +9,8 @@ namespace AlpacaFleece.Worker.Services;
 /// </summary>
 public sealed class OrchestratorService(
     ILogger<OrchestratorService> logger,
-    IServiceProvider serviceProvider) : IHostedLifecycleService
+    IServiceProvider serviceProvider,
+    IStateRepository stateRepository) : IHostedLifecycleService
 {
     /// <summary>
     /// IHostedService.StartAsync - called when host starts.
@@ -39,10 +40,30 @@ public sealed class OrchestratorService(
     {
         logger.LogInformation("Data Layer, Trading Logic, Runtime - All services started");
 
+        // Block signals until reconciliation succeeds (set before rehydration, cleared on success).
+        await stateRepository.SetStateAsync("trading_ready", "false", cancellationToken);
+
         // Rehydrate PositionTracker from DB after migrations have completed so a worker
         // restart does not lose open-position metadata (entry price, ATR, trailing stop).
         var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
         await positionTracker.InitialiseFromDbAsync(cancellationToken);
+
+        // Startup reconciliation gate: verify broker/DB state is consistent before allowing trades.
+        using var scope = serviceProvider.CreateScope();
+        var reconciliation = scope.ServiceProvider.GetRequiredService<IReconciliationService>();
+        try
+        {
+            await reconciliation.PerformStartupReconciliationAsync(cancellationToken);
+            await reconciliation.ReconcileFillsAsync(cancellationToken);
+            await stateRepository.SetStateAsync("trading_ready", "true", cancellationToken);
+            logger.LogInformation("Startup reconciliation complete — trading enabled");
+        }
+        catch (Exception ex)
+        {
+            logger.LogCritical(ex,
+                "Startup reconciliation failed — trading blocked until manual resolution");
+            // trading_ready remains "false"; bot keeps running but all signals are blocked
+        }
 
         // Register signal handlers
         Console.CancelKeyPress += (_, args) =>
@@ -57,7 +78,6 @@ public sealed class OrchestratorService(
         };
 
         logger.LogInformation("AlpacaFleece trading bot started successfully");
-        await Task.CompletedTask;
     }
 
     public async Task StoppingAsync(CancellationToken cancellationToken)

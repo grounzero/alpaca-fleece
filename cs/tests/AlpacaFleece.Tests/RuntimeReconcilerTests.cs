@@ -17,7 +17,11 @@ public sealed class RuntimeReconcilerTests(TradingFixture fixture) : IAsyncLifet
         await Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        // Zero out AAPL position_tracking row so subsequent tests see no open position.
+        await _positionTracker.ClosePositionAsync("AAPL");
+    }
 
     [Fact]
     public async Task ExecuteAsync_ChecksEvery120sDefault()
@@ -74,7 +78,7 @@ public sealed class RuntimeReconcilerTests(TradingFixture fixture) : IAsyncLifet
             options);
 
         // Open a position with pending exit
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
         var position = _positionTracker.GetPosition("AAPL")!;
         position.PendingExit = true;
 
@@ -107,7 +111,7 @@ public sealed class RuntimeReconcilerTests(TradingFixture fixture) : IAsyncLifet
             options);
 
         // Track a position locally but it doesn't exist in Alpaca
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<PositionInfo>());
@@ -269,7 +273,7 @@ public sealed class RuntimeReconcilerTests(TradingFixture fixture) : IAsyncLifet
     public async Task Reconciliation_RemovesGhostPositionsFromTracker()
     {
         // Tracker has AAPL; broker returns nothing — reconciler should remove it
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<PositionInfo>());
@@ -297,7 +301,7 @@ public sealed class RuntimeReconcilerTests(TradingFixture fixture) : IAsyncLifet
     public async Task Reconciliation_TradingNotHaltedAfterRepair()
     {
         // Tracker has AAPL (ghost); broker returns nothing — repair removes it, trading stays live
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<PositionInfo>());

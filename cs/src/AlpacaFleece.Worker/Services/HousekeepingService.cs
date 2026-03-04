@@ -7,7 +7,7 @@ namespace AlpacaFleece.Worker.Services;
 public sealed class HousekeepingService(
     IBrokerService brokerService,
     IStateRepository stateRepository,
-    PositionTracker positionTracker,
+    IServiceScopeFactory scopeFactory,
     ILogger<HousekeepingService> logger) : BackgroundService
 {
     private const int EquitySnapshotIntervalSeconds = 60;
@@ -61,8 +61,11 @@ public sealed class HousekeepingService(
                 }
             }
 
-            // Flatten all positions (market sell all)
-            await FlattenPositionsAsync(cancellationToken);
+            // Flatten all positions via OrderManager (deterministic clientOrderId, persist-before-submit)
+            using var scope = scopeFactory.CreateScope();
+            var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
+            var submitted = await orderManager.FlattenPositionsAsync(cancellationToken);
+            logger.LogInformation("Graceful shutdown: flatten submitted {Count} orders", submitted);
 
             // Final equity snapshot
             await TakeEquitySnapshotAsync(cancellationToken);
@@ -173,44 +176,6 @@ public sealed class HousekeepingService(
         catch (OperationCanceledException)
         {
             // Expected on shutdown
-        }
-    }
-
-    /// <summary>
-    /// Flattens all positions: cancel pending orders, sell all shares.
-    /// </summary>
-    private async ValueTask FlattenPositionsAsync(CancellationToken ct)
-    {
-        try
-        {
-            var positions = positionTracker.GetAllPositions();
-
-            foreach (var (symbol, posData) in positions)
-            {
-                try
-                {
-                    // Submit market sell
-                    var clientOrderId = $"FLATTEN_{symbol}_{Guid.NewGuid():N}"[..40];
-                    await brokerService.SubmitOrderAsync(
-                        symbol,
-                        "SELL",
-                        posData.CurrentQuantity,
-                        0m, // Market order (limit price 0 means market)
-                        clientOrderId,
-                        ct);
-
-                    logger.LogInformation("Submitted flatten order for {symbol}: {qty} shares",
-                        symbol, posData.CurrentQuantity);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogError(ex, "Failed to flatten position {symbol}", symbol);
-                }
-            }
-        }
-        catch (Exception ex)
-        {
-            logger.LogError(ex, "Error flattening positions");
         }
     }
 

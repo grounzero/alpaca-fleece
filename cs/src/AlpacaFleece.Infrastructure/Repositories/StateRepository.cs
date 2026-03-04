@@ -157,7 +157,8 @@ public sealed class StateRepository(
         decimal quantity,
         decimal limitPrice,
         DateTimeOffset createdAt,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        decimal? atrSeed = null)
     {
         try
         {
@@ -176,7 +177,8 @@ public sealed class StateRepository(
                 Quantity = quantity,
                 LimitPrice = limitPrice,
                 Status = OrderState.PendingNew.ToString(),
-                CreatedAt = createdAt
+                CreatedAt = createdAt,
+                AtrSeed = atrSeed
             });
 
             await dbContext.SaveChangesAsync(ct);
@@ -248,7 +250,8 @@ public sealed class StateRepository(
                 LimitPrice: intent.LimitPrice,
                 Status: Enum.Parse<OrderState>(intent.Status),
                 CreatedAt: intent.CreatedAt,
-                UpdatedAt: intent.UpdatedAt);
+                UpdatedAt: intent.UpdatedAt,
+                AtrSeed: intent.AtrSeed);
         }
         catch (Exception ex)
         {
@@ -384,28 +387,133 @@ public sealed class StateRepository(
     }
 
     /// <summary>
-    /// Resets daily state (circuit breaker, trade count, etc.).
+    /// Atomically increments daily_trade_count by 1.
+    /// Uses Serializable isolation to prevent lost updates from concurrent fills.
+    /// </summary>
+    public async ValueTask IncrementDailyTradeCountAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            await using var tx = await dbContext.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct);
+            try
+            {
+                var entity = await dbContext.BotState
+                    .FirstOrDefaultAsync(x => x.Key == "daily_trade_count", ct);
+                var count = int.TryParse(entity?.Value, out var v) ? v : 0;
+                if (entity == null)
+                    dbContext.BotState.Add(new BotStateEntity
+                        { Key = "daily_trade_count", Value = (count + 1).ToString(), UpdatedAt = DateTimeOffset.UtcNow });
+                else
+                {
+                    entity.Value = (count + 1).ToString();
+                    entity.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+                await dbContext.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        }
+        catch (StateRepositoryException) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to increment daily trade count");
+            throw new StateRepositoryException("Failed to increment daily trade count", ex);
+        }
+    }
+
+    /// <summary>
+    /// Atomically adds pnlDelta to daily_realized_pnl (negative value = loss).
+    /// Uses Serializable isolation to prevent lost updates from concurrent fills.
+    /// </summary>
+    public async ValueTask AddDailyRealizedPnlAsync(decimal pnlDelta, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            await using var tx = await dbContext.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct);
+            try
+            {
+                var entity = await dbContext.BotState
+                    .FirstOrDefaultAsync(x => x.Key == "daily_realized_pnl", ct);
+                var pnl = decimal.TryParse(entity?.Value, out var v) ? v : 0m;
+                if (entity == null)
+                    dbContext.BotState.Add(new BotStateEntity
+                        { Key = "daily_realized_pnl", Value = (pnl + pnlDelta).ToString(), UpdatedAt = DateTimeOffset.UtcNow });
+                else
+                {
+                    entity.Value = (pnl + pnlDelta).ToString();
+                    entity.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+                await dbContext.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        }
+        catch (StateRepositoryException) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to add to daily realized PnL");
+            throw new StateRepositoryException("Failed to add to daily realized PnL", ex);
+        }
+    }
+
+    /// <summary>
+    /// Resets daily state (circuit breaker, trade count, PnL) in a single DbContext/transaction
+    /// so a crash between steps cannot leave the daily state partially reset.
     /// </summary>
     public async ValueTask ResetDailyStateAsync(CancellationToken ct = default)
     {
         try
         {
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            var state = await dbContext.CircuitBreakerState
-                .FirstOrDefaultAsync(x => x.Id == 1, ct);
 
-            if (state != null)
+            // Reset circuit breaker
+            var cbState = await dbContext.CircuitBreakerState
+                .FirstOrDefaultAsync(x => x.Id == 1, ct);
+            if (cbState != null)
             {
-                state.Count = 0;
-                state.LastResetAt = DateTimeOffset.UtcNow;
+                cbState.Count = 0;
+                cbState.LastResetAt = DateTimeOffset.UtcNow;
             }
+
+            // Reset KV counters in the same DbContext so all three writes share one transaction
+            await UpsertBotStateInContextAsync(dbContext, "daily_realized_pnl", "0", ct);
+            await UpsertBotStateInContextAsync(dbContext, "daily_trade_count", "0", ct);
 
             await dbContext.SaveChangesAsync(ct);
         }
+        catch (StateRepositoryException) { throw; }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to reset daily state");
             throw new StateRepositoryException($"Failed to reset daily state", ex);
+        }
+    }
+
+    /// <summary>
+    /// Upserts a bot_state KV row within an already-open DbContext (no SaveChanges — caller commits).
+    /// </summary>
+    private static async ValueTask UpsertBotStateInContextAsync(
+        TradingDbContext dbContext, string key, string value, CancellationToken ct)
+    {
+        var entity = await dbContext.BotState.FirstOrDefaultAsync(x => x.Key == key, ct);
+        if (entity == null)
+            dbContext.BotState.Add(new BotStateEntity { Key = key, Value = value, UpdatedAt = DateTimeOffset.UtcNow });
+        else
+        {
+            entity.Value = value;
+            entity.UpdatedAt = DateTimeOffset.UtcNow;
         }
     }
 
@@ -570,7 +678,8 @@ public sealed class StateRepository(
                     LimitPrice: intent.LimitPrice,
                     Status: Enum.Parse<OrderState>(intent.Status),
                     CreatedAt: intent.CreatedAt,
-                    UpdatedAt: intent.UpdatedAt));
+                    UpdatedAt: intent.UpdatedAt,
+                    AtrSeed: intent.AtrSeed));
             }
 
             return dtos.AsReadOnly();
@@ -583,9 +692,9 @@ public sealed class StateRepository(
     }
 
     /// <summary>
-    /// Gets all position tracking records (symbol, qty, entry price, ATR).
+    /// Gets all position tracking records (symbol, qty, entry price, ATR, trailing stop).
     /// </summary>
-    public async ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>>
+    public async ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)>>
         GetAllPositionTrackingAsync(CancellationToken ct = default)
     {
         try
@@ -594,10 +703,10 @@ public sealed class StateRepository(
             var positions = await dbContext.PositionTracking
                 .ToListAsync(ct);
 
-            var result = new List<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>(positions.Count);
+            var result = new List<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)>(positions.Count);
             foreach (var pos in positions)
             {
-                result.Add((pos.Symbol, pos.CurrentQuantity, pos.EntryPrice, pos.AtrValue));
+                result.Add((pos.Symbol, pos.CurrentQuantity, pos.EntryPrice, pos.AtrValue, pos.TrailingStopPrice));
             }
 
             return result.AsReadOnly();
@@ -606,6 +715,69 @@ public sealed class StateRepository(
         {
             logger.LogError(ex, "Failed to get all position tracking records");
             throw new StateRepositoryException($"Failed to get all position tracking records", ex);
+        }
+    }
+
+    /// <summary>
+    /// Upserts a position tracking row (find-or-create on Symbol).
+    /// Set qty/entryPrice/atr/trailingStop to 0 to mark a position as closed.
+    /// Retries up to 3 times on concurrent-insert conflicts (unique index on Symbol).
+    /// </summary>
+    public async ValueTask UpsertPositionTrackingAsync(
+        string symbol,
+        decimal qty,
+        decimal entryPrice,
+        decimal atrValue,
+        decimal trailingStop,
+        CancellationToken ct = default)
+    {
+        const int maxRetries = 3;
+        for (var attempt = 0; attempt < maxRetries; attempt++)
+        {
+            try
+            {
+                await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+                var entity = await dbContext.PositionTracking
+                    .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
+
+                if (entity == null)
+                {
+                    dbContext.PositionTracking.Add(new PositionTrackingEntity
+                    {
+                        Symbol = symbol,
+                        CurrentQuantity = qty,
+                        EntryPrice = entryPrice,
+                        AtrValue = atrValue,
+                        TrailingStopPrice = trailingStop,
+                        LastUpdateAt = DateTimeOffset.UtcNow
+                    });
+                }
+                else
+                {
+                    entity.CurrentQuantity = qty;
+                    entity.EntryPrice = entryPrice;
+                    entity.AtrValue = atrValue;
+                    entity.TrailingStopPrice = trailingStop;
+                    entity.LastUpdateAt = DateTimeOffset.UtcNow;
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+                logger.LogDebug("Upserted position_tracking: {symbol} qty={qty} entry={entry}", symbol, qty, entryPrice);
+                return;
+            }
+            catch (DbUpdateException dbEx) when (attempt < maxRetries - 1)
+            {
+                // Concurrent insert for the same symbol hit the unique index; retry with fresh context.
+                logger.LogWarning(dbEx,
+                    "Concurrency conflict upserting position_tracking for {symbol} (attempt {attempt}), retrying",
+                    symbol, attempt + 1);
+                await Task.Delay(TimeSpan.FromMilliseconds(50), ct);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to upsert position tracking for {symbol}", symbol);
+                throw new StateRepositoryException($"Failed to upsert position tracking for {symbol}", ex);
+            }
         }
     }
 

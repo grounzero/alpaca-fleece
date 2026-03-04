@@ -368,6 +368,19 @@ public sealed class StreamPollerService(
                 return;
             }
 
+            // Adapter fault guard: SDK v7.2.0 cannot read fractional filled quantities.
+            // A terminal-fill with FilledQuantity=0 indicates a crypto fill that cannot be
+            // processed correctly. Trip the circuit breaker so no new orders are placed.
+            if (AlpacaBrokerService.IsFractionalFault(order))
+            {
+                logger.LogError(
+                    "Adapter fault: order {ClientOrderId} ({AlpacaId}) status={Status} but FilledQuantity=0. " +
+                    "Fractional fill cannot be read with SDK v7.2.0. Tripping circuit breaker.",
+                    intent.ClientOrderId, intent.AlpacaOrderId, order.Status);
+                await stateRepository.SaveCircuitBreakerCountAsync(5, ct);
+                return;
+            }
+
             // Only emit when status changes
             if (order.Status == intent.Status)
                 return;

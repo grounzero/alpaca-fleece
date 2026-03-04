@@ -17,6 +17,7 @@ public sealed class OrderIntentEntityConfiguration : IEntityTypeConfiguration<Or
         builder.Property(x => x.Quantity).HasPrecision(18, 8);
         builder.Property(x => x.LimitPrice).HasPrecision(10, 4);
         builder.Property(x => x.Status).HasMaxLength(20).IsRequired();
+        builder.Property(x => x.AtrSeed).HasPrecision(10, 4);
     }
 }
 

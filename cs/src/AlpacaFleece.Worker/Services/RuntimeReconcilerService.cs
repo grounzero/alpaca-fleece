@@ -82,7 +82,7 @@ public sealed class RuntimeReconcilerService(
             {
                 if (alpacaPositions.All(ap => ap.Symbol != symbol))
                 {
-                    positionTracker.ClosePosition(symbol);
+                    await positionTracker.ClosePositionAsync(symbol, ct);
                     discrepancies.Add($"Removed ghost position: {symbol}");
                     logger.LogWarning("Reconciliation: removed ghost position {symbol} from tracker", symbol);
                 }
@@ -96,8 +96,8 @@ public sealed class RuntimeReconcilerService(
                 if (!trackedKeys.Contains(alpacaPos.Symbol))
                 {
                     var atr = await EstimateAtrAsync(alpacaPos.Symbol, ct);
-                    positionTracker.OpenPosition(
-                        alpacaPos.Symbol, alpacaPos.Quantity, alpacaPos.AverageEntryPrice, atrValue: atr);
+                    await positionTracker.OpenPositionAsync(
+                        alpacaPos.Symbol, alpacaPos.Quantity, alpacaPos.AverageEntryPrice, atrValue: atr, ct: ct);
                     discrepancies.Add($"Added missing position: {alpacaPos.Symbol}");
                     logger.LogWarning(
                         "Reconciliation: added missing position {symbol} qty={qty} entry={entry} atr={atr:F4}",
