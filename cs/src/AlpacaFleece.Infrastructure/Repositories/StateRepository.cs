@@ -469,33 +469,51 @@ public sealed class StateRepository(
     }
 
     /// <summary>
-    /// Resets daily state (circuit breaker, trade count, etc.).
+    /// Resets daily state (circuit breaker, trade count, PnL) in a single DbContext/transaction
+    /// so a crash between steps cannot leave the daily state partially reset.
     /// </summary>
     public async ValueTask ResetDailyStateAsync(CancellationToken ct = default)
     {
         try
         {
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            var state = await dbContext.CircuitBreakerState
-                .FirstOrDefaultAsync(x => x.Id == 1, ct);
 
-            if (state != null)
+            // Reset circuit breaker
+            var cbState = await dbContext.CircuitBreakerState
+                .FirstOrDefaultAsync(x => x.Id == 1, ct);
+            if (cbState != null)
             {
-                state.Count = 0;
-                state.LastResetAt = DateTimeOffset.UtcNow;
+                cbState.Count = 0;
+                cbState.LastResetAt = DateTimeOffset.UtcNow;
             }
 
-            await dbContext.SaveChangesAsync(ct);
+            // Reset KV counters in the same DbContext so all three writes share one transaction
+            await UpsertBotStateInContextAsync(dbContext, "daily_realized_pnl", "0", ct);
+            await UpsertBotStateInContextAsync(dbContext, "daily_trade_count", "0", ct);
 
-            // Reset KV-based daily counters
-            await SetStateAsync("daily_realized_pnl", "0", ct);
-            await SetStateAsync("daily_trade_count", "0", ct);
+            await dbContext.SaveChangesAsync(ct);
         }
         catch (StateRepositoryException) { throw; }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to reset daily state");
             throw new StateRepositoryException($"Failed to reset daily state", ex);
+        }
+    }
+
+    /// <summary>
+    /// Upserts a bot_state KV row within an already-open DbContext (no SaveChanges — caller commits).
+    /// </summary>
+    private static async ValueTask UpsertBotStateInContextAsync(
+        TradingDbContext dbContext, string key, string value, CancellationToken ct)
+    {
+        var entity = await dbContext.BotState.FirstOrDefaultAsync(x => x.Key == key, ct);
+        if (entity == null)
+            dbContext.BotState.Add(new BotStateEntity { Key = key, Value = value, UpdatedAt = DateTimeOffset.UtcNow });
+        else
+        {
+            entity.Value = value;
+            entity.UpdatedAt = DateTimeOffset.UtcNow;
         }
     }
 

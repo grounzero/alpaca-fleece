@@ -535,9 +535,9 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
     // ─── C-3: Trading-ready gate ──────────────────────────────────────────────────
 
     [Fact]
-    public async Task CheckSignalAsync_TradingReadyKeyAbsent_BlocksWithSafetyException()
+    public async Task CheckSignalAsync_TradingReadyEmptyString_BlocksWithSafetyException()
     {
-        // Ensure key is absent
+        // SetStateAsync upserts; setting to "" covers the "not true" case without needing a delete API
         await fixture.StateRepository.SetStateAsync("trading_ready", "");
         var riskManager = new RiskManager(_brokerMock, fixture.StateRepository, _options, _logger);
         var signal = CreateSignal("AAPL", "BUY");
