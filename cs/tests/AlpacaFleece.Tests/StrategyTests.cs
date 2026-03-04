@@ -526,6 +526,160 @@ public sealed class StrategyTests
             .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
     }
 
+    // ─── C-2: Staleness gate ─────────────────────────────────────────────────────
+
+    [Fact]
+    public async Task OnBarAsync_StaleBar_UpdatesIndicatorsButNoSignal()
+    {
+        // 60 bars starting 2 hours ago — the last bar is still ~60 min old, well beyond MaxBarAgeMinutes=3
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var opts = new ExecutionOptions { MaxBarAgeMinutes = 3 };
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            executionOptions: opts);
+
+        var baseTs = DateTimeOffset.UtcNow.AddHours(-2); // last bar @ UtcNow-60min — stale
+        for (var i = 0; i < 60; i++)
+        {
+            var close = 100m + (i * 1.5m);
+            await strategy.OnBarAsync(new BarEvent(
+                Symbol: "AAPL", Timeframe: "1m",
+                Timestamp: baseTs.AddMinutes(i),
+                Open: close - 0.5m, High: close + 1m, Low: close - 1m,
+                Close: close, Volume: 1_000_000));
+        }
+
+        Assert.True(strategy.IsReady);
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_FreshBar_EmitsSignalNormally()
+    {
+        // 51 bars with last bar timestamped 30 seconds ago — should emit signal
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var opts = new ExecutionOptions { MaxBarAgeMinutes = 3 };
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            executionOptions: opts);
+
+        // 50 stale warm-up bars
+        var staleBase = DateTimeOffset.UtcNow.AddHours(-2);
+        for (var i = 0; i < 50; i++)
+        {
+            var close = 100m + (i * 1.5m);
+            await strategy.OnBarAsync(new BarEvent(
+                Symbol: "AAPL", Timeframe: "1m",
+                Timestamp: staleBase.AddMinutes(i),
+                Open: close - 0.5m, High: close + 1m, Low: close - 1m,
+                Close: close, Volume: 1_000_000));
+        }
+
+        // 1 fresh crossover bar
+        var freshClose = 100m + (50 * 1.5m);
+        await strategy.OnBarAsync(new BarEvent(
+            Symbol: "AAPL", Timeframe: "1m",
+            Timestamp: DateTimeOffset.UtcNow.AddSeconds(-30),
+            Open: freshClose - 0.5m, High: freshClose + 1m, Low: freshClose - 1m,
+            Close: freshClose, Volume: 1_000_000));
+
+        await eventBus.Received()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_MaxBarAgeZero_DisablesStalenessGate()
+    {
+        // MaxBarAgeMinutes=0 disables the gate — old bars may produce signals
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var opts = new ExecutionOptions { MaxBarAgeMinutes = 0 };
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            executionOptions: opts);
+
+        // All bars from 24 hours ago — gate disabled, signals allowed
+        var staleBase = DateTimeOffset.UtcNow.AddHours(-24);
+        for (var i = 0; i < 60; i++)
+        {
+            var close = 100m + (i * 1.5m);
+            await strategy.OnBarAsync(new BarEvent(
+                Symbol: "AAPL", Timeframe: "1m",
+                Timestamp: staleBase.AddMinutes(i),
+                Open: close - 0.5m, High: close + 1m, Low: close - 1m,
+                Close: close, Volume: 1_000_000));
+        }
+
+        // Gate disabled → signals emitted normally
+        await eventBus.Received()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_YesterdayBars_Suppressed()
+    {
+        // Bars from 24 hours ago — all suppressed by staleness gate (MaxBarAgeMinutes=3)
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var opts = new ExecutionOptions { MaxBarAgeMinutes = 3 };
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>(),
+            executionOptions: opts);
+
+        var base24h = DateTimeOffset.UtcNow.AddHours(-24);
+        for (var i = 0; i < 60; i++)
+        {
+            var close = 100m + (i * 1.5m);
+            await strategy.OnBarAsync(new BarEvent(
+                Symbol: "AAPL", Timeframe: "1m",
+                Timestamp: base24h.AddMinutes(i),
+                Open: close - 0.5m, High: close + 1m, Low: close - 1m,
+                Close: close, Volume: 1_000_000));
+        }
+
+        Assert.True(strategy.IsReady);
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_DefaultMaxBarAge_UsedWhenNoOptionsProvided()
+    {
+        // No ExecutionOptions → defaults to MaxBarAgeMinutes=3; bars from 2 hours ago suppressed
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>());
+
+        var staleBase = DateTimeOffset.UtcNow.AddHours(-2); // last bar @ UtcNow-60min — stale
+        for (var i = 0; i < 60; i++)
+        {
+            var close = 100m + (i * 1.5m);
+            await strategy.OnBarAsync(new BarEvent(
+                Symbol: "AAPL", Timeframe: "1m",
+                Timestamp: staleBase.AddMinutes(i),
+                Open: close - 0.5m, High: close + 1m, Low: close - 1m,
+                Close: close, Volume: 1_000_000));
+        }
+
+        Assert.True(strategy.IsReady);
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
+    }
+
     [Fact]
     public async Task SmaCrossoverStrategy_NoSignal_With50Bars_OneLessThanRequired()
     {

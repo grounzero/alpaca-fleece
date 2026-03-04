@@ -5,6 +5,7 @@ global using System.Threading;
 global using System.Threading.Tasks;
 global using Xunit;
 global using NSubstitute;
+global using Microsoft.Extensions.DependencyInjection;
 global using Microsoft.Extensions.Logging;
 global using Microsoft.Extensions.Options;
 global using Microsoft.EntityFrameworkCore;

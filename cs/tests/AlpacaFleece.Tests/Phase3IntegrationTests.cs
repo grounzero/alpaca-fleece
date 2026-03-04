@@ -20,6 +20,7 @@ public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifet
     {
         await fixture.StateRepository.SetStateAsync("daily_realized_pnl", "0");
         await fixture.StateRepository.SetStateAsync("daily_trade_count", "0");
+        await fixture.StateRepository.SetStateAsync("trading_ready", "true");
         await fixture.StateRepository.SaveCircuitBreakerCountAsync(0);
     }
 

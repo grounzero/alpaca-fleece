@@ -93,6 +93,16 @@ public sealed class RiskManager(
                 RiskTier: "SAFETY");
         }
 
+        // Trading-ready gate: blocks all signals until startup reconciliation completes
+        var tradingReady = await stateRepository.GetStateAsync("trading_ready", ct);
+        if (tradingReady != "true")
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: "Bot not ready: startup reconciliation has not completed or failed — check logs",
+                RiskTier: "SAFETY");
+        }
+
         // Drawdown emergency: all new orders blocked
         if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Emergency)
         {

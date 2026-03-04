@@ -157,4 +157,65 @@ public sealed class BrokerServiceTests
 
         await mockClient.DidNotReceive().CancelOrderAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
+
+    // ─── C-1: Fractional fault guard ─────────────────────────────────────────────
+
+    [Fact]
+    public void IsFractionalFault_FilledAndQtyZero_ReturnsTrue()
+    {
+        var info = new OrderInfo(
+            AlpacaOrderId: "a", ClientOrderId: "c", Symbol: "BTC/USD",
+            Side: "buy", Quantity: 0m, FilledQuantity: 0m,
+            AverageFilledPrice: 0m, Status: OrderState.Filled,
+            CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: null);
+
+        Assert.True(AlpacaBrokerService.IsFractionalFault(info));
+    }
+
+    [Fact]
+    public void IsFractionalFault_FilledAndQtyNonZero_ReturnsFalse()
+    {
+        var info = new OrderInfo(
+            AlpacaOrderId: "a", ClientOrderId: "c", Symbol: "AAPL",
+            Side: "buy", Quantity: 10m, FilledQuantity: 10m,
+            AverageFilledPrice: 150m, Status: OrderState.Filled,
+            CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: null);
+
+        Assert.False(AlpacaBrokerService.IsFractionalFault(info));
+    }
+
+    [Fact]
+    public void IsFractionalFault_PartiallyFilledAndQtyZero_ReturnsTrue()
+    {
+        var info = new OrderInfo(
+            AlpacaOrderId: "a", ClientOrderId: "c", Symbol: "ETH/USD",
+            Side: "buy", Quantity: 0m, FilledQuantity: 0m,
+            AverageFilledPrice: 0m, Status: OrderState.PartiallyFilled,
+            CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: null);
+
+        Assert.True(AlpacaBrokerService.IsFractionalFault(info));
+    }
+
+    [Fact]
+    public void IsFractionalFault_AcceptedAndQtyZero_ReturnsFalse()
+    {
+        // Only Filled/PartiallyFilled statuses trigger the fault; Accepted is not terminal-fill
+        var info = new OrderInfo(
+            AlpacaOrderId: "a", ClientOrderId: "c", Symbol: "BTC/USD",
+            Side: "buy", Quantity: 0m, FilledQuantity: 0m,
+            AverageFilledPrice: 0m, Status: OrderState.Accepted,
+            CreatedAt: DateTimeOffset.UtcNow, UpdatedAt: null);
+
+        Assert.False(AlpacaBrokerService.IsFractionalFault(info));
+    }
+
+    [Fact]
+    public async Task GetOrderByIdAsync_ReturnsNull_OnInvalidGuid()
+    {
+        var (broker, _) = CreateBroker();
+
+        var result = await broker.GetOrderByIdAsync("not-a-guid");
+
+        Assert.Null(result);
+    }
 }

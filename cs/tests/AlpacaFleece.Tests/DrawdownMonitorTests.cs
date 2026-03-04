@@ -35,6 +35,7 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
     {
         // Reset drawdown state before each test
         await fixture.StateRepository.SaveDrawdownStateAsync(DrawdownLevel.Normal, 0m, 0m, DateTimeOffset.UtcNow, false);
+        await fixture.StateRepository.SetStateAsync("trading_ready", "true");
     }
 
     public Task DisposeAsync() => Task.CompletedTask;

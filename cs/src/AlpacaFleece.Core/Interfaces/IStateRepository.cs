@@ -84,6 +84,16 @@ public interface IStateRepository
     ValueTask SaveCircuitBreakerCountAsync(int count, CancellationToken ct = default);
 
     /// <summary>
+    /// Atomically increments daily_trade_count by 1.
+    /// </summary>
+    ValueTask IncrementDailyTradeCountAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Atomically adds pnlDelta to daily_realized_pnl (negative value = loss).
+    /// </summary>
+    ValueTask AddDailyRealizedPnlAsync(decimal pnlDelta, CancellationToken ct = default);
+
+    /// <summary>
     /// Resets daily state (circuit breaker, trade count, etc.).
     /// </summary>
     ValueTask ResetDailyStateAsync(CancellationToken ct = default);

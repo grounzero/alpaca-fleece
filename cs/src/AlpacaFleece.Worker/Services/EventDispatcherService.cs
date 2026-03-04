@@ -138,10 +138,11 @@ public sealed class EventDispatcherService(
 
             if (updateEvent.Status == OrderState.Filled)
             {
+                var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
+
                 if (string.Equals(updateEvent.Side, "BUY", StringComparison.OrdinalIgnoreCase))
                 {
                     // Look up the stored ATR seed from the original signal intent
-                    var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
                     var intent = await stateRepo.GetOrderIntentAsync(updateEvent.ClientOrderId);
                     var atr = intent?.AtrSeed ?? 0m;
 
@@ -150,11 +151,21 @@ public sealed class EventDispatcherService(
                         updateEvent.FilledQuantity,
                         updateEvent.AverageFilledPrice,
                         atr);
+                    await stateRepo.IncrementDailyTradeCountAsync();
                 }
                 else
                 {
+                    // Capture entry price BEFORE closing to compute realised PnL
+                    var pos = positionTracker.GetPosition(updateEvent.Symbol);
+                    if (pos != null && updateEvent.FilledQuantity > 0 && updateEvent.AverageFilledPrice > 0)
+                    {
+                        var pnl = (updateEvent.AverageFilledPrice - pos.EntryPrice) * updateEvent.FilledQuantity;
+                        await stateRepo.AddDailyRealizedPnlAsync(pnl);
+                    }
+
                     // SELL fill — exit; zero out the position
                     await positionTracker.ClosePositionAsync(updateEvent.Symbol);
+                    await stateRepo.IncrementDailyTradeCountAsync();
                 }
 
                 // Clear PendingExit flag after any fill

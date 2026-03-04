@@ -387,6 +387,44 @@ public sealed class StateRepository(
     }
 
     /// <summary>
+    /// Atomically increments daily_trade_count by 1.
+    /// </summary>
+    public async ValueTask IncrementDailyTradeCountAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var current = await GetStateAsync("daily_trade_count", ct);
+            var count = int.TryParse(current, out var parsed) ? parsed : 0;
+            await SetStateAsync("daily_trade_count", (count + 1).ToString(), ct);
+        }
+        catch (StateRepositoryException) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to increment daily trade count");
+            throw new StateRepositoryException("Failed to increment daily trade count", ex);
+        }
+    }
+
+    /// <summary>
+    /// Atomically adds pnlDelta to daily_realized_pnl (negative value = loss).
+    /// </summary>
+    public async ValueTask AddDailyRealizedPnlAsync(decimal pnlDelta, CancellationToken ct = default)
+    {
+        try
+        {
+            var current = await GetStateAsync("daily_realized_pnl", ct);
+            var pnl = decimal.TryParse(current, out var parsed) ? parsed : 0m;
+            await SetStateAsync("daily_realized_pnl", (pnl + pnlDelta).ToString(), ct);
+        }
+        catch (StateRepositoryException) { throw; }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to add to daily realized PnL");
+            throw new StateRepositoryException("Failed to add to daily realized PnL", ex);
+        }
+    }
+
+    /// <summary>
     /// Resets daily state (circuit breaker, trade count, etc.).
     /// </summary>
     public async ValueTask ResetDailyStateAsync(CancellationToken ct = default)
@@ -404,7 +442,12 @@ public sealed class StateRepository(
             }
 
             await dbContext.SaveChangesAsync(ct);
+
+            // Reset KV-based daily counters
+            await SetStateAsync("daily_realized_pnl", "0", ct);
+            await SetStateAsync("daily_trade_count", "0", ct);
         }
+        catch (StateRepositoryException) { throw; }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to reset daily state");

@@ -31,6 +31,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         // Reset shared DB state before each test
         await fixture.StateRepository.SetStateAsync("daily_realized_pnl", "0");
         await fixture.StateRepository.SetStateAsync("daily_trade_count", "0");
+        await fixture.StateRepository.SetStateAsync("trading_ready", "true");
         await fixture.StateRepository.SaveCircuitBreakerCountAsync(0);
 
         _positionTracker = new PositionTracker(fixture.StateRepository, _positionTrackerLogger);
@@ -280,45 +281,33 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         // Arrange
         await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
+        // Flatten now routes through IOrderManager (C-5 fix)
+        var orderManagerMock = Substitute.For<IOrderManager>();
+        orderManagerMock.FlattenPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<int>(1));
+
+        var scopeFactoryMock = Substitute.For<IServiceScopeFactory>();
+        var scopeMock = Substitute.For<IServiceScope>();
+        var providerMock = Substitute.For<IServiceProvider>();
+        scopeFactoryMock.CreateScope().Returns(scopeMock);
+        scopeMock.ServiceProvider.Returns(providerMock);
+        providerMock.GetService(typeof(IOrderManager)).Returns(orderManagerMock);
+
         var housekeeping = new HousekeepingService(
             _brokerMock,
             fixture.StateRepository,
             _positionTracker,
+            scopeFactoryMock,
             _housekeepingLogger);
 
         _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
             .Returns(new List<OrderInfo>());
 
-        _brokerMock.SubmitOrderAsync(
-            Arg.Any<string>(),
-            Arg.Any<string>(),
-            Arg.Any<decimal>(),
-            Arg.Any<decimal>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>())
-            .Returns(new OrderInfo(
-                AlpacaOrderId: "flatten",
-                ClientOrderId: "flatten_aapl",
-                Symbol: "AAPL",
-                Side: "SELL",
-                Quantity: 100,
-                FilledQuantity: 0,
-                AverageFilledPrice: 0m,
-                Status: OrderState.PendingNew,
-                CreatedAt: DateTimeOffset.UtcNow,
-                UpdatedAt: null));
-
         // Act: graceful shutdown
         await housekeeping.StopAsync(CancellationToken.None);
 
-        // Assert: flatten order submitted
-        await _brokerMock.Received(1).SubmitOrderAsync(
-            Arg.Is<string>(s => s == "AAPL"),
-            Arg.Is<string>(s => s == "SELL"),
-            Arg.Is<decimal>(q => q == 100m),
-            Arg.Any<decimal>(),
-            Arg.Any<string>(),
-            Arg.Any<CancellationToken>());
+        // Assert: IOrderManager.FlattenPositionsAsync called (not broker directly)
+        await orderManagerMock.Received(1).FlattenPositionsAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]

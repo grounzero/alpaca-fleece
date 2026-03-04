@@ -20,6 +20,7 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
     {
         await fixture.StateRepository.SetStateAsync("daily_realized_pnl", "0");
         await fixture.StateRepository.SetStateAsync("daily_trade_count", "0");
+        await fixture.StateRepository.SetStateAsync("trading_ready", "true");
         await fixture.StateRepository.SaveCircuitBreakerCountAsync(0);
     }
 
@@ -529,6 +530,56 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
 
         Assert.True(result.AllowsSignal);
         Assert.Equal("PASSED", result.RiskTier);
+    }
+
+    // ─── C-3: Trading-ready gate ──────────────────────────────────────────────────
+
+    [Fact]
+    public async Task CheckSignalAsync_TradingReadyKeyAbsent_BlocksWithSafetyException()
+    {
+        // Ensure key is absent
+        await fixture.StateRepository.SetStateAsync("trading_ready", "");
+        var riskManager = new RiskManager(_brokerMock, fixture.StateRepository, _options, _logger);
+        var signal = CreateSignal("AAPL", "BUY");
+
+        var ex = await Assert.ThrowsAsync<RiskManagerException>(
+            () => riskManager.CheckSignalAsync(signal).AsTask());
+
+        Assert.Contains("not ready", ex.Message);
+    }
+
+    [Fact]
+    public async Task CheckSignalAsync_TradingReadyFalse_BlocksWithSafetyException()
+    {
+        await fixture.StateRepository.SetStateAsync("trading_ready", "false");
+        var riskManager = new RiskManager(_brokerMock, fixture.StateRepository, _options, _logger);
+        var signal = CreateSignal("AAPL", "BUY");
+
+        var ex = await Assert.ThrowsAsync<RiskManagerException>(
+            () => riskManager.CheckSignalAsync(signal).AsTask());
+
+        Assert.Contains("not ready", ex.Message);
+    }
+
+    [Fact]
+    public async Task CheckSignalAsync_TradingReadyTrue_PassesSafetyTier()
+    {
+        // trading_ready="true" is already set in InitializeAsync
+        _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(true, DateTimeOffset.UtcNow.AddDays(1),
+                DateTimeOffset.UtcNow.AddHours(7), DateTimeOffset.UtcNow));
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new AccountInfo("test", 10000m, 0m, 100000m, 0m, true, false, DateTimeOffset.UtcNow));
+
+        var riskManager = new RiskManager(_brokerMock, fixture.StateRepository, _options, _logger);
+        var signal = CreateSignal("AAPL", "BUY");
+
+        var result = await riskManager.CheckSignalAsync(signal);
+
+        // Should pass safety tier; may stop at FILTER but not at SAFETY
+        Assert.NotEqual("SAFETY", result.RiskTier);
     }
 
     // HELPER

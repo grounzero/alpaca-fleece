@@ -130,6 +130,13 @@ public sealed class ExecutionOptions
     /// warning log. Default: 100 (≈ 100 minutes of 1-min bars).
     /// </summary>
     public int BarHistoryDepth { get; set; } = 100;
+
+    /// <summary>
+    /// Maximum age in minutes for a bar to be eligible for signal generation.
+    /// Bars older than this threshold update indicator history (warm-up) but do not
+    /// produce signals. 0 disables the gate. Default: 3 (covers 1-min bar + API latency).
+    /// </summary>
+    public int MaxBarAgeMinutes { get; set; } = 3;
 }
 
 /// <summary>

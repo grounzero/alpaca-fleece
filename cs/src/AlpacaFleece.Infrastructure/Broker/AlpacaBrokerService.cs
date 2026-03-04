@@ -280,6 +280,15 @@ public sealed class AlpacaBrokerService(
         }
     }
 
+    /// <summary>
+    /// Returns true when broker reports a terminal-fill status but mapped FilledQuantity is zero.
+    /// Indicates the SDK v7.2.0 integer-only quantity limitation for fractional (crypto) orders.
+    /// TODO: remove after upgrading Alpaca.Markets SDK to ≥ 8.x with decimal quantity fields.
+    /// </summary>
+    public static bool IsFractionalFault(OrderInfo info) =>
+        info.FilledQuantity == 0m &&
+        info.Status is OrderState.Filled or OrderState.PartiallyFilled;
+
     private static OrderInfo MapOrder(IOrder order) => new(
         AlpacaOrderId: order.OrderId.ToString(),
         ClientOrderId: order.ClientOrderId ?? string.Empty,

@@ -10,11 +10,13 @@ public sealed class SmaCrossoverStrategy(
     IEventBus eventBus,
     ILogger<SmaCrossoverStrategy> logger,
     TrendFilter? trendFilter = null,
-    VolumeFilter? volumeFilter = null) : IStrategy
+    VolumeFilter? volumeFilter = null,
+    ExecutionOptions? executionOptions = null) : IStrategy
 {
     private readonly RegimeDetector _regimeDetector = new();
     private readonly Dictionary<string, BarHistory> _barHistories = new();
     private readonly object _syncLock = new();
+    private readonly int _maxBarAgeMinutes = executionOptions?.MaxBarAgeMinutes ?? 3;
     // Tracks which symbols have already logged the "strategy ready" transition.
     private readonly HashSet<string> _readySymbols = new();
 
@@ -69,6 +71,20 @@ public sealed class SmaCrossoverStrategy(
             if (_readySymbols.Add(bar.Symbol))
                 logger.LogInformation("Strategy ready for {Symbol}: {Required} bars accumulated",
                     bar.Symbol, RequiredBars);
+
+            // Staleness gate: bars older than MaxBarAgeMinutes update indicators (warm-up)
+            // but produce no signals. Prevents stale replay bars from triggering orders on restart.
+            if (_maxBarAgeMinutes > 0)
+            {
+                var ageMinutes = (DateTimeOffset.UtcNow - bar.Timestamp).TotalMinutes;
+                if (ageMinutes > _maxBarAgeMinutes)
+                {
+                    logger.LogDebug(
+                        "Bar {Symbol} suppressed: age {Age:F1}min > threshold {Max}min — indicators updated, no signal",
+                        bar.Symbol, ageMinutes, _maxBarAgeMinutes);
+                    return;
+                }
+            }
 
             // Calculate SMAs and ATR
             var fast1 = history.CalculateSma(FastPeriod1);
