@@ -212,7 +212,17 @@ def main(argv: list[str]) -> int:
     try:
         out_zip_resolved = out_zip.resolve()
         in_dir_resolved = in_dir.resolve()
-        if str(out_zip_resolved).startswith(str(in_dir_resolved) + "/"):
+        try:
+            # Python 3.9+: use is_relative_to if available
+            is_inside = out_zip_resolved.is_relative_to(in_dir_resolved)  # type: ignore[attr-defined]
+        except AttributeError:
+            # Fallback for older Python: relative_to raises ValueError if not under in_dir_resolved
+            try:
+                out_zip_resolved.relative_to(in_dir_resolved)
+                is_inside = True
+            except ValueError:
+                is_inside = False
+        if is_inside and out_zip_resolved != in_dir_resolved:
             print(
                 "Warning: output zip is inside the input directory. "
                 "Consider writing it outside to avoid including it on later runs.",
