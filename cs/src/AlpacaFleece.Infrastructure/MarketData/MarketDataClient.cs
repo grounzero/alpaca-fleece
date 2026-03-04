@@ -134,7 +134,11 @@ public sealed class MarketDataClient(
 
                     if (timeFrame.Unit == BarTimeFrameUnit.Day)
                     {
-                        from = into.AddDays(-maxBarsUnderCap);
+                        // Derive the lookback window from the capped bar count using the same
+                        // trading-day (5/7) conversion as the initial estimate, so that the
+                        // window still spans roughly maxBarsUnderCap trading days.
+                        var lookbackCalendarDays = maxBarsUnderCap * 7 / 5 + 5;
+                        from = into.AddDays(-lookbackCalendarDays);
                     }
                     else // BarTimeFrameUnit.Hour
                     {
