@@ -202,8 +202,10 @@ public sealed class RiskManager(
 
         // Equity position-size guard: PositionSizer floors equities to a minimum of 1 share,
         // so if even 1 share costs more than MaxPositionSizePct of portfolio the trade would
-        // breach the configured risk cap. Crypto is exempt — fractional quantities are used.
-        if (!_symbolClassifier.IsCrypto(signal.Symbol))
+        // breach the configured risk cap. Crypto is exempt (fractional quantities). Exit/SELL
+        // signals are also exempt — sizing does not apply to closing an existing position.
+        if (!_symbolClassifier.IsCrypto(signal.Symbol)
+            && signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
         {
             var maxNotional = account.PortfolioValue * options.RiskLimits.MaxPositionSizePct;
             if (signal.Metadata.CurrentPrice > maxNotional)
