@@ -18,9 +18,9 @@ public sealed class DailyCounterTests(TradingFixture fixture) : IAsyncLifetime
     public Task DisposeAsync() => Task.CompletedTask;
 
     [Fact]
-    public async Task IncrementDailyTradeCount_FromNotSet_BecomesOne()
+    public async Task IncrementDailyTradeCount_FromZero_BecomesOne()
     {
-        // Clear the key first to simulate "not set"
+        // Set the counter explicitly to "0" to simulate a fresh state
         await fixture.StateRepository.SetStateAsync("daily_trade_count", "0");
 
         await fixture.StateRepository.IncrementDailyTradeCountAsync();
