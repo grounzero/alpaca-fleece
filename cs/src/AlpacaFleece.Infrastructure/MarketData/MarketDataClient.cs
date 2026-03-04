@@ -124,6 +124,27 @@ public sealed class MarketDataClient(
                     _                      => 1000
                 };
 
+                // For DAY and HOUR bars, if the estimated window would require more than the API
+                // max page size, shrink the window so that a single page still contains the
+                // *latest* bars rather than an older slice of history.
+                if ((timeFrame.Unit == BarTimeFrameUnit.Day || timeFrame.Unit == BarTimeFrameUnit.Hour)
+                    && rawPageSize > 10_000)
+                {
+                    var maxBarsUnderCap = 10_000 - 5;
+
+                    if (timeFrame.Unit == BarTimeFrameUnit.Day)
+                    {
+                        from = into.AddDays(-maxBarsUnderCap);
+                    }
+                    else // BarTimeFrameUnit.Hour
+                    {
+                        from = into.AddHours(-maxBarsUnderCap);
+                    }
+
+                    // Request the full page so we still get as many of the most recent bars as
+                    // the API allows.
+                    rawPageSize = 10_000;
+                }
                 // If the estimated minute-bar window would require more than the API max page size,
                 // shrink the window so that a single page still contains the *latest* bars.
                 if (timeFrame.Unit == BarTimeFrameUnit.Minute && rawPageSize > 10_000)
