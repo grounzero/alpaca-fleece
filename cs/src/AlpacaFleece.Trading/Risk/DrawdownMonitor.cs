@@ -230,7 +230,7 @@ public sealed class DrawdownMonitor(
                             if (existingState is not null)
                             {
                                 peakEquity = existingState.PeakEquity;
-                                drawdownPct = existingState.DrawdownPct;
+                                drawdownPct = existingState.CurrentDrawdownPct;
 
                                 // Keep in-memory peak reset time in sync with persisted state if available.
                                 _lastPeakResetTime = existingState.LastPeakResetTime;

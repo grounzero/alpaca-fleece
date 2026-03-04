@@ -275,10 +275,12 @@ public sealed class StreamPollerService(
                         continue;
                     }
 
-                    // R-4: Normalise timeframe to uppercase for consistent clientOrderId generation.
+                    // R-4 note: timeframe kept as-is (lowercase "1m") to preserve uniqueness in
+                    // the bars table and idempotency of clientOrderId generation. Normalising
+                    // case at publish time would create duplicate bar rows and change order IDs.
                     var barEvent = new BarEvent(
                         Symbol: quote.Symbol,
-                        Timeframe: timeframe.ToUpperInvariant(),
+                        Timeframe: timeframe,
                         Timestamp: barTs,
                         Open: quote.Open,
                         High: quote.High,
