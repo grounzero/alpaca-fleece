@@ -127,25 +127,25 @@ public sealed class ReconciliationService(
                 if (alpacaOrder == null)
                     continue;
 
-                // Check fill drift
-                if (alpacaOrder.FilledQuantity != sqliteOrder.Quantity)
+                // R-2: Only flag true fill drift — a Filled order where broker qty differs from intent qty.
+                // Partial fills are expected to have FilledQuantity < Quantity; that is not drift.
+                if (alpacaOrder.FilledQuantity > 0 &&
+                    alpacaOrder.Status == OrderState.Filled &&
+                    alpacaOrder.FilledQuantity != sqliteOrder.Quantity)
                 {
                     logger.LogWarning(
-                        "Fill drift detected for {symbol}: SQLite={sqliteQty} Alpaca={alpacaQty}",
+                        "Fill drift detected for {symbol}: intendedQty={sqliteQty} actualFilledQty={alpacaQty}",
                         sqliteOrder.Symbol, sqliteOrder.Quantity, alpacaOrder.FilledQuantity);
 
-                    if (alpacaOrder.FilledQuantity > 0)
-                    {
-                        var dedupeKey = $"{alpacaOrder.AlpacaOrderId}_{alpacaOrder.FilledQuantity}";
-                        await stateRepository.InsertFillIdempotentAsync(
-                            alpacaOrder.AlpacaOrderId,
-                            alpacaOrder.ClientOrderId,
-                            alpacaOrder.FilledQuantity,
-                            alpacaOrder.AverageFilledPrice,
-                            dedupeKey,
-                            DateTimeOffset.UtcNow,
-                            ct);
-                    }
+                    var dedupeKey = $"{alpacaOrder.AlpacaOrderId}_{alpacaOrder.FilledQuantity}";
+                    await stateRepository.InsertFillIdempotentAsync(
+                        alpacaOrder.AlpacaOrderId,
+                        alpacaOrder.ClientOrderId,
+                        alpacaOrder.FilledQuantity,
+                        alpacaOrder.AverageFilledPrice,
+                        dedupeKey,
+                        DateTimeOffset.UtcNow,
+                        ct);
                 }
             }
 
@@ -185,11 +185,12 @@ public sealed class ReconciliationService(
                     continue;
 
                 logger.LogWarning(
-                    "Clearing ghost position for {symbol}: qty={qty} entryPrice={price}",
+                    "Ghost position detected for {symbol}: qty={qty} entryPrice={price} — not present in Alpaca and no open orders. Clearing from DB.",
                     sqlitePos.Symbol, sqlitePos.Quantity, sqlitePos.EntryPrice);
 
-                // Note: Position clearing is handled by PositionTracker in runtime
-                // Here we just log for audit trail
+                // C-4: Clear the ghost position from DB so PositionTracker does not rehydrate stale data.
+                await stateRepository.UpsertPositionTrackingAsync(
+                    sqlitePos.Symbol, 0m, 0m, 0m, 0m, ct);
             }
         }
         catch (Exception ex)
@@ -274,7 +275,8 @@ public sealed class ReconciliationService(
             OrderState.Canceled => true,
             OrderState.Expired => true,
             OrderState.Rejected => true,
-            OrderState.PartiallyFilled => true,
+            // C-3: PartiallyFilled is NOT terminal — the order may still receive further fills.
+            // Treating it as terminal would block startup when a partial fill is in progress.
             _ => false
         };
     }

@@ -321,4 +321,108 @@ public sealed class ReconciliationTests(TradingFixture fixture)
         var ready = await fixture.StateRepository.GetStateAsync("trading_ready");
         Assert.Equal("false", ready);
     }
+
+    // ─── C-3: PartiallyFilled is non-terminal ───────────────────────────────────
+
+    [Fact]
+    public async Task PartiallyFilledOrder_DoesNotBlockStartup()
+    {
+        // Arrange: Alpaca has a PartiallyFilled order that also exists in SQLite as PendingNew.
+        // After C-3 fix, PartiallyFilled is non-terminal — Rule 3 checks if the non-terminal
+        // Alpaca order exists in SQLite (it does), so no discrepancy is raised.
+        var reconciliation = new ReconciliationService(_brokerMock, fixture.StateRepository, _logger);
+
+        var alpacaOrder = new OrderInfo(
+            AlpacaOrderId: "alpaca_partial",
+            ClientOrderId: "client_partial",
+            Symbol: "NVDA",
+            Side: "BUY",
+            Quantity: 10,
+            FilledQuantity: 5,
+            AverageFilledPrice: 800m,
+            Status: OrderState.PartiallyFilled,
+            CreatedAt: DateTimeOffset.UtcNow,
+            UpdatedAt: null);
+
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo> { alpacaOrder });
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+
+        // Pre-populate SQLite with matching intent (PendingNew)
+        await fixture.StateRepository.SaveOrderIntentAsync(
+            "client_partial", "NVDA", "BUY", 10m, 800m, DateTimeOffset.UtcNow);
+        await fixture.StateRepository.UpdateOrderIntentAsync(
+            "client_partial", "alpaca_partial", OrderState.PendingNew, DateTimeOffset.UtcNow);
+
+        // Act & Assert: should not throw — PartiallyFilled is non-terminal so no false discrepancy
+        await reconciliation.PerformStartupReconciliationAsync(CancellationToken.None);
+    }
+
+    // ─── C-4: Ghost positions cleared from DB ───────────────────────────────────
+
+    [Fact]
+    public async Task GhostPosition_IsClearedFromSqlite()
+    {
+        // Arrange: SQLite has a position, Alpaca has no matching position/orders.
+        var reconciliation = new ReconciliationService(_brokerMock, fixture.StateRepository, _logger);
+
+        // Insert a ghost position in SQLite
+        await fixture.StateRepository.UpsertPositionTrackingAsync("GHOST", 10m, 150m, 2m, 145m);
+
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+
+        // Act
+        await reconciliation.PerformStartupReconciliationAsync(CancellationToken.None);
+
+        // Assert: ghost position cleared — qty should now be 0
+        var positions = await fixture.StateRepository.GetAllPositionTrackingAsync();
+        var ghost = positions.FirstOrDefault(p => p.Symbol == "GHOST");
+        Assert.True(ghost == default || ghost.Quantity == 0m,
+            "Ghost position should have been cleared to qty=0");
+    }
+
+    // ─── R-2: Fill drift only for truly Filled orders ───────────────────────────
+
+    [Fact]
+    public async Task ReconcileFills_PartialFill_NoDriftWarning()
+    {
+        // Arrange: mock state repo so we can verify InsertFillIdempotentAsync is NOT called
+        // when Alpaca status is PartiallyFilled (not Filled).
+        var stateRepoMock = Substitute.For<IStateRepository>();
+        var brokerMock = Substitute.For<IBrokerService>();
+        var reconciliation = new ReconciliationService(brokerMock, stateRepoMock, _logger);
+
+        const string clientId = "client_partial_fill";
+        const string alpacaId = "alpaca_partial_fill";
+
+        // SQLite has a non-terminal Accepted order with qty=20
+        stateRepoMock.GetAllOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
+                new List<OrderIntentDto>
+                {
+                    new(clientId, alpacaId, "SPY", "BUY", 20m, 450m,
+                        OrderState.Accepted, DateTimeOffset.UtcNow, null)
+                }.AsReadOnly()));
+
+        // Alpaca returns PartiallyFilled with only 10 shares filled out of 20
+        brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>
+            {
+                new(alpacaId, clientId, "SPY", "BUY", 20m, 10m, 450m,
+                    OrderState.PartiallyFilled, DateTimeOffset.UtcNow, null)
+            });
+
+        // Act
+        await reconciliation.ReconcileFillsAsync(CancellationToken.None);
+
+        // Assert: InsertFillIdempotentAsync NOT called — partial fill is not drift
+        await stateRepoMock.DidNotReceive().InsertFillIdempotentAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<DateTimeOffset>(),
+            Arg.Any<CancellationToken>());
+    }
 }

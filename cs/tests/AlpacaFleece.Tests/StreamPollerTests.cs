@@ -747,4 +747,104 @@ public sealed class StreamPollerTests
             Arg.Any<DateTimeOffset>(),
             Arg.Any<CancellationToken>());
     }
+
+    // ─── H-3: Reduced bar depth after warmup ────────────────────────────────────
+
+    [Fact]
+    public async Task BarPoll_AfterWarmup_RequestsReducedDepth()
+    {
+        // Arrange: first poll uses full depth; after receiving ≥1 new bar the symbol is
+        // added to _warmedSymbols; subsequent polls use WarmPollDepth=5.
+        var marketDataClient = Substitute.For<IMarketDataClient>();
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(true);
+
+        var capturedDepths = new List<int>();
+        var barTs = DateTimeOffset.UtcNow;
+
+        marketDataClient.GetBarsAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedDepths.Add(callInfo.ArgAt<int>(2));
+                // Return 1 bar so the symbol gets warmed
+                return new ValueTask<IReadOnlyList<Quote>>(new List<Quote>
+                {
+                    new("AAPL", barTs, 150m, 152m, 149m, 151m, 10_000)
+                }.AsReadOnly());
+            });
+
+        var service = MakeService(marketDataClient: marketDataClient, eventBus: eventBus, symbols: ["AAPL"]);
+
+        const string timeframe = "1m";
+
+        // Act: first poll — symbol not warmed, should use full barDepth (default 100)
+        await service.PollBatchAsync(["AAPL"], timeframe, barDepth: 100, CancellationToken.None);
+
+        // Advance bar timestamp so second poll sees a new bar
+        barTs = barTs.AddMinutes(1);
+
+        // Act: second poll — symbol warmed, should use WarmPollDepth=5
+        await service.PollBatchAsync(["AAPL"], timeframe, barDepth: 100, CancellationToken.None);
+
+        Assert.Equal(2, capturedDepths.Count);
+        Assert.Equal(100, capturedDepths[0]); // First poll: full depth
+        Assert.Equal(5, capturedDepths[1]);   // Second poll: WarmPollDepth
+    }
+
+    // ─── C-5: Fractional fault uses fallback qty, no CB trip ────────────────────
+
+    [Fact]
+    public async Task FractionalFault_UsesFallbackQty_NoCbTrip()
+    {
+        // Arrange: broker returns Filled order but FilledQuantity=0 (SDK v7.2.0 limitation).
+        // Expected: event emitted with intent.Quantity as fallback, circuit breaker NOT tripped.
+        var brokerService = Substitute.For<IBrokerService>();
+        var stateRepository = Substitute.For<IStateRepository>();
+        var eventBus = Substitute.For<IEventBus>();
+
+        const string clientId = "client-frac";
+        const string alpacaId = "alpaca-frac";
+        const decimal intentQty = 0.5m; // fractional crypto quantity
+
+        var intent = new OrderIntentDto(
+            clientId, alpacaId, "BTC/USD", "buy", intentQty, 45_000m,
+            OrderState.PendingNew, DateTimeOffset.UtcNow, null);
+
+        stateRepository.GetAllOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
+                new List<OrderIntentDto> { intent }.AsReadOnly()));
+
+        stateRepository.UpdateOrderIntentAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<OrderState>(),
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+
+        // Broker reports Filled with FilledQuantity=0 (fractional fault)
+        brokerService.GetOrderByIdAsync(alpacaId, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<OrderInfo?>(new OrderInfo(
+                alpacaId, clientId, "BTC/USD", "buy", 0m, 0m, 45_000m,
+                OrderState.Filled, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
+
+        var service = MakeService(
+            brokerService: brokerService,
+            stateRepository: stateRepository,
+            eventBus: eventBus);
+
+        // Act
+        await service.PollOrderUpdatesAsync(CancellationToken.None);
+
+        // Assert: event published with fallback qty = intentQty (not 0)
+        await eventBus.Received(1).PublishAsync(
+            Arg.Is<OrderUpdateEvent>(e =>
+                e.ClientOrderId == clientId &&
+                e.FilledQuantity == intentQty &&
+                e.Status == OrderState.Filled),
+            Arg.Any<CancellationToken>());
+
+        // Assert: circuit breaker NOT tripped (no call to SaveCircuitBreakerCountAsync)
+        await stateRepository.DidNotReceive().SaveCircuitBreakerCountAsync(
+            Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
 }

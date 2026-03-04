@@ -30,6 +30,11 @@ public sealed class DrawdownMonitor(
     private DateTimeOffset _lastPeakResetTime = DateTimeOffset.UtcNow;
     private int _consecutiveFailures = 0;
     private const int MaxConsecutiveFailures = 3;
+    // H-4: Track last failure time for decay logic.
+    // If more than FailureDecayMinutes have passed since the last failure, the counter resets
+    // so transient failures separated by long intervals do not accumulate to a false-positive Halt.
+    private DateTimeOffset _lastFailureTime = DateTimeOffset.MinValue;
+    private const int FailureDecayMinutes = 5;
 
     /// <summary>
     /// Initialises the drawdown monitor by loading persisted state from database.
@@ -182,12 +187,23 @@ public sealed class DrawdownMonitor(
         }
         catch (Exception ex)
         {
+            var now = DateTimeOffset.UtcNow;
+
+            // H-4: Decay logic — reset the failure counter if the last failure was more than
+            // FailureDecayMinutes ago. This prevents isolated transient failures from accumulating
+            // to a false-positive fail-safe Halt over long periods.
+            var timeSinceLastFailure = now - _lastFailureTime;
+            if (timeSinceLastFailure > TimeSpan.FromMinutes(FailureDecayMinutes))
+                Interlocked.Exchange(ref _consecutiveFailures, 0);
+
+            _lastFailureTime = now;
             var failureCount = Interlocked.Increment(ref _consecutiveFailures);
+
             logger.LogError(ex,
                 "DrawdownMonitor: failed to update drawdown state (failure {count}/{max})",
                 failureCount, MaxConsecutiveFailures);
 
-            // Fail-safe: escalate to Halt after repeated failures
+            // Fail-safe: escalate to Halt after repeated failures within the decay window
             if (failureCount >= MaxConsecutiveFailures)
             {
                 var previousLevel = _currentLevel;
@@ -200,6 +216,42 @@ public sealed class DrawdownMonitor(
                     logger.LogCritical(
                         "DrawdownMonitor: fail-safe triggered after {count} failures, escalating from {previous} to HALT",
                         failureCount, previousLevel);
+
+                    // H-4: Persist the fail-safe Halt to DB so it survives a restart.
+                    try
+                    {
+                        // Best-effort: read existing drawdown state so we don't overwrite
+                        // peakEquity/drawdownPct with zeros when only escalating the level.
+                        decimal peakEquity = 0m;
+                        decimal drawdownPct = 0m;
+                        try
+                        {
+                            var existingState = await stateRepository.GetDrawdownStateAsync(ct);
+                            if (existingState is not null)
+                            {
+                                peakEquity = existingState.PeakEquity;
+                                drawdownPct = existingState.CurrentDrawdownPct;
+
+                                // Keep in-memory peak reset time in sync with persisted state if available.
+                                _lastPeakResetTime = existingState.LastPeakResetTime;
+                            }
+                        }
+                        catch (Exception readEx)
+                        {
+                            logger.LogWarning(readEx,
+                                "DrawdownMonitor: failed to read existing drawdown state before persisting fail-safe Halt; using default peak/drawdown");
+                        }
+
+                        await stateRepository.SaveDrawdownStateAsync(
+                            DrawdownLevel.Halt, peakEquity, drawdownPct, _lastPeakResetTime,
+                            manualRecoveryRequested: false, ct);
+                    }
+                    catch (Exception persistEx)
+                    {
+                        logger.LogError(persistEx,
+                            "DrawdownMonitor: failed to persist fail-safe Halt to DB");
+                    }
+
                     return (previousLevel, DrawdownLevel.Halt, 0m);
                 }
 

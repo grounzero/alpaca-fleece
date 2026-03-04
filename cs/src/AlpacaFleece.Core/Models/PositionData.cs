@@ -11,7 +11,15 @@ public sealed class PositionData
     public decimal AtrValue { get; set; }
     public decimal TrailingStopPrice { get; set; }
     public DateTimeOffset LastUpdateAt { get; set; }
-    public bool PendingExit { get; set; } = false;
+
+    // R-1: PendingExit is read/written from multiple threads (ExitManager + EventDispatcherService).
+    // C# auto-properties cannot be volatile; use an explicit volatile backing field.
+    private volatile bool _pendingExit;
+    public bool PendingExit
+    {
+        get => _pendingExit;
+        set => _pendingExit = value;
+    }
 
     public PositionData() { }
 
@@ -28,6 +36,6 @@ public sealed class PositionData
         AtrValue = atrValue;
         TrailingStopPrice = trailingStopPrice;
         LastUpdateAt = DateTimeOffset.UtcNow;
-        PendingExit = false;
+        _pendingExit = false;
     }
 }

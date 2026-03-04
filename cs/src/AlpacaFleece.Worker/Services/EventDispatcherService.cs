@@ -249,7 +249,10 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles signal events: RiskManager.CheckSignalAsync → OrderManager.SubmitSignalAsync.
+    /// Handles signal events: OrderManager.SubmitSignalAsync (risk check is authoritative in OrderManager).
+    /// H-2: The risk check here was a duplicate — removed. OrderManager.SubmitSignalAsync calls
+    ///      RiskManager.CheckSignalAsync internally and throws RiskManagerException on SAFETY/RISK failure.
+    /// R-5: OrderManager is scoped; resolve from a new scope to avoid consuming a root-scoped instance.
     /// </summary>
     private async ValueTask HandleSignalEventAsync(SignalEvent signalEvent)
     {
@@ -259,19 +262,9 @@ public sealed class EventDispatcherService(
 
         try
         {
-            var riskManager = serviceProvider.GetRequiredService<IRiskManager>();
-            var orderManager = serviceProvider.GetRequiredService<IOrderManager>();
-
-            // Risk check (throws RiskManagerException on SAFETY/RISK failure, soft skip on FILTER)
-            var riskCheckResult = await riskManager.CheckSignalAsync(
-                signalEvent,
-                CancellationToken.None);
-
-            if (!riskCheckResult.AllowsSignal)
-            {
-                logger.LogWarning("Signal rejected by risk filter: {reason}", riskCheckResult.Reason);
-                return;
-            }
+            // R-5: IOrderManager is scoped — resolve from a dedicated scope to avoid root-scope lifetime issues.
+            using var scope = serviceProvider.CreateScope();
+            var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
 
             // Pass 0m as sentinel so OrderManager auto-sizes using the dual-formula PositionSizer
             // (equity cap + risk cap, with fractional support for crypto).
@@ -284,7 +277,7 @@ public sealed class EventDispatcherService(
                 ? 0m
                 : signalEvent.Metadata.CurrentPrice;
 
-            // Submit order
+            // Submit order — risk check is performed inside SubmitSignalAsync
             var clientOrderId = await orderManager.SubmitSignalAsync(
                 signalEvent,
                 qty,
@@ -321,12 +314,12 @@ public sealed class EventDispatcherService(
             // Persist bar
             var barsHandler = serviceProvider.GetRequiredService<BarsHandler>();
             await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
-            logger.LogInformation("Bar persisted for {symbol}", barEvent.Symbol);
+            logger.LogDebug("Bar persisted for {symbol}", barEvent.Symbol);
 
             // Forward to strategy for signal generation (strategy handles readiness internally)
             using var scope = serviceProvider.CreateScope();
             var strategy = scope.ServiceProvider.GetRequiredService<IStrategy>();
-            logger.LogInformation("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
+            logger.LogDebug("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
             await strategy.OnBarAsync(barEvent, CancellationToken.None);
         }
         catch (Exception ex)

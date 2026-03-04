@@ -321,6 +321,58 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
         Assert.Contains("Drawdown halt", ex.Message);
     }
 
+    // ─── H-4: Failure decay + persist fail-safe halt ────────────────────────────
+
+    [Fact]
+    public async Task ConsecutiveFailures_WithDecay_DoNotEscalate()
+    {
+        // Because _lastFailureTime starts at DateTimeOffset.MinValue, the FIRST failure
+        // always triggers the decay logic (timeSinceLastFailure is enormous), resets the counter
+        // to 0, then increments to 1.
+        // This means a single isolated failure (after a long gap) counts as only 1 failure.
+        // It takes MaxConsecutiveFailures=3 rapid failures to trigger the fail-safe Halt.
+
+        var monitor = CreateMonitor(DefaultOptions());
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<AccountInfo>(Task.FromException<AccountInfo>(new Exception("broker unreachable"))));
+
+        // Act: 1st failure — decay resets counter from 0 to 0 then increments to 1
+        var (_, level1, _) = await monitor.UpdateAsync();
+
+        // After first failure, count=1 — still Normal (below threshold of 3)
+        Assert.Equal(DrawdownLevel.Normal, level1);
+
+        // Act: 2nd failure (rapid) — no decay, counter increments to 2
+        var (_, level2, _) = await monitor.UpdateAsync();
+        Assert.Equal(DrawdownLevel.Normal, level2);
+
+        // Act: 3rd failure (rapid) — no decay, counter increments to 3 → triggers Halt
+        var (_, level3, _) = await monitor.UpdateAsync();
+        Assert.Equal(DrawdownLevel.Halt, level3);
+    }
+
+    [Fact]
+    public async Task FailSafeHalt_IsPersisted()
+    {
+        // Arrange: trigger 3 consecutive broker failures so fail-safe Halt is triggered
+        var monitor = CreateMonitor(DefaultOptions());
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<AccountInfo>(Task.FromException<AccountInfo>(new Exception("broker down"))));
+
+        // Act: 3 failures → Halt escalation → persistence
+        await monitor.UpdateAsync();
+        await monitor.UpdateAsync();
+        var (_, level, _) = await monitor.UpdateAsync();
+
+        // Assert: monitor reports Halt
+        Assert.Equal(DrawdownLevel.Halt, level);
+
+        // Assert: DB was persisted with Halt level
+        var dbState = await fixture.StateRepository.GetDrawdownStateAsync();
+        Assert.NotNull(dbState);
+        Assert.Equal(DrawdownLevel.Halt, dbState.Level);
+    }
+
     // ─── Helpers ────────────────────────────────────────────────────────────────
 
     private DrawdownMonitor CreateMonitor(TradingOptions options) =>

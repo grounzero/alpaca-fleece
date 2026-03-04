@@ -280,6 +280,16 @@ public sealed class OrderManager(
                 DateTimeOffset.UtcNow,
                 ct);
 
+            // H-1: Idempotency check — if this exit was already submitted to the broker, skip re-submission
+            var existingExitIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
+            if (existingExitIntent is { AlpacaOrderId: not null })
+            {
+                logger.LogInformation(
+                    "Exit order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
+                    symbol, existingExitIntent.AlpacaOrderId);
+                return;
+            }
+
             if (options.Execution.DryRun)
             {
                 logger.LogInformation("DRY_RUN: Exit order would be submitted: {symbol} {side} {qty}",
@@ -362,12 +372,14 @@ public sealed class OrderManager(
                 // Persist intent BEFORE submission (crash recovery idempotency):
                 // SaveOrderIntentAsync is a no-op if clientOrderId already exists, so a restart
                 // after a partial crash will not create a duplicate exit.
+                // C-2: Use 0m as limitPrice so the broker submits a market order for flatten.
+                // Passing pos.CurrentPrice as a limit could cause fill failures when the price moves.
                 await stateRepository.SaveOrderIntentAsync(
                     clientOrderId,
                     pos.Symbol,
                     exitSide,
                     absQty,
-                    pos.CurrentPrice,
+                    0m,
                     DateTimeOffset.UtcNow,
                     ct);
 
@@ -392,11 +404,15 @@ public sealed class OrderManager(
                     continue;
                 }
 
+                logger.LogInformation(
+                    "FlattenPositionsAsync: submitting market order for {symbol} {side} {qty}",
+                    pos.Symbol, exitSide, absQty);
+
                 var orderInfo = await broker.SubmitOrderAsync(
                     pos.Symbol,
                     exitSide,
                     absQty,
-                    pos.CurrentPrice,   // market-price limit; caller can override
+                    0m,   // Market order — limitPrice=0 signals market order to broker
                     clientOrderId,
                     ct);
 
