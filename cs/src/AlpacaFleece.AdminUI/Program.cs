@@ -26,8 +26,8 @@ try
         .Get<AdminOptions>() ?? new AdminOptions();
 
     // Read-only EF Core DbContext factory — Admin never writes to the bot's database.
-    // SQLite WAL mode allows concurrent readers alongside the bot writer.
-    var roConnString = $"Data Source={adminOptions.DatabasePath};Mode=ReadOnly;Cache=Shared";
+    // Use Cache=Shared for concurrent access with the bot writer (WAL mode).
+    var roConnString = $"Data Source={adminOptions.DatabasePath};Cache=Shared";
     builder.Services.AddDbContextFactory<TradingDbContext>(options =>
         options.UseSqlite(roConnString)
                .UseQueryTrackingBehavior(QueryTrackingBehavior.NoTracking));
