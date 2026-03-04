@@ -12,6 +12,9 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     private readonly Dictionary<string, PositionData> _positions = new();
     private readonly IStateRepository _stateRepository = stateRepository;
     private readonly object _lock = new();
+    // Serialises concurrent open/close mutations so DB and in-memory state stay consistent
+    // across background services (EventDispatcherService fills + RuntimeReconcilerService repairs).
+    private readonly SemaphoreSlim _positionSemaphore = new(1, 1);
 
     /// <summary>
     /// Returns a shallow snapshot of all current positions.
@@ -40,6 +43,8 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
 
     /// <summary>
     /// Opens a position: persists to DB then updates in-memory state.
+    /// Serialised by <see cref="_positionSemaphore"/> to prevent DB/memory inconsistency
+    /// when EventDispatcherService and RuntimeReconcilerService both mutate the same symbol.
     /// </summary>
     public async ValueTask OpenPositionAsync(
         string symbol,
@@ -48,23 +53,40 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
         decimal atrValue,
         CancellationToken ct = default)
     {
-        var trailingStop = entryPrice - (atrValue * 1.5m);
-        await _stateRepository.UpsertPositionTrackingAsync(symbol, quantity, entryPrice, atrValue, trailingStop, ct);
-        OpenPositionInMemory(symbol, quantity, entryPrice, atrValue);
-        logger.LogInformation("Position opened: {symbol} {qty} @ {price}", symbol, quantity, entryPrice);
+        await _positionSemaphore.WaitAsync(ct);
+        try
+        {
+            var trailingStop = entryPrice - (atrValue * 1.5m);
+            await _stateRepository.UpsertPositionTrackingAsync(symbol, quantity, entryPrice, atrValue, trailingStop, ct);
+            OpenPositionInMemory(symbol, quantity, entryPrice, atrValue, trailingStop);
+            logger.LogInformation("Position opened: {symbol} {qty} @ {price}", symbol, quantity, entryPrice);
+        }
+        finally
+        {
+            _positionSemaphore.Release();
+        }
     }
 
     /// <summary>
     /// Closes a position: zeros DB row then removes from in-memory state.
+    /// Serialised by <see cref="_positionSemaphore"/> to prevent DB/memory inconsistency.
     /// </summary>
     public async ValueTask ClosePositionAsync(string symbol, CancellationToken ct = default)
     {
-        await _stateRepository.UpsertPositionTrackingAsync(symbol, 0m, 0m, 0m, 0m, ct);
-        bool removed;
-        lock (_lock)
-            removed = _positions.Remove(symbol);
-        if (removed)
-            logger.LogInformation("Position closed: {symbol}", symbol);
+        await _positionSemaphore.WaitAsync(ct);
+        try
+        {
+            await _stateRepository.UpsertPositionTrackingAsync(symbol, 0m, 0m, 0m, 0m, ct);
+            bool removed;
+            lock (_lock)
+                removed = _positions.Remove(symbol);
+            if (removed)
+                logger.LogInformation("Position closed: {symbol}", symbol);
+        }
+        finally
+        {
+            _positionSemaphore.Release();
+        }
     }
 
     /// <summary>
@@ -93,11 +115,12 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
         var rows = await _stateRepository.GetAllPositionTrackingAsync(ct);
         var loaded = 0;
 
-        foreach (var (symbol, quantity, entryPrice, atrValue) in rows)
+        foreach (var (symbol, quantity, entryPrice, atrValue, trailingStop) in rows)
         {
             if (quantity > 0)
             {
-                OpenPositionInMemory(symbol, quantity, entryPrice, atrValue);
+                // Use the persisted trailing stop so any tightening across restarts is preserved.
+                OpenPositionInMemory(symbol, quantity, entryPrice, atrValue, trailingStop);
                 loaded++;
             }
         }
@@ -110,9 +133,9 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     /// Used by <see cref="InitialiseFromDbAsync"/> (DB rows are already current on startup)
     /// and internally by <see cref="OpenPositionAsync"/> after persisting.
     /// </summary>
-    private void OpenPositionInMemory(string symbol, decimal quantity, decimal entryPrice, decimal atrValue)
+    private void OpenPositionInMemory(string symbol, decimal quantity, decimal entryPrice, decimal atrValue, decimal trailingStop)
     {
-        var pos = new PositionData(symbol, quantity, entryPrice, atrValue, entryPrice - (atrValue * 1.5m));
+        var pos = new PositionData(symbol, quantity, entryPrice, atrValue, trailingStop);
         lock (_lock)
             _positions[symbol] = pos;
     }

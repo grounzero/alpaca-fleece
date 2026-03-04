@@ -133,7 +133,7 @@ public interface IStateRepository
     /// <summary>
     /// Gets all position tracking records from the database.
     /// </summary>
-    ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>>
+    ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)>>
         GetAllPositionTrackingAsync(CancellationToken ct = default);
 
     /// <summary>

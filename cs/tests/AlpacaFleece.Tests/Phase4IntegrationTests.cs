@@ -296,7 +296,6 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         var housekeeping = new HousekeepingService(
             _brokerMock,
             fixture.StateRepository,
-            _positionTracker,
             scopeFactoryMock,
             _housekeepingLogger);
 

@@ -168,7 +168,7 @@ public sealed class EventDispatcherService(
                     await stateRepo.IncrementDailyTradeCountAsync();
                 }
 
-                // Clear PendingExit flag after any fill
+                // Notify ExitManager of fill; it manages PendingExit state as appropriate
                 await exitManager.HandleOrderUpdateAsync(updateEvent, CancellationToken.None);
             }
             else if (updateEvent.Status is OrderState.Canceled or OrderState.Expired or OrderState.Rejected)

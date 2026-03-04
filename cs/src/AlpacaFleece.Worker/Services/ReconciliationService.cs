@@ -162,7 +162,7 @@ public sealed class ReconciliationService(
     /// </summary>
     private async ValueTask AutoClearGhostPositionsAsync(
         IReadOnlyList<PositionInfo> alpacaPositions,
-        IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)> sqlitePositions,
+        IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)> sqlitePositions,
         IReadOnlyList<OrderInfo> alpacaOrders,
         CancellationToken ct)
     {

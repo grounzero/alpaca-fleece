@@ -7,7 +7,6 @@ namespace AlpacaFleece.Worker.Services;
 public sealed class HousekeepingService(
     IBrokerService brokerService,
     IStateRepository stateRepository,
-    PositionTracker positionTracker,
     IServiceScopeFactory scopeFactory,
     ILogger<HousekeepingService> logger) : BackgroundService
 {

@@ -30,7 +30,6 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         _housekeeping = new HousekeepingService(
             _brokerMock,
             fixture.StateRepository,
-            _positionTracker,
             _scopeFactoryMock,
             _logger);
 

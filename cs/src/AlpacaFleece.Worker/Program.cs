@@ -163,7 +163,6 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddHostedService(sp => new HousekeepingService(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),
-            sp.GetRequiredService<PositionTracker>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
             sp.GetRequiredService<ILogger<HousekeepingService>>()));
 
