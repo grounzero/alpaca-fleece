@@ -16,7 +16,7 @@ dependencies = [
     "llvmlite>=0.44.0,<1.0.0",
     "pyyaml>=6.0.3,<7.0.0",
     "python-dotenv>=1.2.1,<2.0.0",
-    "pytz>=2025.2,<2026.0",
+    "pytz>=2025.2,<2027.0",
 ]
 
 [project.optional-dependencies]

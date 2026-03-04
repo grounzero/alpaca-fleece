@@ -6,7 +6,7 @@ numba==0.61.2
 llvmlite==0.44.0
 PyYAML==6.0.3
 python-dotenv==1.2.1
-pytz==2025.2
+pytz==2026.1.post1
 
 # Dev tooling (optional / pin for CI reproducibility)
 black==26.1.0
