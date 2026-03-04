@@ -37,7 +37,7 @@ public sealed class StreamPollerService(
 
     // R-4: Known timeframe strings — used to validate configured timeframes at startup.
     private static readonly HashSet<string> KnownTimeframes = new(StringComparer.OrdinalIgnoreCase)
-        { "1m", "5m", "15m", "30m", "1h", "4h", "1d", "1w" };
+        { "1m", "5m", "15m", "1h", "1d" };
 
     // Bar deduplication: tracks the timestamp of the last bar published per symbol.
     // Prevents re-publishing bars we've already emitted in a previous poll cycle.
