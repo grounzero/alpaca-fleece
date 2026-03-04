@@ -13,9 +13,11 @@ public sealed class MarketDataClient(
     IAlpacaCryptoDataClient cryptoDataClient,
     BrokerOptions brokerOptions,
     ILogger<MarketDataClient> logger,
-    ISymbolClassifier symbolClassifier) : IMarketDataClient
+    ISymbolClassifier symbolClassifier,
+    int maxPriceAgeSeconds = 300) : IMarketDataClient
 {
     private const int RequestTimeoutMs = 10000;
+    private readonly int _maxPriceAgeSeconds = maxPriceAgeSeconds;
 
     /// <summary>
     /// Detects if symbol is equity (not crypto).
@@ -261,18 +263,33 @@ public sealed class MarketDataClient(
         return GetSnapshotAsyncImpl(symbol, ct);
     }
 
-    private ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
+    private async ValueTask<BidAskSpread> GetSnapshotAsyncImpl(string symbol, CancellationToken ct)
     {
         if (string.IsNullOrWhiteSpace(symbol))
             throw new ArgumentException("Symbol cannot be empty", nameof(symbol));
 
-        // Note: Snapshot API methods have been deprecated in Alpaca.Markets 7.2.0.
-        // Recommend using ListSnapshotsAsync or other alternatives.
-        // For now, throw NotImplementedException until snapshot APIs are fully updated.
-        throw new NotImplementedException(
-            $"GetSnapshot is not yet implemented for {symbol}. " +
-            "The Alpaca.Markets SDK has deprecated snapshot methods. " +
-            "Please use bar history data or update to use current snapshot APIs.");
+        // Use the most recent 1-minute bar as a price proxy (snapshot APIs deprecated in SDK v7.2.0).
+        var bars = await GetBarsAsync(symbol, "1Min", 1, ct);
+        if (bars.Count == 0)
+            throw new MarketDataException($"No price data available for {symbol}");
+
+        var bar = bars[^1];
+        var utcNow = DateTimeOffset.UtcNow;
+
+        // Freshness check: reject stale bars so ExitManager never prices exits on old data.
+        // ExitManager already skips equity positions when market is closed, so stale equity
+        // bars will not be fetched in that context. Disabled when MaxPriceAgeSeconds = 0.
+        if (_maxPriceAgeSeconds > 0)
+        {
+            var ageSeconds = (utcNow - bar.Timestamp).TotalSeconds;
+            if (ageSeconds > _maxPriceAgeSeconds)
+                throw new MarketDataException(
+                    $"Stale price data for {symbol}: bar age {ageSeconds:F0}s > max {_maxPriceAgeSeconds}s");
+        }
+
+        // Close price serves as both bid and ask (no real-time spread available via bars).
+        // MidPrice on BidAskSpread will equal close when bid == ask.
+        return new BidAskSpread(symbol, bar.Close, bar.Close, 0m, 0m, bar.Timestamp);
     }
 
     /// <summary>

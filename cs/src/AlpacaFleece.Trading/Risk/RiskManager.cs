@@ -103,6 +103,17 @@ public sealed class RiskManager(
                 RiskTier: "SAFETY");
         }
 
+        // Market data degraded: price feed has failed repeatedly — block new entries to avoid
+        // trading when exit pricing is unavailable (ExitManager sets this flag after 3 consecutive failures).
+        var marketDataDegraded = await stateRepository.GetStateAsync("market_data_degraded", ct);
+        if (marketDataDegraded == "true")
+        {
+            return new RiskCheckResult(
+                AllowsSignal: false,
+                Reason: "Market data degraded: price feed failing — check logs",
+                RiskTier: "SAFETY");
+        }
+
         // Drawdown emergency: all new orders blocked
         if (drawdownMonitor?.GetCurrentLevel() == DrawdownLevel.Emergency)
         {

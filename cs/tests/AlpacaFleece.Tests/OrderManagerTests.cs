@@ -4,10 +4,36 @@ namespace AlpacaFleece.Tests;
 /// Tests for OrderManager (SHA-256 idempotency, persist-before-submit).
 /// </summary>
 [Collection("Trading Database Collection")]
-public sealed class OrderManagerTests(TradingFixture fixture)
+public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
 {
     private readonly IBrokerService _brokerMock = Substitute.For<IBrokerService>();
     private readonly ILogger<OrderManager> _logger = Substitute.For<ILogger<OrderManager>>();
+
+    public async Task InitializeAsync()
+    {
+        // Cancel any non-terminal order intents left by previous tests so Gate 6b
+        // does not incorrectly block signals for the same symbol+side.
+        await CancelAllPendingIntentsAsync();
+    }
+
+    public async Task DisposeAsync() => await CancelAllPendingIntentsAsync();
+
+    private async Task CancelAllPendingIntentsAsync()
+    {
+        var nonTerminal = new[]
+        {
+            OrderState.PendingNew.ToString(), OrderState.Accepted.ToString(),
+            OrderState.PartiallyFilled.ToString(), OrderState.PendingCancel.ToString(),
+            OrderState.PendingReplace.ToString(),
+        };
+        var intents = await fixture.DbContext.OrderIntents
+            .Where(i => nonTerminal.Contains(i.Status))
+            .ToListAsync();
+        foreach (var intent in intents)
+            intent.Status = OrderState.Canceled.ToString();
+        if (intents.Count > 0)
+            await fixture.DbContext.SaveChangesAsync();
+    }
 
     [Fact]
     public async Task SubmitSignalAsync_GeneratesDeterministicClientOrderId()
@@ -289,5 +315,270 @@ public sealed class OrderManagerTests(TradingFixture fixture)
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
+    }
+
+    // ── Issue 3: AllowFractionalOrders gate ───────────────────────────────────
+
+    [Fact]
+    public async Task AllowFractionalOrders_False_FloorsQuantity()
+    {
+        // Arrange: fractional orders disabled; qty 2.5 should floor to 2
+        var options = new TradingOptions
+        {
+            Execution = new ExecutionOptions { DryRun = false, AllowFractionalOrders = false },
+            Symbols = new SymbolLists { EquitySymbols = ["FRACTIONAL_FLOOR"] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var signal = new SignalEvent(
+            Symbol: "FRACTIONAL_FLOOR",
+            Side: "BUY",
+            Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-01-01T10:00:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15),
+                FastSma: 100m, MediumSma: 99m, SlowSma: 95m,
+                Atr: 1m, Confidence: 0.8m, Regime: "TRENDING_UP",
+                RegimeStrength: 0.7m, CurrentPrice: 100m, BarsInRegime: 15));
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo("alpaca_floor", "test", "FRACTIONAL_FLOOR", "BUY",
+                2m, 0m, 0m, OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+
+        await orderManager.SubmitSignalAsync(signal, 2.5m, 100m);
+
+        // Assert: broker received floored qty = 2 (not 2.5)
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Is<decimal>(q => q == 2m),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task AllowFractionalOrders_True_PreservesFractionalQuantity()
+    {
+        // Arrange: fractional orders enabled; qty 0.75 should pass through unchanged
+        var options = new TradingOptions
+        {
+            Execution = new ExecutionOptions { DryRun = false, AllowFractionalOrders = true },
+            Symbols = new SymbolLists { CryptoSymbols = ["BTC/USD_FRAC"] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var signal = new SignalEvent(
+            Symbol: "BTC/USD_FRAC",
+            Side: "BUY",
+            Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-01-02T10:00:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15),
+                FastSma: 40000m, MediumSma: 39000m, SlowSma: 38000m,
+                Atr: 500m, Confidence: 0.9m, Regime: "TRENDING_UP",
+                RegimeStrength: 0.8m, CurrentPrice: 40000m, BarsInRegime: 20));
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo("alpaca_frac", "test", "BTC/USD_FRAC", "BUY",
+                0.75m, 0m, 0m, OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+
+        await orderManager.SubmitSignalAsync(signal, 0.75m, 40000m);
+
+        // Assert: broker received the fractional qty unchanged
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(),
+            Arg.Is<decimal>(q => q == 0.75m),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── Issue 5: Pending-order gate ────────────────────────────────────────────
+
+    [Fact]
+    public async Task PendingOrderGate_BlocksSecondBuyWhenFirstPending()
+    {
+        // Arrange: save a non-terminal BUY intent for PGATE_A
+        const string symbol = "PGATE_A";
+        await fixture.StateRepository.SaveOrderIntentAsync(
+            "pgate_existing_buy", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
+
+        var options = new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = [symbol] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var signal = new SignalEvent(
+            Symbol: symbol, Side: "BUY", Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-03-01T11:00:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15), FastSma: 100m, MediumSma: 99m, SlowSma: 95m,
+                Atr: 1m, Confidence: 0.8m, Regime: "TRENDING_UP",
+                RegimeStrength: 0.7m, CurrentPrice: 100m, BarsInRegime: 15));
+
+        // Act
+        var result = await orderManager.SubmitSignalAsync(signal, 10m, 100m);
+
+        // Assert: blocked by pending-order gate
+        Assert.Empty(result);
+        await _brokerMock.DidNotReceive().SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task PendingOrderGate_AllowsSellWhenBuyPending()
+    {
+        // A pending BUY should NOT block a SELL signal (different side)
+        const string symbol = "PGATE_B";
+        await fixture.StateRepository.SaveOrderIntentAsync(
+            "pgate_buy_for_sell_test", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
+
+        var options = new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = [symbol] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo("alpaca_sell", "test", symbol, "SELL",
+                10m, 0m, 0m, OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+
+        var signal = new SignalEvent(
+            Symbol: symbol, Side: "SELL", Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-03-01T11:01:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15), FastSma: 100m, MediumSma: 99m, SlowSma: 95m,
+                Atr: 1m, Confidence: 0.8m, Regime: "TRENDING_DOWN",
+                RegimeStrength: 0.7m, CurrentPrice: 100m, BarsInRegime: 15));
+
+        var result = await orderManager.SubmitSignalAsync(signal, 10m, 100m);
+
+        // SELL proceeds (not an ENTER action, so gate is skipped entirely)
+        Assert.NotEmpty(result);
+    }
+
+    [Fact]
+    public async Task PendingOrderGate_AllowsAfterFirstFills()
+    {
+        // Arrange: create a pending intent then mark it as Filled (terminal)
+        const string symbol = "PGATE_C";
+        const string existingClientId = "pgate_filled_buy";
+        await fixture.StateRepository.SaveOrderIntentAsync(
+            existingClientId, symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
+        // Mark as Filled (terminal)
+        await fixture.StateRepository.UpdateOrderIntentAsync(
+            existingClientId, "alpaca_filled", OrderState.Filled, DateTimeOffset.UtcNow);
+
+        var options = new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = [symbol] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo("alpaca_new", "test", symbol, "BUY",
+                10m, 0m, 0m, OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+
+        var signal = new SignalEvent(
+            Symbol: symbol, Side: "BUY", Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-03-01T12:00:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15), FastSma: 100m, MediumSma: 99m, SlowSma: 95m,
+                Atr: 1m, Confidence: 0.8m, Regime: "TRENDING_UP",
+                RegimeStrength: 0.7m, CurrentPrice: 100m, BarsInRegime: 15));
+
+        var result = await orderManager.SubmitSignalAsync(signal, 10m, 100m);
+
+        // Should be allowed (no pending order; only Filled = terminal)
+        Assert.NotEmpty(result);
+    }
+
+    // ── Issue 6: Flatten persist-before-submit ────────────────────────────────
+
+    [Fact]
+    public async Task FlattenPositionsAsync_PersistsIntentBeforeBrokerCall()
+    {
+        // Arrange: broker throws after SaveOrderIntentAsync is called
+        // The intent should be persisted even though broker fails
+        var options = new TradingOptions { Execution = new ExecutionOptions { DryRun = false } };
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>
+            {
+                new("FLATTEN_A", 100m, 100m, 105m, 5m, 0.05m, DateTimeOffset.UtcNow)
+            }.AsReadOnly() as IReadOnlyList<PositionInfo>);
+
+        // Broker throws on SubmitOrderAsync
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.FromException<OrderInfo>(new Exception("Broker unavailable")));
+
+        // Act
+        await orderManager.FlattenPositionsAsync();
+
+        // Assert: intent was persisted to DB before broker was attempted
+        var intents = await fixture.StateRepository.GetAllOrderIntentsAsync();
+        var intent = intents.FirstOrDefault(i => i.Symbol == "FLATTEN_A" && i.Side == "SELL");
+        Assert.NotNull(intent);
+        Assert.Equal(OrderState.PendingNew, intent.Status);
+        // AlpacaOrderId is null (broker never responded)
+        Assert.Null(intent.AlpacaOrderId);
+    }
+
+    [Fact]
+    public async Task FlattenPositionsAsync_IsIdempotent_AfterCrash()
+    {
+        // Arrange: intent already saved AND has AlpacaOrderId (already submitted once)
+        // Second flatten call should NOT re-submit to broker
+        var options = new TradingOptions { Execution = new ExecutionOptions { DryRun = false } };
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>
+            {
+                new("FLATTEN_B", 50m, 100m, 102m, 2m, 0.02m, DateTimeOffset.UtcNow)
+            }.AsReadOnly() as IReadOnlyList<PositionInfo>);
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo("alpaca_flat_b", "test", "FLATTEN_B", "SELL",
+                50m, 0m, 0m, OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+
+        // First flatten call → intent saved + submitted
+        await orderManager.FlattenPositionsAsync();
+
+        // Second flatten call (simulates crash + restart)
+        await orderManager.FlattenPositionsAsync();
+
+        // Assert: broker only called once (idempotency: AlpacaOrderId already set)
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 }

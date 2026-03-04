@@ -90,6 +90,52 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     }
 
     /// <summary>
+    /// Updates quantity and average price for a partial fill (BUY scale-up or SELL reduction).
+    /// Serialised by _positionSemaphore. No-op if no position exists.
+    /// </summary>
+    public async ValueTask UpdateQuantityAsync(
+        string symbol,
+        decimal newQty,
+        decimal avgPrice,
+        CancellationToken ct = default)
+    {
+        await _positionSemaphore.WaitAsync(ct);
+        try
+        {
+            PositionData? existing;
+            lock (_lock)
+                _positions.TryGetValue(symbol, out existing);
+
+            if (existing == null)
+            {
+                logger.LogWarning("UpdateQuantityAsync: no open position for {symbol}, skipping", symbol);
+                return;
+            }
+
+            await _stateRepository.UpsertPositionTrackingAsync(
+                symbol, newQty, avgPrice, existing.AtrValue, existing.TrailingStopPrice, ct);
+
+            lock (_lock)
+            {
+                if (_positions.TryGetValue(symbol, out var pos))
+                {
+                    pos.CurrentQuantity = newQty;
+                    pos.EntryPrice = avgPrice;
+                    pos.LastUpdateAt = DateTimeOffset.UtcNow;
+                }
+            }
+
+            logger.LogInformation(
+                "Position quantity updated: {symbol} qty={qty} avgPrice={price}",
+                symbol, newQty, avgPrice);
+        }
+        finally
+        {
+            _positionSemaphore.Release();
+        }
+    }
+
+    /// <summary>
     /// Updates trailing stop for a position.
     /// </summary>
     public void UpdateTrailingStop(string symbol, decimal newTrailingStop)

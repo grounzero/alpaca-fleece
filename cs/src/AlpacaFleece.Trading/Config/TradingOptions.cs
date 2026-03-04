@@ -92,6 +92,13 @@ public sealed class ExitOptions
     // Check interval in seconds (default 30s)
     public int CheckIntervalSeconds { get; set; } = 30;
 
+    /// <summary>
+    /// Maximum age in seconds for a price bar returned by GetSnapshotAsync.
+    /// Bars older than this threshold cause a MarketDataException (stale price).
+    /// 0 disables the check. Default: 300 (5 minutes).
+    /// </summary>
+    public int MaxPriceAgeSeconds { get; set; } = 300;
+
     // Exponential backoff base in seconds for failed exit attempts
     public int BackoffBaseSeconds { get; set; } = 2;
 
@@ -121,6 +128,18 @@ public sealed class ExecutionOptions
 {
     public bool DryRun { get; set; } = false;
     public bool KillSwitch { get; set; } = false;
+
+    /// <summary>
+    /// When false (default), all quantities are floored to whole numbers (minimum 1).
+    /// Set to true only when the SDK supports fractional read-back correctly.
+    /// </summary>
+    public bool AllowFractionalOrders { get; set; } = false;
+
+    /// <summary>
+    /// Order type for entry orders: "Market" (default) passes limitPrice=0 to the broker;
+    /// "AggressiveLimit" uses the bar-close price from the signal.
+    /// </summary>
+    public string EntryOrderType { get; set; } = "Market";
 
     /// <summary>
     /// Number of bars to fetch per poll cycle for strategy warmup.

@@ -72,7 +72,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddEventBus();
 
         // Phase 2: Market Data Client
-        services.AddMarketDataServices(brokerOptions);
+        services.AddMarketDataServices(brokerOptions, tradingOptions.Exit.MaxPriceAgeSeconds);
 
         // Trading (Phase 3: Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);

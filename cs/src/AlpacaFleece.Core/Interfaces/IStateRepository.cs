@@ -131,6 +131,13 @@ public interface IStateRepository
     ValueTask<IReadOnlyList<OrderIntentDto>> GetAllOrderIntentsAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Returns true if any order intent for the given symbol+side is in a non-terminal state
+    /// (PendingNew, Accepted, PartiallyFilled, PendingCancel, PendingReplace).
+    /// Used by the pending-order gate in OrderManager to prevent duplicate entries.
+    /// </summary>
+    ValueTask<bool> HasPendingOrderAsync(string symbol, string side, CancellationToken ct = default);
+
+    /// <summary>
     /// Gets all position tracking records from the database.
     /// </summary>
     ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)>>
