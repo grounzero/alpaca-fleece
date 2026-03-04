@@ -220,8 +220,30 @@ public sealed class DrawdownMonitor(
                     // H-4: Persist the fail-safe Halt to DB so it survives a restart.
                     try
                     {
+                        // Best-effort: read existing drawdown state so we don't overwrite
+                        // peakEquity/drawdownPct with zeros when only escalating the level.
+                        decimal peakEquity = 0m;
+                        decimal drawdownPct = 0m;
+                        try
+                        {
+                            var existingState = await stateRepository.GetDrawdownStateAsync(ct);
+                            if (existingState is not null)
+                            {
+                                peakEquity = existingState.PeakEquity;
+                                drawdownPct = existingState.DrawdownPct;
+
+                                // Keep in-memory peak reset time in sync with persisted state if available.
+                                _lastPeakResetTime = existingState.LastPeakResetTime;
+                            }
+                        }
+                        catch (Exception readEx)
+                        {
+                            logger.LogWarning(readEx,
+                                "DrawdownMonitor: failed to read existing drawdown state before persisting fail-safe Halt; using default peak/drawdown");
+                        }
+
                         await stateRepository.SaveDrawdownStateAsync(
-                            DrawdownLevel.Halt, 0m, 0m, _lastPeakResetTime,
+                            DrawdownLevel.Halt, peakEquity, drawdownPct, _lastPeakResetTime,
                             manualRecoveryRequested: false, ct);
                     }
                     catch (Exception persistEx)
