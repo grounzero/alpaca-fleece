@@ -74,6 +74,25 @@ public sealed class OrderManager(
                 }
             }
 
+            // Step 1e: Enforce whole-number quantities when AllowFractionalOrders is disabled.
+            // SDK v7.2.0 cannot read back fractional fills; keeping this gate prevents spurious
+            // circuit-breaker trips caused by IsFractionalFault detecting a 0-qty filled order.
+            if (!options.Execution.AllowFractionalOrders)
+            {
+                var preFloor = quantity;
+                quantity = Math.Max(1m, Math.Floor(quantity));
+                if (quantity != preFloor)
+                {
+                    logger.LogInformation(
+                        "AllowFractionalOrders=false: quantity floored from {original} to {qty} for {symbol}",
+                        preFloor, quantity, signal.Symbol);
+                    if (isCrypto)
+                        logger.LogWarning(
+                            "AllowFractionalOrders=false is set but {symbol} is a crypto symbol — fractional disabled",
+                            signal.Symbol);
+                }
+            }
+
             // Step 2: Call RiskManager.CheckSignalAsync - throws RiskManagerException if SAFETY/RISK fails
             var riskCheckResult = await riskManager.CheckSignalAsync(signal, ct);
             if (!riskCheckResult.AllowsSignal)
@@ -115,7 +134,18 @@ public sealed class OrderManager(
                     return string.Empty;
                 }
 
-                // Gate 6b: Per-bar gate — accept at most one ENTER per bar timestamp.
+                // Gate 6b: Pending-order block — don't submit a new BUY if one is already in-flight.
+                // Prevents runaway duplicate entries when the strategy fires repeatedly on the same symbol.
+                var hasPending = await stateRepository.HasPendingOrderAsync(signal.Symbol, signal.Side, ct);
+                if (hasPending)
+                {
+                    logger.LogInformation(
+                        "Pending-order block: non-terminal {side} order already exists for {symbol}, skipping ENTER",
+                        signal.Side, signal.Symbol);
+                    return string.Empty;
+                }
+
+                // Gate 6c: Per-bar gate — accept at most one ENTER per bar timestamp.
                 // cooldown=Zero relies purely on the same-bar timestamp check for idempotency;
                 // bar polling cadence already enforces rate limiting externally.
                 var gateName = $"entry_gate:{signal.Symbol}:{signal.Timeframe}";
@@ -329,6 +359,30 @@ public sealed class OrderManager(
                     signalTimestamp: flattenDayTs,
                     side: exitSide.ToLowerInvariant());
 
+                // Persist intent BEFORE submission (crash recovery idempotency):
+                // SaveOrderIntentAsync is a no-op if clientOrderId already exists, so a restart
+                // after a partial crash will not create a duplicate exit.
+                await stateRepository.SaveOrderIntentAsync(
+                    clientOrderId,
+                    pos.Symbol,
+                    exitSide,
+                    absQty,
+                    pos.CurrentPrice,
+                    DateTimeOffset.UtcNow,
+                    ct);
+
+                // If this exact clientOrderId was already submitted to the broker (has an AlpacaOrderId),
+                // skip re-submission to prevent duplicate orders on restart.
+                // Do NOT increment submitted — this call did not submit an order.
+                var existingFlattenIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
+                if (existingFlattenIntent is { AlpacaOrderId: not null })
+                {
+                    logger.LogInformation(
+                        "Flatten order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
+                        pos.Symbol, existingFlattenIntent.AlpacaOrderId);
+                    continue;
+                }
+
                 if (options.Execution.DryRun)
                 {
                     logger.LogInformation(
@@ -344,15 +398,6 @@ public sealed class OrderManager(
                     absQty,
                     pos.CurrentPrice,   // market-price limit; caller can override
                     clientOrderId,
-                    ct);
-
-                await stateRepository.SaveOrderIntentAsync(
-                    clientOrderId,
-                    pos.Symbol,
-                    exitSide,
-                    absQty,
-                    pos.CurrentPrice,
-                    DateTimeOffset.UtcNow,
                     ct);
 
                 await stateRepository.UpdateOrderIntentAsync(

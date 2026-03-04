@@ -34,6 +34,12 @@ public class ExitManager(
     private readonly ExitOptions _options = options.Value.Exit;
     private readonly ISymbolClassifier _symbolClassifier = symbolClassifier ?? new SymbolClassifier(options.Value.Symbols.CryptoSymbols, options.Value.Symbols.EquitySymbols);
 
+    // Per-symbol consecutive price-fetch failure counter.
+    // After MaxPriceFailures consecutive failures the market_data_degraded KV is set,
+    // which blocks new entries in RiskManager (SAFETY tier).
+    private readonly Dictionary<string, int> _priceFetchFailures = new();
+    private const int MaxPriceFailures = 3;
+
     /// <summary>
     /// Main execution loop — run this in a hosted service background task.
     /// </summary>
@@ -208,17 +214,52 @@ public class ExitManager(
 
     /// <summary>
     /// Gets current mid-price for symbol from market data snapshot.
+    /// Tracks consecutive failures per symbol; after MaxPriceFailures consecutive failures
+    /// the market_data_degraded KV flag is set (blocks new entries in RiskManager SAFETY tier).
+    /// On success, clears that symbol's failure counter and clears the KV flag when all symbols OK.
+    /// Returns 0m on individual failure so the position is skipped this cycle.
     /// </summary>
     private async ValueTask<decimal> GetCurrentPriceAsync(string symbol, CancellationToken ct)
     {
         try
         {
             var snapshot = await marketDataClient.GetSnapshotAsync(symbol, ct);
+
+            // Success: reset this symbol's failure counter.
+            if (_priceFetchFailures.TryGetValue(symbol, out var prev) && prev > 0)
+            {
+                _priceFetchFailures[symbol] = 0;
+
+                // Clear the degraded flag only when every *currently held* position has a
+                // clean price feed. Counters for symbols that are no longer held are stale
+                // and must not prevent recovery — prune them here.
+                var currentSymbols = positionTracker.GetAllPositions().Keys.ToHashSet();
+                foreach (var key in _priceFetchFailures.Keys.Where(k => !currentSymbols.Contains(k)).ToList())
+                    _priceFetchFailures.Remove(key);
+
+                if (_priceFetchFailures.Values.All(v => v == 0))
+                {
+                    await stateRepository.SetStateAsync("market_data_degraded", "false", ct);
+                    logger.LogInformation("Market data recovered for all held positions; cleared market_data_degraded flag");
+                }
+            }
+
             return snapshot.MidPrice;
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get current price for {symbol}", symbol);
+            _priceFetchFailures.TryGetValue(symbol, out var failures);
+            _priceFetchFailures[symbol] = failures + 1;
+
+            if (_priceFetchFailures[symbol] >= MaxPriceFailures)
+            {
+                logger.LogError(
+                    "Price fetch failed {count} consecutive times for {symbol}; setting market_data_degraded=true to block new entries",
+                    _priceFetchFailures[symbol], symbol);
+                await stateRepository.SetStateAsync("market_data_degraded", "true", ct);
+            }
+
             return 0m;
         }
     }

@@ -168,12 +168,13 @@ public sealed class MarketDataClientTests
     }
 
     [Fact]
-    public async Task GetSnapshotAsync_ThrowsNotImplementedException()
+    public async Task GetSnapshotAsync_ThrowsMarketDataException_WhenNoBarsAvailable()
     {
-        var client = CreateClient();
+        // GetSnapshotAsync uses GetBarsAsync to obtain the latest price.
+        // When no bars are returned (e.g. market data unavailable), it throws MarketDataException.
+        var client = CreateClient(); // default equity mock returns empty bar page
 
-        // GetSnapshotAsync is not yet implemented due to Alpaca.Markets SDK snapshot API deprecation
-        await Assert.ThrowsAsync<NotImplementedException>(
+        await Assert.ThrowsAsync<MarketDataException>(
             async () => await client.GetSnapshotAsync("AAPL"));
     }
 
