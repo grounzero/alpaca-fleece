@@ -97,7 +97,7 @@ public sealed class RuntimeReconcilerService(
                 {
                     var atr = await EstimateAtrAsync(alpacaPos.Symbol, ct);
                     await positionTracker.OpenPositionAsync(
-                        alpacaPos.Symbol, alpacaPos.Quantity, alpacaPos.AverageEntryPrice, atrValue: atr, ct);
+                        alpacaPos.Symbol, alpacaPos.Quantity, alpacaPos.AverageEntryPrice, atrValue: atr, ct: ct);
                     discrepancies.Add($"Added missing position: {alpacaPos.Symbol}");
                     logger.LogWarning(
                         "Reconciliation: added missing position {symbol} qty={qty} entry={entry} atr={atr:F4}",
