@@ -70,11 +70,11 @@ public sealed class PositionData
     /// <summary>
     /// Initialises a new instance of the <see cref="PositionData"/> class with specified position details.
     /// </summary>
-    /// <param name=\"symbol\">The trading symbol.</param>
-    /// <param name=\"currentQuantity\">The current quantity held.</param>
-    /// <param name=\"entryPrice\">The entry price at which the position was opened.</param>
-    /// <param name=\"atrValue\">The Average True Range value for stop/target calculations.</param>
-    /// <param name=\"trailingStopPrice\">The trailing stop price level.</param>
+    /// <param name="symbol">The trading symbol.</param>
+    /// <param name="currentQuantity">The current quantity held.</param>
+    /// <param name="entryPrice">The entry price at which the position was opened.</param>
+    /// <param name="atrValue">The Average True Range value for stop/target calculations.</param>
+    /// <param name="trailingStopPrice">The trailing stop price level.</param>
     public PositionData(
         string symbol,
         decimal currentQuantity,

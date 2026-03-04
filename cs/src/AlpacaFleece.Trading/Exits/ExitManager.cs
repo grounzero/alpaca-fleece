@@ -14,6 +14,17 @@ namespace AlpacaFleece.Trading.Exits;
 /// Publishes ExitSignalEvent to unbounded event bus (never dropped).
 /// PendingExit flag is set AFTER successful publish to avoid phantom locks on bus failures.
 /// </summary>
+/// <summary>
+/// Initialises a new instance of the <see cref="ExitManager"/> class.
+/// </summary>
+/// <param name="positionTracker">The position tracker for accessing open positions.</param>
+/// <param name="brokerService">The broker service for executing exit trades.</param>
+/// <param name="marketDataClient">The market data client for fetching prices.</param>
+/// <param name="eventBus">The event bus for publishing exit signals.</param>
+/// <param name="stateRepository">The state repository for storing exit attempt records.</param>
+/// <param name="logger">The logger instance.</param>
+/// <param name="options">The trading options configuration.</param>
+/// <param name="symbolClassifier">Optional symbol classifier for crypto/equity detection.</param>
 public class ExitManager(
     IPositionTracker positionTracker,
     IBrokerService brokerService,
@@ -24,6 +35,9 @@ public class ExitManager(
     IOptions<TradingOptions> options,
     ISymbolClassifier? symbolClassifier = null)
 {
+    /// <summary>
+    /// Protected no-arg constructor for NSubstitute proxy creation in testing.
+    /// </summary>
     // Protected no-arg constructor for NSubstitute proxy creation
     protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions()), null!) { }
 
