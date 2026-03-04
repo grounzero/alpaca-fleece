@@ -41,9 +41,14 @@ public sealed class TrendFilter(
                 symbol);
             return true;
         }
-        // Minimum 2: with period=1 dailySma == lastClose, so lastClose > dailySma and
-        // lastClose < dailySma are both false — every signal is blocked regardless of direction.
-        var period = Math.Max(2, options.SignalFilters.DailySmaPeriod);
+        // Cap period to the maximum bars GetDailyBarsAsync can ever return (limit - 5 = 995).
+        // GetDailyBarsAsync clamps its fetch to 1 000; if DailySmaPeriod > 995 the bars.Count
+        // check below would always pass-through rather than filtering.
+        var period = Math.Min(Math.Max(2, options.SignalFilters.DailySmaPeriod), 995);
+        if (options.SignalFilters.DailySmaPeriod > period)
+            logger.LogWarning(
+                "TrendFilter: DailySmaPeriod {Configured} exceeds the API fetch cap; effective period clamped to {Effective}",
+                options.SignalFilters.DailySmaPeriod, period);
 
         if (bars.Count < period)
         {
@@ -90,7 +95,7 @@ public sealed class TrendFilter(
             }
         }
 
-        var limit = Math.Min(Math.Max(1, options.SignalFilters.DailySmaPeriod) + 5, 1_000);
+        var limit = Math.Min(Math.Max(2, options.SignalFilters.DailySmaPeriod) + 5, 1_000);
         var bars = await marketDataClient.GetBarsAsync(symbol, "1Day", limit, ct);
 
         lock (_cacheLock)
