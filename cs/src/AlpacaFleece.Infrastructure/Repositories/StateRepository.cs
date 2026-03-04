@@ -692,6 +692,38 @@ public sealed class StateRepository(
     }
 
     /// <summary>
+    /// Returns true if any non-terminal order intent exists for the given symbol+side.
+    /// Non-terminal: PendingNew, Accepted, PartiallyFilled, PendingCancel, PendingReplace.
+    /// </summary>
+    public async ValueTask<bool> HasPendingOrderAsync(string symbol, string side, CancellationToken ct = default)
+    {
+        try
+        {
+            // Statuses considered non-terminal (still in-flight, could receive fills)
+            var nonTerminalStatuses = new[]
+            {
+                OrderState.PendingNew.ToString(),
+                OrderState.Accepted.ToString(),
+                OrderState.PartiallyFilled.ToString(),
+                OrderState.PendingCancel.ToString(),
+                OrderState.PendingReplace.ToString(),
+            };
+
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            return await dbContext.OrderIntents.AnyAsync(
+                x => x.Symbol == symbol &&
+                     x.Side == side &&
+                     nonTerminalStatuses.Contains(x.Status),
+                ct);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to check pending orders for {symbol} {side}", symbol, side);
+            throw new StateRepositoryException($"Failed to check pending orders for {symbol} {side}", ex);
+        }
+    }
+
+    /// <summary>
     /// Gets all position tracking records (symbol, qty, entry price, ATR, trailing stop).
     /// </summary>
     public async ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue, decimal TrailingStopPrice)>>

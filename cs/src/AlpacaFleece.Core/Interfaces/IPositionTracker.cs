@@ -32,6 +32,13 @@ public interface IPositionTracker
     void UpdateTrailingStop(string symbol, decimal newTrailingStop);
 
     /// <summary>
+    /// Updates the quantity and average entry price of an existing open position (partial fill).
+    /// Does not change AtrValue or trailing stop.
+    /// No-op if no open position exists for the symbol.
+    /// </summary>
+    ValueTask UpdateQuantityAsync(string symbol, decimal newQty, decimal avgPrice, CancellationToken ct = default);
+
+    /// <summary>
     /// Rehydrates in-memory positions from the database.
     /// Must be called once at startup before the main trading loop begins.
     /// Mirrors Python's PositionTracker._load_from_db().

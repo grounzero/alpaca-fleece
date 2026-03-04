@@ -34,6 +34,22 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         await fixture.StateRepository.SetStateAsync("trading_ready", "true");
         await fixture.StateRepository.SaveCircuitBreakerCountAsync(0);
 
+        // Cancel any non-terminal order intents left by previous tests so Gate 6b
+        // does not incorrectly block signals for the same symbol+side.
+        var nonTerminal = new[]
+        {
+            OrderState.PendingNew.ToString(), OrderState.Accepted.ToString(),
+            OrderState.PartiallyFilled.ToString(), OrderState.PendingCancel.ToString(),
+            OrderState.PendingReplace.ToString(),
+        };
+        var stale = await fixture.DbContext.OrderIntents
+            .Where(i => nonTerminal.Contains(i.Status))
+            .ToListAsync();
+        foreach (var intent in stale)
+            intent.Status = OrderState.Canceled.ToString();
+        if (stale.Count > 0)
+            await fixture.DbContext.SaveChangesAsync();
+
         _positionTracker = new PositionTracker(fixture.StateRepository, _positionTrackerLogger);
 
         var tradingOptions = new TradingOptions

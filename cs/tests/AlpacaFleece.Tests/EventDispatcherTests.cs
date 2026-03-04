@@ -48,7 +48,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
 
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         var signal = new SignalEvent(
             Symbol: "AAPL",
@@ -78,7 +78,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         // ExitSignalEvent should be handled before other events
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         // Verify dispatcher is created
         Assert.NotNull(dispatcher);
@@ -89,7 +89,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
     {
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         var barEvent = new BarEvent(
             Symbol: "AAPL",
@@ -111,7 +111,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         // Arrange
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         var barEvent = new BarEvent(
             Symbol: "AAPL",
@@ -149,7 +149,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         // Arrange
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         var barEvent = new BarEvent(
             Symbol: "AAPL",
@@ -183,7 +183,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         var barsHandler = CreateBarsHandler(new FailingDbContextFactory());
 
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         var barEvent = new BarEvent(
             Symbol: "AAPL",
@@ -220,7 +220,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         // Event dispatcher should not crash on exceptions
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         // Verify dispatcher continues running despite errors
         Assert.NotNull(dispatcher);
@@ -232,7 +232,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
         // Exit signals should never be soft-skipped or dropped
         var barsHandler = CreateBarsHandler(CreateDbContextFactory());
         var serviceProvider = CreateServiceProvider(barsHandler);
-        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, _logger);
+        var dispatcher = new EventDispatcherService(fixture.EventBus, serviceProvider, Options.Create(new TradingOptions()), _logger);
 
         var exitSignal = new ExitSignalEvent(
             Symbol: "AAPL",

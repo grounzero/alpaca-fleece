@@ -9,6 +9,7 @@ namespace AlpacaFleece.Worker.Services;
 public sealed class EventDispatcherService(
     IEventBus eventBus,
     IServiceProvider serviceProvider,
+    IOptions<TradingOptions> tradingOptions,
     ILogger<EventDispatcherService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -179,7 +180,61 @@ public sealed class EventDispatcherService(
                     await positionTracker.ClosePositionAsync(updateEvent.Symbol);
                     await stateRepo.IncrementDailyTradeCountAsync();
                 }
+            }
+            else if (updateEvent.Status == OrderState.PartiallyFilled)
+            {
+                // Partial fills: update in-memory + DB position to reflect cumulative filled qty.
+                // Uses the intent's quantity to derive the remaining qty for SELL orders (idempotent).
+                var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
 
+                if (string.Equals(updateEvent.Side, "BUY", StringComparison.OrdinalIgnoreCase))
+                {
+                    var existingPos = positionTracker.GetPosition(updateEvent.Symbol);
+                    if (existingPos == null)
+                    {
+                        // First partial fill: open position with ATR seed (same path as Filled)
+                        var intent = await stateRepo.GetOrderIntentAsync(updateEvent.ClientOrderId);
+                        var atr = intent?.AtrSeed ?? 0m;
+                        if (atr <= 0m)
+                            logger.LogError(
+                                "BUY partial fill for {Symbol} has no ATR seed (intent={ClientOrderId}). " +
+                                "Position will open with AtrValue=0 and will be skipped by ExitManager.",
+                                updateEvent.Symbol, updateEvent.ClientOrderId);
+                        await positionTracker.OpenPositionAsync(
+                            updateEvent.Symbol,
+                            updateEvent.FilledQuantity,
+                            updateEvent.AverageFilledPrice,
+                            atr);
+                    }
+                    else
+                    {
+                        // Subsequent partial fill: scale up to new cumulative filled qty
+                        await positionTracker.UpdateQuantityAsync(
+                            updateEvent.Symbol,
+                            updateEvent.FilledQuantity,
+                            updateEvent.AverageFilledPrice);
+                    }
+                }
+                else
+                {
+                    // SELL partial fill: reduce position by cumulative filled qty of the SELL order.
+                    // intent.Quantity = original position qty submitted for exit; FilledQuantity is cumulative.
+                    var intent = await stateRepo.GetOrderIntentAsync(updateEvent.ClientOrderId);
+                    var originalSellQty = intent?.Quantity ?? 0m;
+                    var pos = positionTracker.GetPosition(updateEvent.Symbol);
+
+                    if (pos != null)
+                    {
+                        var remainingQty = originalSellQty - updateEvent.FilledQuantity;
+                        if (remainingQty <= 0m)
+                            await positionTracker.ClosePositionAsync(updateEvent.Symbol);
+                        else
+                            // Preserve the original entry price — for a partial exit the cost
+                            // basis of the remaining position is unchanged; only qty is reduced.
+                            await positionTracker.UpdateQuantityAsync(
+                                updateEvent.Symbol, remainingQty, pos.EntryPrice);
+                    }
+                }
             }
             else if (updateEvent.Status is OrderState.Canceled or OrderState.Expired or OrderState.Rejected)
             {
@@ -222,11 +277,18 @@ public sealed class EventDispatcherService(
             // (equity cap + risk cap, with fractional support for crypto).
             var qty = 0m;
 
+            // Determine limit price: "Market" passes 0m so the broker submits a market order;
+            // "AggressiveLimit" uses the bar-close price from the signal (may be stale).
+            var limitPrice = tradingOptions.Value.Execution.EntryOrderType
+                .Equals("Market", StringComparison.OrdinalIgnoreCase)
+                ? 0m
+                : signalEvent.Metadata.CurrentPrice;
+
             // Submit order
             var clientOrderId = await orderManager.SubmitSignalAsync(
                 signalEvent,
                 qty,
-                limitPrice: signalEvent.Metadata.CurrentPrice, // Market order proxy
+                limitPrice: limitPrice,
                 ct: CancellationToken.None);
 
             if (!string.IsNullOrEmpty(clientOrderId))

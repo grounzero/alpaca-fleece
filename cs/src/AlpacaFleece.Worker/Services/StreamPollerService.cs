@@ -36,6 +36,11 @@ public sealed class StreamPollerService(
     // Prevents re-publishing bars we've already emitted in a previous poll cycle.
     private readonly Dictionary<string, DateTimeOffset> _lastPublishedBarTs = new();
 
+    // Partial-fill deduplication: tracks cumulative filled qty per client order ID.
+    // Allows emitting OrderUpdateEvent when filled qty increases even if status is unchanged
+    // (e.g., two consecutive PartiallyFilled updates with different filled quantities).
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, decimal> _lastFilledQty = new();
+
     private static readonly HashSet<OrderState> NonTerminalStates =
     [
         OrderState.PendingNew,
@@ -381,9 +386,22 @@ public sealed class StreamPollerService(
                 return;
             }
 
-            // Only emit when status changes
-            if (order.Status == intent.Status)
+            // Emit when status changes OR when filled qty increases (catches PartiallyFilled
+            // → PartiallyFilled transitions where only qty grows, not the status string).
+            var lastFilledQty = _lastFilledQty.GetValueOrDefault(intent.ClientOrderId, 0m);
+            var statusChanged = order.Status != intent.Status;
+            var qtyIncreased = order.FilledQuantity > lastFilledQty;
+
+            if (!statusChanged && !qtyIncreased)
                 return;
+
+            // Always track the latest filled qty, regardless of which condition triggered.
+            // Remove tracking for terminal orders so the dictionary stays bounded in memory.
+            if (order.Status is OrderState.Filled or OrderState.Canceled or
+                OrderState.Expired or OrderState.Rejected or OrderState.Replaced)
+                _lastFilledQty.TryRemove(intent.ClientOrderId, out _);
+            else
+                _lastFilledQty[intent.ClientOrderId] = order.FilledQuantity;
 
             logger.LogInformation(
                 "Order {ClientOrderId} status: {Old} → {New} (filled: {Filled}/{Total})",
