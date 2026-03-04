@@ -94,14 +94,6 @@ public sealed class StreamPollerService(
         var allSymbolsList = allSymbols.ToList();
         const string timeframe = "1m";
 
-        // R-4: Validate that the configured timeframe is a known value.
-        // Unknown timeframes would silently produce wrong data; log a WARNING so operators can fix it.
-        if (!KnownTimeframes.Contains(timeframe))
-            logger.LogWarning(
-                "Timeframe '{timeframe}' is not a recognised value ({known}). " +
-                "Bar data may be incorrect or empty.",
-                timeframe, string.Join(", ", KnownTimeframes));
-
         var configuredDepth = tradingOptions.Value.Execution.BarHistoryDepth;
         var effectiveDepth = Math.Max(configuredDepth, strategy.RequiredHistory);
         if (effectiveDepth != configuredDepth)
