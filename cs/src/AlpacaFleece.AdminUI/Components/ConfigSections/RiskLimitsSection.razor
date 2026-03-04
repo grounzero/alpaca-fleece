@@ -1,0 +1,109 @@
+@* Risk limits: position sizing, daily loss cap, trade limits. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX RISK PER TRADE</MudText>
+            <InfoPopup FieldKey="RiskLimits.MaxRiskPerTradePct" />
+        </div>
+        <SliderWithZones Min="0.001m" Max="0.05m" Step="0.001m"
+                         @bind-Value="Draft.MaxRiskPerTradePct"
+                         @bind-Value:after="MarkDirty"
+                         Label="Max Risk per Trade %"
+                         Format="P2"
+                         GreenUpTo="@([0.01m])"
+                         AmberUpTo="@([0.02m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX DAILY LOSS ($)</MudText>
+            <InfoPopup FieldKey="RiskLimits.MaxDailyLoss" />
+        </div>
+        <MudNumericField @bind-Value="Draft.MaxDailyLoss"
+                         Label="Max Daily Loss"
+                         Min="0m"
+                         Step="100m"
+                         Format="C"
+                         @bind-Value:after="MarkDirty" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX TRADE RISK ($)</MudText>
+            <InfoPopup FieldKey="RiskLimits.MaxTradeRisk" />
+        </div>
+        <MudNumericField @bind-Value="Draft.MaxTradeRisk"
+                         Label="Max Trade Risk"
+                         Min="0m"
+                         Step="50m"
+                         Format="C"
+                         @bind-Value:after="MarkDirty" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX TRADES PER DAY</MudText>
+            <InfoPopup FieldKey="RiskLimits.MaxTradesPerDay" />
+        </div>
+        <SliderWithZones Min="1" Max="50" Step="1"
+                         @bind-Value="@MaxTradesDecimal"
+                         @bind-Value:after="MarkDirty"
+                         Label="Max Trades/Day"
+                         GreenUpTo="@([10m])"
+                         AmberUpTo="@([25m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX CONCURRENT POSITIONS</MudText>
+            <InfoPopup FieldKey="RiskLimits.MaxConcurrentPositions" />
+        </div>
+        <SliderWithZones Min="1" Max="20" Step="1"
+                         @bind-Value="@MaxPosDecimal"
+                         @bind-Value:after="MarkDirty"
+                         Label="Max Concurrent Positions"
+                         GreenUpTo="@([5m])"
+                         AmberUpTo="@([10m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">STOP LOSS %</MudText>
+            <InfoPopup FieldKey="RiskLimits.StopLossPct" />
+        </div>
+        <SliderWithZones Min="0.005m" Max="0.10m" Step="0.005m"
+                         @bind-Value="Draft.StopLossPct"
+                         @bind-Value:after="MarkDirty"
+                         Label="Stop Loss %"
+                         Format="P1"
+                         GreenUpTo="@([0.03m])"
+                         AmberUpTo="@([0.05m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MIN SIGNAL CONFIDENCE</MudText>
+            <InfoPopup FieldKey="RiskLimits.MinSignalConfidence" />
+        </div>
+        <SliderWithZones Min="0.1m" Max="1.0m" Step="0.05m"
+                         @bind-Value="Draft.MinSignalConfidence"
+                         @bind-Value:after="MarkDirty"
+                         Label="Min Confidence"
+                         Format="P0"
+                         GreenUpTo="@([0.6m])"
+                         AmberUpTo="@([0.8m])" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private decimal MaxTradesDecimal
+    {
+        get => Draft.MaxTradesPerDay;
+        set { Draft.MaxTradesPerDay = (int)value; }
+    }
+
+    private decimal MaxPosDecimal
+    {
+        get => Draft.MaxConcurrentPositions;
+        set { Draft.MaxConcurrentPositions = (int)value; }
+    }
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

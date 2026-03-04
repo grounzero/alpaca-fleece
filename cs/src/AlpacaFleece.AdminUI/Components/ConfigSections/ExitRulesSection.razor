@@ -1,0 +1,90 @@
+@* Exit manager configuration: ATR multiples, trailing stop, intervals. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12">
+        <MudAlert Severity="Severity.Info" Dense="true">
+            Live R:R ratio: <strong>@((Draft.AtrProfitTargetMultiplier / Math.Max(0.01m, Draft.AtrStopLossMultiplier)).ToString("F2"))x</strong>
+        </MudAlert>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">ATR STOP LOSS MULTIPLIER</MudText>
+            <InfoPopup FieldKey="Exit.AtrStopLossMultiplier" />
+        </div>
+        <SliderWithZones Min="0.5m" Max="5.0m" Step="0.1m"
+                         @bind-Value="Draft.AtrStopLossMultiplier"
+                         @bind-Value:after="MarkDirty"
+                         Label="Stop Loss ×ATR"
+                         Format="F1"
+                         GreenUpTo="@([2.0m])"
+                         AmberUpTo="@([3.5m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">ATR PROFIT TARGET MULTIPLIER</MudText>
+            <InfoPopup FieldKey="Exit.AtrProfitTargetMultiplier" />
+        </div>
+        <SliderWithZones Min="1.0m" Max="10.0m" Step="0.25m"
+                         @bind-Value="Draft.AtrProfitTargetMultiplier"
+                         @bind-Value:after="MarkDirty"
+                         Label="Profit Target ×ATR"
+                         Format="F2"
+                         GreenUpTo="@([4.0m])"
+                         AmberUpTo="@([7.0m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">TRAILING STOP %</MudText>
+            <InfoPopup FieldKey="Exit.TrailingStopPercent" />
+        </div>
+        <SliderWithZones Min="0.1m" Max="10.0m" Step="0.1m"
+                         @bind-Value="Draft.TrailingStopPercent"
+                         @bind-Value:after="MarkDirty"
+                         Label="Trailing Stop %"
+                         Format="F1"
+                         GreenUpTo="@([2.0m])"
+                         AmberUpTo="@([5.0m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">CHECK INTERVAL (seconds)</MudText>
+            <InfoPopup FieldKey="Exit.CheckIntervalSeconds" />
+        </div>
+        <SliderWithZones Min="5" Max="120" Step="5"
+                         @bind-Value="@CheckIntervalDecimal"
+                         @bind-Value:after="MarkDirty"
+                         Label="Check Interval"
+                         GreenUpTo="@([30m])"
+                         AmberUpTo="@([60m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX PRICE AGE (seconds)</MudText>
+            <InfoPopup FieldKey="Exit.MaxPriceAgeSeconds" />
+        </div>
+        <SliderWithZones Min="0" Max="600" Step="30"
+                         @bind-Value="@MaxPriceAgeDecimal"
+                         @bind-Value:after="MarkDirty"
+                         Label="Max Price Age (0=disabled)"
+                         GreenUpTo="@([300m])"
+                         AmberUpTo="@([450m])" />
+    </MudItem>
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private decimal CheckIntervalDecimal
+    {
+        get => Draft.ExitCheckIntervalSeconds;
+        set { Draft.ExitCheckIntervalSeconds = (int)value; }
+    }
+
+    private decimal MaxPriceAgeDecimal
+    {
+        get => Draft.MaxPriceAgeSeconds;
+        set { Draft.MaxPriceAgeSeconds = (int)value; }
+    }
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

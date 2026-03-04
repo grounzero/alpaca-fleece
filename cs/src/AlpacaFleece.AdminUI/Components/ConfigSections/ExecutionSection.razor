@@ -1,0 +1,80 @@
+@* Execution options: order type, bar age, fractional orders. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">ENTRY ORDER TYPE</MudText>
+            <InfoPopup FieldKey="Execution.EntryOrderType" />
+        </div>
+        <MudToggleGroup T="string"
+                        @bind-Value="Draft.EntryOrderType"
+                        @bind-Value:after="MarkDirty"
+                        Color="Color.Primary"
+                        CheckMark>
+            <MudToggleItem Value="@("Market")">Market</MudToggleItem>
+            <MudToggleItem Value="@("Limit")">Limit</MudToggleItem>
+        </MudToggleGroup>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.AllowFractionalOrders"
+                       Color="Color.Primary"
+                       Label="Allow Fractional Orders"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="Execution.AllowFractionalOrders" />
+        </div>
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX BAR AGE (minutes)</MudText>
+            <InfoPopup FieldKey="Execution.MaxBarAgeMinutes" />
+        </div>
+        <SliderWithZones Min="0" Max="15" Step="1"
+                         @bind-Value="@MaxBarAgeDecimal"
+                         @bind-Value:after="MarkDirty"
+                         Label="Max Bar Age (0=disabled)"
+                         GreenUpTo="@([5m])"
+                         AmberUpTo="@([10m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-1 mb-1">
+            <MudText Typo="Typo.caption" Class="mud-text-secondary">BAR HISTORY DEPTH</MudText>
+            <InfoPopup FieldKey="Execution.BarHistoryDepth" />
+        </div>
+        <SliderWithZones Min="51" Max="500" Step="25"
+                         @bind-Value="@BarHistoryDecimal"
+                         @bind-Value:after="MarkDirty"
+                         Label="Bar History Depth"
+                         GreenUpTo="@([250m])"
+                         AmberUpTo="@([400m])" />
+    </MudItem>
+    <MudItem xs="12" md="6">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.DryRun"
+                       Color="Color.Warning"
+                       Label="Dry Run (also in Danger Zone)"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="Broker.DryRun" />
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private decimal MaxBarAgeDecimal
+    {
+        get => Draft.MaxBarAgeMinutes;
+        set { Draft.MaxBarAgeMinutes = (int)value; }
+    }
+
+    private decimal BarHistoryDecimal
+    {
+        get => Draft.BarHistoryDepth;
+        set { Draft.BarHistoryDepth = (int)value; }
+    }
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

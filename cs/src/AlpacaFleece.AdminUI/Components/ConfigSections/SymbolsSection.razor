@@ -1,0 +1,224 @@
+@* Symbols: equity and crypto lists with Alpaca asset browser. *@
+
+@inject AlpacaAssetService AssetService
+@inject ISnackbar Snackbar
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="6">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Equity Symbols</MudText>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+            @foreach (var sym in Draft.EquitySymbols)
+            {
+                <MudChip T="string"
+                         Text="@sym"
+                         OnClose="@(() => RemoveEquity(sym))"
+                         Size="Size.Small"
+                         Color="Color.Primary" />
+            }
+        </div>
+        <div class="d-flex gap-2">
+            <MudTextField @bind-Value="_newEquity"
+                          Placeholder="Add symbol (e.g. AAPL)"
+                          Dense
+                          Immediate
+                          OnKeyDown="@OnEquityKeyDown" />
+            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                           Color="Color.Primary"
+                           OnClick="@AddEquity" />
+        </div>
+    </MudItem>
+
+    <MudItem xs="12" md="6">
+        <MudText Typo="Typo.subtitle2" Class="mb-2">Crypto Symbols</MudText>
+        <div class="d-flex flex-wrap gap-1 mb-2">
+            @foreach (var sym in Draft.CryptoSymbols)
+            {
+                <MudChip T="string"
+                         Text="@sym"
+                         OnClose="@(() => RemoveCrypto(sym))"
+                         Size="Size.Small"
+                         Color="Color.Secondary" />
+            }
+        </div>
+        <div class="d-flex gap-2">
+            <MudTextField @bind-Value="_newCrypto"
+                          Placeholder="Add symbol (e.g. BTC/USD)"
+                          Dense
+                          Immediate
+                          OnKeyDown="@OnCryptoKeyDown" />
+            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                           Color="Color.Secondary"
+                           OnClick="@AddCrypto" />
+        </div>
+    </MudItem>
+
+    <MudItem xs="12">
+        <MudButton Variant="Variant.Outlined"
+                   StartIcon="@Icons.Material.Filled.Search"
+                   OnClick="@OpenBrowser">
+            Browse Alpaca Assets
+        </MudButton>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary ml-2">
+            @(Draft.EquitySymbols.Count + Draft.CryptoSymbols.Count) symbols configured
+        </MudText>
+    </MudItem>
+</MudGrid>
+
+@* ── Alpaca Asset Browser Drawer ── *@
+<MudDrawer @bind-Open="_drawerOpen"
+           Anchor="Anchor.Right"
+           Elevation="4"
+           Width="380px">
+    <MudDrawerHeader>
+        <MudText Typo="Typo.subtitle1">Alpaca Assets</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@(() => _drawerOpen = false)" />
+    </MudDrawerHeader>
+    <MudPaper Class="pa-3" Elevation="0">
+        <MudTabs>
+            <MudTabPanel Text="Equities">
+                @if (_loadingAssets)
+                {
+                    <MudProgressLinear Indeterminate />
+                }
+                else
+                {
+                    <MudTextField @bind-Value="_assetSearch" Placeholder="Search..." Immediate Dense Class="mb-2" />
+                    <MudVirtualize Items="@FilteredEquities" Context="asset" OverscanCount="5">
+                        <div class="d-flex justify-space-between align-center py-1"
+                             style="border-bottom:1px solid rgba(255,255,255,0.05)">
+                            <div>
+                                <MudText Typo="Typo.body2">@asset.Symbol</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@asset.Name</MudText>
+                            </div>
+                            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                           Size="Size.Small"
+                                           Color="Color.Primary"
+                                           OnClick="@(() => AddEquitySymbol(asset.Symbol))" />
+                        </div>
+                    </MudVirtualize>
+                }
+            </MudTabPanel>
+            <MudTabPanel Text="Crypto">
+                @if (_loadingAssets)
+                {
+                    <MudProgressLinear Indeterminate />
+                }
+                else
+                {
+                    <MudTextField @bind-Value="_assetSearch" Placeholder="Search..." Immediate Dense Class="mb-2" />
+                    <MudVirtualize Items="@FilteredCrypto" Context="asset" OverscanCount="5">
+                        <div class="d-flex justify-space-between align-center py-1"
+                             style="border-bottom:1px solid rgba(255,255,255,0.05)">
+                            <div>
+                                <MudText Typo="Typo.body2">@asset.Symbol</MudText>
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">@asset.Name</MudText>
+                            </div>
+                            <MudIconButton Icon="@Icons.Material.Filled.Add"
+                                           Size="Size.Small"
+                                           Color="Color.Secondary"
+                                           OnClick="@(() => AddCryptoSymbol(asset.Symbol))" />
+                        </div>
+                    </MudVirtualize>
+                }
+            </MudTabPanel>
+        </MudTabs>
+    </MudPaper>
+</MudDrawer>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private string _newEquity = "";
+    private string _newCrypto = "";
+    private bool _drawerOpen;
+    private bool _loadingAssets;
+    private string _assetSearch = "";
+    private List<AssetInfo> _equityAssets = [];
+    private List<AssetInfo> _cryptoAssets = [];
+
+    private List<AssetInfo> FilteredEquities => string.IsNullOrWhiteSpace(_assetSearch)
+        ? _equityAssets
+        : _equityAssets.Where(a => a.Symbol.Contains(_assetSearch, StringComparison.OrdinalIgnoreCase)
+                                || a.Name.Contains(_assetSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private List<AssetInfo> FilteredCrypto => string.IsNullOrWhiteSpace(_assetSearch)
+        ? _cryptoAssets
+        : _cryptoAssets.Where(a => a.Symbol.Contains(_assetSearch, StringComparison.OrdinalIgnoreCase)
+                                || a.Name.Contains(_assetSearch, StringComparison.OrdinalIgnoreCase)).ToList();
+
+    private void RemoveEquity(string sym) { Draft.EquitySymbols.Remove(sym); Draft.IsDirty = true; }
+    private void RemoveCrypto(string sym) { Draft.CryptoSymbols.Remove(sym); Draft.IsDirty = true; }
+
+    private void AddEquity()
+    {
+        var sym = _newEquity.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(sym) || Draft.EquitySymbols.Contains(sym)) return;
+        Draft.EquitySymbols.Add(sym);
+        Draft.IsDirty = true;
+        _newEquity = "";
+    }
+
+    private void AddCrypto()
+    {
+        var sym = _newCrypto.Trim().ToUpperInvariant();
+        if (string.IsNullOrEmpty(sym) || Draft.CryptoSymbols.Contains(sym)) return;
+        Draft.CryptoSymbols.Add(sym);
+        Draft.IsDirty = true;
+        _newCrypto = "";
+    }
+
+    private void AddEquitySymbol(string sym)
+    {
+        if (!Draft.EquitySymbols.Contains(sym))
+        {
+            Draft.EquitySymbols.Add(sym);
+            Draft.IsDirty = true;
+            Snackbar.Add($"{sym} added to equity symbols.", Severity.Success);
+        }
+    }
+
+    private void AddCryptoSymbol(string sym)
+    {
+        if (!Draft.CryptoSymbols.Contains(sym))
+        {
+            Draft.CryptoSymbols.Add(sym);
+            Draft.IsDirty = true;
+            Snackbar.Add($"{sym} added to crypto symbols.", Severity.Success);
+        }
+    }
+
+    private Task OnEquityKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddEquity();
+        return Task.CompletedTask;
+    }
+
+    private Task OnCryptoKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter") AddCrypto();
+        return Task.CompletedTask;
+    }
+
+    private async Task OpenBrowser()
+    {
+        _drawerOpen = true;
+        _assetSearch = "";
+        if (_equityAssets.Count > 0) return; // already loaded
+
+        _loadingAssets = true;
+        try
+        {
+            _equityAssets = (await AssetService.GetEquityAssetsAsync()).ToList();
+            _cryptoAssets = (await AssetService.GetCryptoAssetsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load assets: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _loadingAssets = false;
+        }
+    }
+}

@@ -1,13 +1,175 @@
 @page "/trades"
 @attribute [Authorize]
+@inject AdminDbService DbService
+@inject ISnackbar Snackbar
 
 <PageTitle>Trades — AlpacaFleece Admin</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-1">Trades</MudText>
-<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
     Completed trades, P&amp;L statistics, and charts.
 </MudText>
 
-<MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Construction">
-    Trades data coming in Phase 3.
-</MudAlert>
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+else
+{
+    @* ── Stats cards ── *@
+    @if (_stats is not null)
+    {
+        <MudGrid Class="mb-4" Spacing="2">
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="stat-card pa-3" Elevation="2">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">TOTAL TRADES</MudText>
+                    <MudText Typo="Typo.h5">@_stats.TotalTrades</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="stat-card pa-3" Elevation="2">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">WIN RATE</MudText>
+                    <MudText Typo="Typo.h5" Class="@(_stats.WinRate >= 0.5m ? "pnl-positive" : "pnl-negative")">
+                        @(_stats.WinRate * 100m).ToString("F1")%
+                    </MudText>
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                        @_stats.WinningTrades W / @_stats.LosingTrades L
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="stat-card pa-3" Elevation="2">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">PROFIT FACTOR</MudText>
+                    <MudText Typo="Typo.h5" Class="@(_stats.ProfitFactor >= 1 ? "pnl-positive" : "pnl-negative")">
+                        @_stats.ProfitFactor.ToString("F2")
+                    </MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="12" sm="6" md="3">
+                <MudPaper Class="stat-card pa-3" Elevation="2">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">TOTAL P&amp;L</MudText>
+                    <PnlCell Value="_stats.TotalPnl" />
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+    }
+
+    @* ── Trades grid ── *@
+    <MudDataGrid @ref="_grid"
+                 T="TradeEntity"
+                 ServerData="@LoadServerData"
+                 Dense="true"
+                 Hover="true"
+                 Striped="true"
+                 Elevation="2"
+                 Class="mb-4">
+        <Columns>
+            <PropertyColumn Property="x => x.Symbol" Title="Symbol" />
+            <TemplateColumn Title="Side">
+                <CellTemplate>
+                    <MudChip T="string" Size="Size.Small"
+                             Color="@(context.Item.Side == "buy" ? Color.Success : Color.Error)"
+                             Variant="Variant.Outlined">
+                        @context.Item.Side.ToUpperInvariant()
+                    </MudChip>
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Qty">
+                <CellTemplate>@context.Item.FilledQuantity.ToString("G")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Avg Entry">
+                <CellTemplate>@context.Item.AverageEntryPrice.ToString("C")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Realised P&amp;L">
+                <CellTemplate><PnlCell Value="context.Item.RealizedPnl" /></CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Entered">
+                <CellTemplate>@context.Item.EnteredAt.LocalDateTime.ToString("g")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Exited">
+                <CellTemplate>
+                    @if (context.Item.ExitedAt.HasValue)
+                    { @context.Item.ExitedAt.Value.LocalDateTime.ToString("g") }
+                    else
+                    { <span class="mud-text-secondary">Open</span> }
+                </CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+
+    @* ── Equity curve chart ── *@
+    @if (_equitySeries.Count > 0)
+    {
+        <MudPaper Class="pa-4" Elevation="2">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Equity Curve (30 days)</MudText>
+            <MudChart ChartType="ChartType.Line"
+                      ChartSeries="@_equitySeries"
+                      XAxisLabels="@_equityLabels"
+                      Width="100%"
+                      Height="200px"
+                      ChartOptions="_chartOpts" />
+        </MudPaper>
+    }
+}
+
+@code {
+    private MudDataGrid<TradeEntity>? _grid;
+    private TradeStatsViewModel? _stats;
+    private bool _loading = true;
+    private string? _error;
+
+    private List<ChartSeries> _equitySeries = [];
+    private string[] _equityLabels = [];
+    private readonly ChartOptions _chartOpts = new()
+    {
+        LineStrokeWidth = 2,
+        ChartPalette = ["#00BFA5"]
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _stats = await DbService.GetTradeStatsAsync();
+            var equity = await DbService.GetEquityCurveAsync(30);
+            if (equity.Count > 0)
+            {
+                _equitySeries =
+                [
+                    new ChartSeries
+                    {
+                        Name = "Equity",
+                        Data = equity.Select(e => (double)e.PortfolioValue).ToArray()
+                    }
+                ];
+                _equityLabels = [.. equity.Select(e => e.Timestamp.LocalDateTime.ToString("MM/dd"))];
+            }
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load trade statistics: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task<GridData<TradeEntity>> LoadServerData(GridState<TradeEntity> state)
+    {
+        try
+        {
+            var (rows, total) = await DbService.GetTradesAsync(state.Page + 1, state.PageSize);
+            return new GridData<TradeEntity> { Items = rows, TotalItems = total };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load trades: {ex.Message}";
+            return new GridData<TradeEntity> { Items = [], TotalItems = 0 };
+        }
+    }
+}

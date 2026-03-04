@@ -1,5 +1,7 @@
 using MudBlazor.Services;
 using Serilog;
+using AlpacaFleece.AdminUI.Hubs;
+using AlpacaFleece.AdminUI.Services;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -55,6 +57,9 @@ try
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
 
+    // SignalR (for LogStreamHub)
+    builder.Services.AddSignalR();
+
     // MudBlazor services
     builder.Services.AddMudServices(config =>
     {
@@ -63,8 +68,23 @@ try
         config.SnackbarConfiguration.VisibleStateDuration = 4000;
     });
 
+    // HTTP client (for AlpacaAssetService)
+    builder.Services.AddHttpClient();
+
     // Admin services
     builder.Services.AddSingleton<AdminAuthService>();
+    builder.Services.AddSingleton<AdminDbService>();
+    builder.Services.AddSingleton<ServiceManagerService>();
+    builder.Services.AddSingleton<ConfigService>();
+    builder.Services.AddSingleton<AlpacaAssetService>();
+    builder.Services.AddSingleton<LogStreamService>();
+    builder.Services.AddSingleton<LogService>();
+    builder.Services.AddHostedService(sp => sp.GetRequiredService<LogStreamService>());
+
+    // Scoped services (per Blazor circuit)
+    builder.Services.AddScoped<ClipboardService>();
+    builder.Services.AddScoped<LocalStorageService>();
+    builder.Services.AddScoped<HighlightInterop>();
 
     var app = builder.Build();
 
@@ -80,6 +100,9 @@ try
     app.MapRazorPages();
     app.MapRazorComponents<AlpacaFleece.AdminUI.Components.App>()
         .AddInteractiveServerRenderMode();
+
+    // SignalR hub endpoint
+    app.MapHub<LogStreamHub>("/hubs/logs");
 
     await app.RunAsync();
 }

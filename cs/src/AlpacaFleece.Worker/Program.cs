@@ -13,18 +13,13 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     })
     .ConfigureAppConfiguration((context, config) =>
     {
-        // Add environment variables with ALPACA_ prefix mapped to config sections
-        // ALPACA_API_KEY -> Broker:ApiKey
-        // ALPACA_SECRET_KEY -> Broker:SecretKey
-        config.AddEnvironmentVariables(prefix: "ALPACA_");
-        
-        // Also add standard env vars for Docker compatibility (double underscore = section separator)
-        // Broker__ApiKey, Broker__SecretKey
-        config.AddEnvironmentVariables();
+        // Override config from the shared Docker volume (written by the Admin UI).
+        // Optional so the bot starts normally when running without Docker.
+        config.AddJsonFile("/app/config/appsettings.json", optional: true, reloadOnChange: false);
 
-        // Note: Host.CreateDefaultBuilder already loads appsettings.json and
-        // appsettings.{Environment}.json relative to the content root, so we
-        // rely on the default behavior here to avoid duplicate JSON providers.
+        // Standard env vars — double underscore is the section separator.
+        // Broker__ApiKey, Broker__SecretKey (set by docker-compose from .env)
+        config.AddEnvironmentVariables();
     })
     .UseSerilog((context, loggerConfig) =>
     {

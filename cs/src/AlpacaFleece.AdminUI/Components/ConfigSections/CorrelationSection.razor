@@ -1,0 +1,61 @@
+@* Correlation limits: pairwise and sector/asset-class concentration. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.CorrelationEnabled"
+                       Color="Color.Primary"
+                       Label="Enable Correlation Limits"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="Correlation.MaxCorrelation" />
+        </div>
+    </MudItem>
+    @if (Draft.CorrelationEnabled)
+    {
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX PAIRWISE CORRELATION</MudText>
+                <InfoPopup FieldKey="Correlation.MaxCorrelation" />
+            </div>
+            <SliderWithZones Min="0.1m" Max="1.0m" Step="0.05m"
+                             @bind-Value="Draft.MaxCorrelation"
+                             @bind-Value:after="MarkDirty"
+                             Label="Max Correlation"
+                             Format="F2"
+                             GreenUpTo="@([0.5m])"
+                             AmberUpTo="@([0.75m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX SECTOR CONCENTRATION</MudText>
+                <InfoPopup FieldKey="Correlation.MaxSectorPct" />
+            </div>
+            <SliderWithZones Min="0.1m" Max="1.0m" Step="0.05m"
+                             @bind-Value="Draft.MaxSectorPct"
+                             @bind-Value:after="MarkDirty"
+                             Label="Max Sector %"
+                             Format="P0"
+                             GreenUpTo="@([0.25m])"
+                             AmberUpTo="@([0.50m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX ASSET CLASS CONCENTRATION</MudText>
+            </div>
+            <SliderWithZones Min="0.1m" Max="1.0m" Step="0.05m"
+                             @bind-Value="Draft.MaxAssetClassPct"
+                             @bind-Value:after="MarkDirty"
+                             Label="Max Asset Class %"
+                             Format="P0"
+                             GreenUpTo="@([0.40m])"
+                             AmberUpTo="@([0.65m])" />
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

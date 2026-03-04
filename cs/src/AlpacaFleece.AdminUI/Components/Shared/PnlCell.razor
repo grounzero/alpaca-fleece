@@ -1,0 +1,18 @@
+@* Renders a P&L value with green/red/grey colouring. *@
+
+@if (Value is null or 0m)
+{
+    <MudText Typo="Typo.body2" Class="mud-text-secondary">—</MudText>
+}
+else if (Value > 0)
+{
+    <MudText Typo="Typo.body2" Class="pnl-positive">@Value.Value.ToString("C")</MudText>
+}
+else
+{
+    <MudText Typo="Typo.body2" Class="pnl-negative">@Value.Value.ToString("C")</MudText>
+}
+
+@code {
+    [Parameter] public decimal? Value { get; set; }
+}

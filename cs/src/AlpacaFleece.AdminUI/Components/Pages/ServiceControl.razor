@@ -1,5 +1,10 @@
 @page "/service"
 @attribute [Authorize]
+@implements IAsyncDisposable
+@inject ServiceManagerService ServiceManager
+@inject IOptions<AdminOptions> AdminOpts
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>Service — AlpacaFleece Admin</PageTitle>
 
@@ -8,6 +13,245 @@
     Manage the bot Docker container.
 </MudText>
 
-<MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Construction">
-    Service control coming in Phase 2.
-</MudAlert>
+@if (_loading && _status is null)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+
+@* ── Container status card ── *@
+<MudGrid Spacing="3">
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.subtitle1">Container: @AdminOpts.Value.BotContainerName</MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                                   OnClick="@RefreshAsync"
+                                   Disabled="_actionInProgress" />
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                @if (_status is null)
+                {
+                    <MudAlert Severity="Severity.Warning" Dense="true">
+                        Docker socket unavailable — running outside Docker or socket not mounted.
+                    </MudAlert>
+                }
+                else
+                {
+                    <MudList T="string" Dense="true" DisablePadding>
+                        <MudListItem T="string">
+                            <div class="d-flex justify-space-between">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">State</MudText>
+                                <StatusBadge Status="@_status.State" />
+                            </div>
+                        </MudListItem>
+                        <MudListItem T="string">
+                            <div class="d-flex justify-space-between">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Status</MudText>
+                                <MudText Typo="Typo.body2">@_status.Status</MudText>
+                            </div>
+                        </MudListItem>
+                        @if (_status.StartedAt.HasValue)
+                        {
+                            <MudListItem T="string">
+                                <div class="d-flex justify-space-between">
+                                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Started</MudText>
+                                    <MudText Typo="Typo.body2">@_status.StartedAt.Value.LocalDateTime.ToString("g")</MudText>
+                                </div>
+                            </MudListItem>
+                        }
+                        <MudListItem T="string">
+                            <div class="d-flex justify-space-between">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">CPU</MudText>
+                                <MudText Typo="Typo.body2">@_status.CpuPercent.ToString("F1")%</MudText>
+                            </div>
+                        </MudListItem>
+                        <MudListItem T="string">
+                            <div class="d-flex justify-space-between">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Memory</MudText>
+                                <MudText Typo="Typo.body2">
+                                    @FormatBytes(_status.MemoryUsageBytes) / @FormatBytes(_status.MemoryLimitBytes)
+                                </MudText>
+                            </div>
+                        </MudListItem>
+                    </MudList>
+                }
+            </MudCardContent>
+            <MudCardActions>
+                <MudButton StartIcon="@Icons.Material.Filled.PlayArrow"
+                           Color="Color.Success"
+                           Variant="Variant.Filled"
+                           Size="Size.Small"
+                           Disabled="@(_actionInProgress || (_status?.IsRunning ?? false))"
+                           OnClick="@(() => ConfirmActionAsync("Start", ServiceManager.StartContainerAsync))">
+                    Start
+                </MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.Stop"
+                           Color="Color.Error"
+                           Variant="Variant.Filled"
+                           Size="Size.Small"
+                           Disabled="@(_actionInProgress || !(_status?.IsRunning ?? false))"
+                           OnClick="@(() => ConfirmActionAsync("Stop", ServiceManager.StopContainerAsync))">
+                    Stop
+                </MudButton>
+                <MudButton StartIcon="@Icons.Material.Filled.RestartAlt"
+                           Color="Color.Warning"
+                           Variant="Variant.Filled"
+                           Size="Size.Small"
+                           Disabled="@_actionInProgress"
+                           OnClick="@(() => ConfirmActionAsync("Restart", ServiceManager.RestartContainerAsync))">
+                    Restart
+                </MudButton>
+                @if (_actionInProgress)
+                {
+                    <MudProgressCircular Size="Size.Small" Indeterminate Class="ml-2" />
+                }
+            </MudCardActions>
+        </MudCard>
+    </MudItem>
+
+    @* ── Health / Metrics JSON ── *@
+    <MudItem xs="12" md="6">
+        <MudCard Elevation="2">
+            <MudCardHeader>
+                <CardHeaderContent>
+                    <MudText Typo="Typo.subtitle1">Bot Health</MudText>
+                </CardHeaderContent>
+                <CardHeaderActions>
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="@LoadJsonAsync" />
+                </CardHeaderActions>
+            </MudCardHeader>
+            <MudCardContent>
+                <MudTabs Elevation="0" Rounded ApplyEffectsToContainer>
+                    <MudTabPanel Text="Health">
+                        @if (string.IsNullOrEmpty(_healthJson))
+                        {
+                            <MudText Class="mud-text-secondary">health.json not found.</MudText>
+                        }
+                        else
+                        {
+                            <pre class="log-line-dbg" style="font-size:0.75rem;overflow:auto;max-height:260px">@_healthJson</pre>
+                        }
+                    </MudTabPanel>
+                    <MudTabPanel Text="Metrics">
+                        @if (string.IsNullOrEmpty(_metricsJson))
+                        {
+                            <MudText Class="mud-text-secondary">metrics.json not found.</MudText>
+                        }
+                        else
+                        {
+                            <pre class="log-line-dbg" style="font-size:0.75rem;overflow:auto;max-height:260px">@_metricsJson</pre>
+                        }
+                    </MudTabPanel>
+                </MudTabs>
+            </MudCardContent>
+        </MudCard>
+    </MudItem>
+</MudGrid>
+
+@code {
+    private ContainerStatus? _status;
+    private bool _loading;
+    private bool _actionInProgress;
+    private string? _error;
+    private string? _healthJson;
+    private string? _metricsJson;
+    private System.Timers.Timer? _timer;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Task.WhenAll(RefreshAsync(), LoadJsonAsync());
+
+        _timer = new System.Timers.Timer(15_000);
+        _timer.Elapsed += async (_, _) =>
+        {
+            await RefreshAsync();
+            await InvokeAsync(StateHasChanged);
+        };
+        _timer.AutoReset = true;
+        _timer.Start();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        _error = null;
+        try { _status = await ServiceManager.GetContainerStatusAsync(); }
+        catch (Exception ex) { _error = ex.Message; }
+        finally { _loading = false; }
+    }
+
+    private async Task LoadJsonAsync()
+    {
+        try
+        {
+            var healthPath = AdminOpts.Value.HealthPath;
+            _healthJson = File.Exists(healthPath)
+                ? await File.ReadAllTextAsync(healthPath)
+                : null;
+
+            var metricsPath = AdminOpts.Value.MetricsPath;
+            _metricsJson = File.Exists(metricsPath)
+                ? await File.ReadAllTextAsync(metricsPath)
+                : null;
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to read JSON files: {ex.Message}";
+        }
+    }
+
+    private async Task ConfirmActionAsync(string action, Func<CancellationToken, ValueTask> actionFn)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Title, $"{action} Container" },
+            { x => x.Message, $"Are you sure you want to {action.ToLowerInvariant()} the bot container?" },
+            { x => x.ConfirmText, action },
+            { x => x.ConfirmColor, action == "Stop" ? Color.Error : Color.Warning }
+        };
+        var result = await DialogService.ShowAsync<ConfirmDialog>($"{action} Container", parameters);
+        var r = await result.Result;
+        if (r.Canceled) return;
+
+        _actionInProgress = true;
+        StateHasChanged();
+        try
+        {
+            await actionFn(CancellationToken.None);
+            Snackbar.Add($"Container {action.ToLowerInvariant()} requested.", Severity.Success);
+            await Task.Delay(2000);
+            await RefreshAsync();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Action failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _actionInProgress = false;
+        }
+    }
+
+    private static string FormatBytes(long bytes) => bytes switch
+    {
+        >= 1_073_741_824 => $"{bytes / 1_073_741_824.0:F1} GB",
+        >= 1_048_576     => $"{bytes / 1_048_576.0:F1} MB",
+        >= 1_024         => $"{bytes / 1_024.0:F1} KB",
+        _                => $"{bytes} B"
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        _timer?.Stop();
+        _timer?.Dispose();
+        await ValueTask.CompletedTask;
+    }
+}

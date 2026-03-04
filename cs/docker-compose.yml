@@ -11,6 +11,10 @@ services:
       - ./logs:/app/logs        # Serilog rolling log files
       - ./config:/app/config    # appsettings.json (writable by admin UI)
     env_file: .env
+    environment:
+      # Map ALPACA_* from .env to the Broker__ config keys .NET expects
+      - Broker__ApiKey=${ALPACA_API_KEY}
+      - Broker__SecretKey=${ALPACA_SECRET_KEY}
     restart: unless-stopped
     healthcheck:
       test: ["CMD", "pgrep", "-f", "AlpacaFleece.Worker"]
@@ -33,8 +37,11 @@ services:
       - ./logs:/app/logs        # Read log files for log viewer
       - ./config:/app/config    # Read/write appsettings.json
       - /var/run/docker.sock:/var/run/docker.sock  # Manage bot container
+    # env_file passes ADMIN_PASSWORD_HASH into the container as a plain env var.
+    # Docker Compose unescapes $$ → $ so the bcrypt hash arrives intact.
+    # AdminAuthService reads ADMIN_PASSWORD_HASH directly from IConfiguration.
+    env_file: .env
     environment:
-      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
       - Admin__BotContainerName=alpaca-fleece-bot
       - Admin__DatabasePath=/app/data/trading.db
       - Admin__LogPath=/app/logs/alpaca-fleece.log

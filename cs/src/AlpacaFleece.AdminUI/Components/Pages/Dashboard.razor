@@ -1,13 +1,291 @@
 @page "/"
 @attribute [Authorize]
+@implements IAsyncDisposable
+@inject AdminDbService DbService
+@inject IOptions<AdminOptions> AdminOpts
+@inject ISnackbar Snackbar
 
 <PageTitle>Dashboard — AlpacaFleece Admin</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-1">Dashboard</MudText>
-<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
     Bot status, health flags, and key metrics.
+    @if (_vm is not null)
+    {
+        <span class="ml-2 mud-text-secondary" style="font-size:0.75rem">
+            Last updated @_vm.LastUpdated.LocalDateTime.ToString("HH:mm:ss")
+        </span>
+    }
 </MudText>
 
-<MudAlert Severity="Severity.Info" Icon="@Icons.Material.Filled.Construction">
-    Dashboard data coming in Phase 2.
-</MudAlert>
+@if (_loading && _vm is null)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+    <MudGrid>
+        @for (var i = 0; i < 8; i++)
+        {
+            <MudItem xs="12" sm="6" md="3">
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="100px" />
+            </MudItem>
+        }
+    </MudGrid>
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+else if (_vm is not null)
+{
+    @* ── Status row ── *@
+    <MudGrid Class="mb-4" Spacing="2">
+        <MudItem xs="12">
+            <MudPaper Class="pa-3 d-flex flex-wrap align-center gap-3" Elevation="1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary mr-1">STATUS</MudText>
+
+                <StatusBadge Status="@(_vm.TradingReady ? "running" : "stopped")"
+                             Tooltip="@(_vm.TradingReady ? "Bot is initialised and accepting signals" : "Bot is not ready")" />
+
+                @if (_vm.MarketDataDegraded)
+                {
+                    <StatusBadge Status="degraded" Tooltip="Market data is degraded — price fetch failures detected" />
+                }
+
+                <DrawdownBadge Level="@_vm.DrawdownLevel" />
+
+                @if (_vm.IsPaperTrading)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Info" Variant="Variant.Outlined">PAPER</MudChip>
+                }
+                else
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled">LIVE</MudChip>
+                }
+
+                @if (_vm.DryRun)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Secondary" Variant="Variant.Outlined">DRY RUN</MudChip>
+                }
+
+                @if (_vm.KillSwitchActive)
+                {
+                    <MudChip T="string" Size="Size.Small" Color="Color.Error" Variant="Variant.Filled">KILL SWITCH</MudChip>
+                }
+
+                <MudSpacer />
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">
+                    DB: @(_vm.DatabaseConnected ? "Connected" : "Disconnected")
+                </MudText>
+                <MudIconButton Icon="@Icons.Material.Filled.Refresh"
+                               Size="Size.Small"
+                               OnClick="@RefreshAsync"
+                               Disabled="_loading"
+                               title="Refresh now" />
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Metrics cards ── *@
+    <MudGrid Class="mb-4" Spacing="2">
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">PORTFOLIO EQUITY</MudText>
+                <MudText Typo="Typo.h5">@_vm.EquityValue.ToString("C")</MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">Cash: @_vm.CashBalance.ToString("C")</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">DAILY P&amp;L</MudText>
+                <MudText Typo="Typo.h5" Class="@(_vm.DailyPnl >= 0 ? "pnl-positive" : "pnl-negative")">
+                    @_vm.DailyPnl.ToString("C")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">OPEN POSITIONS</MudText>
+                <MudText Typo="Typo.h5">@_vm.OpenPositionCount</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="3">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">TRADES TODAY</MudText>
+                <MudText Typo="Typo.h5">@_vm.DailyTradeCount</MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Risk row ── *@
+    <MudGrid Class="mb-4" Spacing="2">
+        <MudItem xs="12" sm="6" md="4">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">DRAWDOWN</MudText>
+                <div class="d-flex align-center gap-2 mt-1">
+                    <DrawdownBadge Level="@_vm.DrawdownLevel" />
+                    <MudText Typo="Typo.h6">@(_vm.CurrentDrawdownPct * 100m).ToString("F2")%</MudText>
+                </div>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">CIRCUIT BREAKER</MudText>
+                <MudText Typo="Typo.h5" Class="@(_vm.CircuitBreakerCount > 0 ? "mud-error-text" : "")">
+                    @_vm.CircuitBreakerCount
+                </MudText>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">consecutive failures</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" sm="6" md="4">
+            <MudPaper Class="stat-card pa-4" Elevation="2">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">KILL SWITCH</MudText>
+                <MudText Typo="Typo.h5" Class="@(_vm.KillSwitchActive ? "mud-error-text" : "pnl-positive")">
+                    @(_vm.KillSwitchActive ? "ACTIVE" : "Off")
+                </MudText>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @* ── Charts ── *@
+    <MudGrid Spacing="2">
+        <MudItem xs="12" md="8">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Equity Curve (30 days)</MudText>
+                @if (_equitySeries.Count > 0)
+                {
+                    <MudChart ChartType="ChartType.Line"
+                              ChartSeries="@_equitySeries"
+                              XAxisLabels="@_equityLabels"
+                              Width="100%"
+                              Height="220px"
+                              ChartOptions="_lineOptions" />
+                }
+                else
+                {
+                    <MudText Class="mud-text-secondary">No equity data available.</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <MudPaper Class="pa-4" Elevation="2">
+                <MudText Typo="Typo.subtitle2" Class="mb-2">Daily P&amp;L (30 days)</MudText>
+                @if (_dailyPnlSeries.Count > 0)
+                {
+                    <MudChart ChartType="ChartType.Bar"
+                              ChartSeries="@_dailyPnlSeries"
+                              XAxisLabels="@_dailyPnlLabels"
+                              Width="100%"
+                              Height="220px"
+                              ChartOptions="_barOptions" />
+                }
+                else
+                {
+                    <MudText Class="mud-text-secondary">No P&amp;L data available.</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+}
+
+@code {
+    private DashboardViewModel? _vm;
+    private bool _loading;
+    private string? _error;
+    private System.Timers.Timer? _timer;
+
+    private List<ChartSeries> _equitySeries = [];
+    private string[] _equityLabels = [];
+    private List<ChartSeries> _dailyPnlSeries = [];
+    private string[] _dailyPnlLabels = [];
+
+    private readonly ChartOptions _lineOptions = new()
+    {
+        YAxisTicks = 5,
+        MaxNumYAxisTicks = 6,
+        LineStrokeWidth = 2,
+        ChartPalette = ["#00BFA5"]
+    };
+
+    private readonly ChartOptions _barOptions = new()
+    {
+        YAxisTicks = 4,
+        MaxNumYAxisTicks = 5,
+        ChartPalette = ["#4FC3F7", "#ef5350"]
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await RefreshAsync();
+
+        var interval = AdminOpts.Value.DashboardRefreshSeconds * 1000;
+        _timer = new System.Timers.Timer(interval);
+        _timer.Elapsed += async (_, _) =>
+        {
+            await RefreshAsync();
+            await InvokeAsync(StateHasChanged);
+        };
+        _timer.AutoReset = true;
+        _timer.Start();
+    }
+
+    private async Task RefreshAsync()
+    {
+        _loading = true;
+        _error = null;
+        try
+        {
+            _vm = await DbService.GetDashboardAsync();
+            BuildChartData();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load dashboard: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void BuildChartData()
+    {
+        if (_vm is null) return;
+
+        // Equity curve
+        if (_vm.EquityCurve.Count > 0)
+        {
+            _equitySeries =
+            [
+                new ChartSeries
+                {
+                    Name = "Equity",
+                    Data = _vm.EquityCurve.Select(p => (double)p.Value).ToArray()
+                }
+            ];
+            _equityLabels = [.. _vm.EquityCurve.Select(p => p.Timestamp.LocalDateTime.ToString("MM/dd"))];
+        }
+
+        // Daily P&L
+        if (_vm.DailyPnl30.Count > 0)
+        {
+            _dailyPnlSeries =
+            [
+                new ChartSeries
+                {
+                    Name = "P&L",
+                    Data = _vm.DailyPnl30.Select(p => (double)p.Pnl).ToArray()
+                }
+            ];
+            _dailyPnlLabels = [.. _vm.DailyPnl30.Select(p => p.Date)];
+        }
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_timer is not null)
+        {
+            _timer.Stop();
+            _timer.Dispose();
+        }
+        await ValueTask.CompletedTask;
+    }
+}

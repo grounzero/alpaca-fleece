@@ -22,7 +22,7 @@
                 <span>AlpacaFleece</span>
             </div>
             <h1>Admin Dashboard</h1>
-            <form method="post" asp-antiforgery="true">
+            <form method="post">
                 @Html.AntiForgeryToken()
                 @if (Model.Error != null)
                 {

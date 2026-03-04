@@ -11,7 +11,7 @@ RUN dotnet restore "src/AlpacaFleece.AdminUI/AlpacaFleece.AdminUI.csproj"
 COPY src/ src/
 
 RUN dotnet publish "src/AlpacaFleece.AdminUI/AlpacaFleece.AdminUI.csproj" \
-    -c Release -o /app/publish --no-restore
+    -c Release -o /app/publish
 
 # ── Runtime ──────────────────────────────────────────────────
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine
