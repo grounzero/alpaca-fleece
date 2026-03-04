@@ -34,7 +34,7 @@ else
                 <MudPaper Class="stat-card pa-3" Elevation="2">
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">WIN RATE</MudText>
                     <MudText Typo="Typo.h5" Class="@(_stats.WinRate >= 0.5m ? "pnl-positive" : "pnl-negative")">
-                        @(_stats.WinRate * 100m).ToString("F1")%
+                        @string.Format("{0:F1}%", _stats.WinRate * 100m)
                     </MudText>
                     <MudText Typo="Typo.caption" Class="mud-text-secondary">
                         @_stats.WinningTrades W / @_stats.LosingTrades L

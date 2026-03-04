@@ -14,14 +14,14 @@
 
 @* ── Controls ── *@
 <MudPaper Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3" Elevation="1">
-    <MudSelect @bind-Value="_levelFilter" Label="Level" Dense Style="max-width:120px"
-               @bind-Value:after="ApplyFilters">
-        <MudSelectItem Value="@("All")">All</MudSelectItem>
-        <MudSelectItem Value="@("DBG")">Debug</MudSelectItem>
-        <MudSelectItem Value="@("INF")">Info</MudSelectItem>
-        <MudSelectItem Value="@("WRN")">Warning</MudSelectItem>
-        <MudSelectItem Value="@("ERR")">Error</MudSelectItem>
-        <MudSelectItem Value="@("FTL")">Fatal</MudSelectItem>
+    <MudSelect T="string" @bind-SelectedValues="_levelFilters" Label="Levels" Dense Style="max-width:180px"
+               MultiSelection="true" @bind-SelectedValues:after="ApplyFilters"
+               SelectAll="true" SelectAllText="All">
+        <MudSelectItem T="string" Value="@("DBG")">Debug</MudSelectItem>
+        <MudSelectItem T="string" Value="@("INF")">Info</MudSelectItem>
+        <MudSelectItem T="string" Value="@("WRN")">Warning</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ERR")">Error</MudSelectItem>
+        <MudSelectItem T="string" Value="@("FTL")">Fatal</MudSelectItem>
     </MudSelect>
 
     <MudTextField @bind-Value="_searchText"
@@ -115,7 +115,7 @@
     private List<LogLine> _bufferedLines  = [];
     private List<LogLine> _allLines       = [];
 
-    private string _levelFilter = "All";
+    private IEnumerable<string> _levelFilters = new HashSet<string> { "DBG", "INF", "WRN", "ERR", "FTL" };
     private string _searchText  = "";
     private bool   _paused;
     private bool   _loading   = true;
@@ -189,8 +189,9 @@
     private void ApplyFilters()
     {
         var filtered = _allLines.AsEnumerable();
-        if (_levelFilter != "All")
-            filtered = filtered.Where(l => l.Level == _levelFilter);
+        var levelSet = _levelFilters?.ToHashSet() ?? new HashSet<string>();
+        if (levelSet.Any())
+            filtered = filtered.Where(l => levelSet.Contains(l.Level));
         if (!string.IsNullOrWhiteSpace(_searchText))
             filtered = filtered.Where(l => l.Message.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
         _displayedLines = filtered.ToList();
