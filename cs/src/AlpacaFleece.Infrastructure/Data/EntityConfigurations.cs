@@ -6,6 +6,11 @@ namespace AlpacaFleece.Infrastructure.Data;
 
 public sealed class OrderIntentEntityConfiguration : IEntityTypeConfiguration<OrderIntentEntity>
 {
+    /// <summary>
+    /// Configures the OrderIntentEntity mapping using EF Core Fluent API.
+    /// Maps to 'order_intents' table with constraints for order ID, symbol, and state transitions.
+    /// </summary>
+    /// <param name="builder">The entity type builder for OrderIntentEntity configuration.</param>
     public void Configure(EntityTypeBuilder<OrderIntentEntity> builder)
     {
         builder.ToTable("order_intents");
@@ -25,8 +30,15 @@ public sealed class OrderIntentEntityConfiguration : IEntityTypeConfiguration<Or
     }
 }
 
+/// <summary>
+/// Entity configuration for TradeEntity using EF Core Fluent API.
+/// </summary>
 public sealed class TradeEntityConfiguration : IEntityTypeConfiguration<TradeEntity>
 {
+    /// <summary>
+    /// Configures the TradeEntity mapping to 'trades' table with required properties and indexes.
+    /// </summary>
+    /// <param name="builder">The entity type builder for TradeEntity configuration.</param>
     public void Configure(EntityTypeBuilder<TradeEntity> builder)
     {
         builder.ToTable("trades");
@@ -42,8 +54,15 @@ public sealed class TradeEntityConfiguration : IEntityTypeConfiguration<TradeEnt
     }
 }
 
+/// <summary>
+/// Entity configuration for EquityCurveEntity using EF Core Fluent API.
+/// </summary>
 public sealed class EquityCurveEntityConfiguration : IEntityTypeConfiguration<EquityCurveEntity>
 {
+    /// <summary>
+    /// Configures the EquityCurveEntity mapping to 'equity_curve' table with unique timestamp index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for EquityCurveEntity configuration.</param>
     public void Configure(EntityTypeBuilder<EquityCurveEntity> builder)
     {
         builder.ToTable("equity_curve");
@@ -56,8 +75,15 @@ public sealed class EquityCurveEntityConfiguration : IEntityTypeConfiguration<Eq
     }
 }
 
+/// <summary>
+/// Entity configuration for BotStateEntity using EF Core Fluent API.
+/// </summary>
 public sealed class BotStateEntityConfiguration : IEntityTypeConfiguration<BotStateEntity>
 {
+    /// <summary>
+    /// Configures the BotStateEntity mapping to 'bot_state' table with unique key constraint.
+    /// </summary>
+    /// <param name="builder">The entity type builder for BotStateEntity configuration.</param>
     public void Configure(EntityTypeBuilder<BotStateEntity> builder)
     {
         builder.ToTable("bot_state");
@@ -68,8 +94,15 @@ public sealed class BotStateEntityConfiguration : IEntityTypeConfiguration<BotSt
     }
 }
 
+/// <summary>
+/// Entity configuration for BarEntity using EF Core Fluent API.
+/// </summary>
 public sealed class BarEntityConfiguration : IEntityTypeConfiguration<BarEntity>
 {
+    /// <summary>
+    /// Configures the BarEntity mapping to 'bars' table with composite index on symbol, timeframe, and timestamp.
+    /// </summary>
+    /// <param name="builder">The entity type builder for BarEntity configuration.</param>
     public void Configure(EntityTypeBuilder<BarEntity> builder)
     {
         builder.ToTable("bars");
@@ -84,8 +117,15 @@ public sealed class BarEntityConfiguration : IEntityTypeConfiguration<BarEntity>
     }
 }
 
+/// <summary>
+/// Entity configuration for PositionSnapshotEntity using EF Core Fluent API.
+/// </summary>
 public sealed class PositionSnapshotEntityConfiguration : IEntityTypeConfiguration<PositionSnapshotEntity>
 {
+    /// <summary>
+    /// Configures the PositionSnapshotEntity mapping to 'position_snapshots' table with composite index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for PositionSnapshotEntity configuration.</param>
     public void Configure(EntityTypeBuilder<PositionSnapshotEntity> builder)
     {
         builder.ToTable("position_snapshots");
@@ -99,8 +139,15 @@ public sealed class PositionSnapshotEntityConfiguration : IEntityTypeConfigurati
     }
 }
 
+/// <summary>
+/// Entity configuration for SignalGateEntity using EF Core Fluent API.
+/// </summary>
 public sealed class SignalGateEntityConfiguration : IEntityTypeConfiguration<SignalGateEntity>
 {
+    /// <summary>
+    /// Configures the SignalGateEntity mapping to 'signal_gates' table with unique gate name index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for SignalGateEntity configuration.</param>
     public void Configure(EntityTypeBuilder<SignalGateEntity> builder)
     {
         builder.ToTable("signal_gates");
@@ -110,8 +157,15 @@ public sealed class SignalGateEntityConfiguration : IEntityTypeConfiguration<Sig
     }
 }
 
+/// <summary>
+/// Entity configuration for FillEntity using EF Core Fluent API.
+/// </summary>
 public sealed class FillEntityConfiguration : IEntityTypeConfiguration<FillEntity>
 {
+    /// <summary>
+    /// Configures the FillEntity mapping to 'fills' table with deduplication index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for FillEntity configuration.</param>
     public void Configure(EntityTypeBuilder<FillEntity> builder)
     {
         builder.ToTable("fills");
@@ -125,8 +179,15 @@ public sealed class FillEntityConfiguration : IEntityTypeConfiguration<FillEntit
     }
 }
 
+/// <summary>
+/// Entity configuration for PositionTrackingEntity using EF Core Fluent API.
+/// </summary>
 public sealed class PositionTrackingEntityConfiguration : IEntityTypeConfiguration<PositionTrackingEntity>
 {
+    /// <summary>
+    /// Configures the PositionTrackingEntity mapping to 'position_tracking' table with unique symbol index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for PositionTrackingEntity configuration.</param>
     public void Configure(EntityTypeBuilder<PositionTrackingEntity> builder)
     {
         builder.ToTable("position_tracking");
@@ -140,8 +201,15 @@ public sealed class PositionTrackingEntityConfiguration : IEntityTypeConfigurati
     }
 }
 
+/// <summary>
+/// Entity configuration for ExitAttemptEntity using EF Core Fluent API.
+/// </summary>
 public sealed class ExitAttemptEntityConfiguration : IEntityTypeConfiguration<ExitAttemptEntity>
 {
+    /// <summary>
+    /// Configures the ExitAttemptEntity mapping to 'exit_attempts' table with unique symbol index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for ExitAttemptEntity configuration.</param>
     public void Configure(EntityTypeBuilder<ExitAttemptEntity> builder)
     {
         builder.ToTable("exit_attempts");
@@ -151,8 +219,15 @@ public sealed class ExitAttemptEntityConfiguration : IEntityTypeConfiguration<Ex
     }
 }
 
+/// <summary>
+/// Entity configuration for ReconciliationReportEntity using EF Core Fluent API.
+/// </summary>
 public sealed class ReconciliationReportEntityConfiguration : IEntityTypeConfiguration<ReconciliationReportEntity>
 {
+    /// <summary>
+    /// Configures the ReconciliationReportEntity mapping to 'reconciliation_reports' table with date index.
+    /// </summary>
+    /// <param name="builder">The entity type builder for ReconciliationReportEntity configuration.</param>
     public void Configure(EntityTypeBuilder<ReconciliationReportEntity> builder)
     {
         builder.ToTable("reconciliation_reports");
@@ -163,8 +238,15 @@ public sealed class ReconciliationReportEntityConfiguration : IEntityTypeConfigu
     }
 }
 
+/// <summary>
+/// Entity configuration for SchemaMetaEntity using EF Core Fluent API.
+/// </summary>
 public sealed class SchemaMetaEntityConfiguration : IEntityTypeConfiguration<SchemaMetaEntity>
 {
+    /// <summary>
+    /// Configures the SchemaMetaEntity mapping to 'schema_meta' table with unique version constraint.
+    /// </summary>
+    /// <param name="builder">The entity type builder for SchemaMetaEntity configuration.</param>
     public void Configure(EntityTypeBuilder<SchemaMetaEntity> builder)
     {
         builder.ToTable("schema_meta");
@@ -175,8 +257,15 @@ public sealed class SchemaMetaEntityConfiguration : IEntityTypeConfiguration<Sch
     }
 }
 
+/// <summary>
+/// Entity configuration for CircuitBreakerStateEntity using EF Core Fluent API.
+/// </summary>
 public sealed class CircuitBreakerStateEntityConfiguration : IEntityTypeConfiguration<CircuitBreakerStateEntity>
 {
+    /// <summary>
+    /// Configures the CircuitBreakerStateEntity mapping to 'circuit_breaker_state' table with initial seed data.
+    /// </summary>
+    /// <param name="builder">The entity type builder for CircuitBreakerStateEntity configuration.</param>
     public void Configure(EntityTypeBuilder<CircuitBreakerStateEntity> builder)
     {
         builder.ToTable("circuit_breaker_state");
@@ -191,8 +280,15 @@ public sealed class CircuitBreakerStateEntityConfiguration : IEntityTypeConfigur
     }
 }
 
+/// <summary>
+/// Entity configuration for DrawdownStateEntity using EF Core Fluent API.
+/// </summary>
 public sealed class DrawdownStateEntityConfiguration : IEntityTypeConfiguration<DrawdownStateEntity>
 {
+    /// <summary>
+    /// Configures the DrawdownStateEntity mapping to 'drawdown_state' table with initial seed data.
+    /// </summary>
+    /// <param name="builder">The entity type builder for DrawdownStateEntity configuration.</param>
     public void Configure(EntityTypeBuilder<DrawdownStateEntity> builder)
     {
         builder.ToTable("drawdown_state");

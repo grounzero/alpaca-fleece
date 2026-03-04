@@ -14,8 +14,15 @@ public sealed class EventBusService : IEventBus
     private readonly Channel<ExitSignalEvent> _exitChannel;
     private long _droppedCount;
 
+    /// <summary>
+    /// Gets the count of events dropped due to channel capacity constraints.
+    /// </summary>
     public long DroppedCount => Volatile.Read(ref _droppedCount);
 
+    /// <summary>
+    /// Initialises a new instance of the <see cref="EventBusService"/> class with the specified normal channel capacity.
+    /// </summary>
+    /// <param name="normalChannelCapacity">The capacity of the normal event channel (default 10000).</param>
     public EventBusService(int normalChannelCapacity = 10000)
     {
         var normalOptions = new BoundedChannelOptions(normalChannelCapacity)

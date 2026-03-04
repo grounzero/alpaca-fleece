@@ -3,22 +3,18 @@ namespace AlpacaFleece.Trading.Risk;
 /// <summary>
 /// Tracks peak-to-trough portfolio drawdown and manages escalation/recovery levels.
 ///
-/// State machine (Normal ⟷ Warning ⟷ Halt ⟷ Emergency):
-///   Normal    — drawdown < WarningThresholdPct;  full trading
-///   Warning   — drawdown ≥ WarningThresholdPct;  position sizes × WarningPositionMultiplier
-///   Halt      — drawdown ≥ HaltThresholdPct;     no new positions
-///   Emergency — drawdown ≥ EmergencyThresholdPct; all positions closed
+/// State machine with four levels:
+///   Normal - drawdown below warning threshold, full trading allowed
+///   Warning - drawdown at or above warning threshold, position sizes reduced
+///   Halt - drawdown at or above halt threshold, no new positions
+///   Emergency - drawdown at or above emergency threshold, all positions closed
 ///
-/// Recovery (when EnableAutoRecovery is true):
-///   Emergency → Halt   — when drawdown < EmergencyRecoveryThresholdPct
-///   Halt → Warning     — when drawdown < HaltRecoveryThresholdPct
-///   Warning → Normal   — when drawdown < WarningRecoveryThresholdPct
-///   Otherwise requires system restart with manual recovery flag
+/// Auto-recovery thresholds determine downgrades to lower levels when enabled.
+/// Manual recovery flag allows override when auto-recovery is disabled.
+/// Rolling peak window resets at start of each lookback period (default 20 days).
 ///
-/// Rolling peak window: Peak resets to current equity at start of each lookback period (default 20 days).
-///
-/// UpdateAsync() is called periodically (DrawdownMonitorService). The current level is cached
-/// in-memory (volatile) so RiskManager and OrderManager can read it synchronously on hot paths.
+/// UpdateAsync() runs periodically via DrawdownMonitorService. Current level cached
+/// in-memory (volatile) for synchronous reads from RiskManager and OrderManager.
 /// </summary>
 public sealed class DrawdownMonitor(
     IBrokerService broker,

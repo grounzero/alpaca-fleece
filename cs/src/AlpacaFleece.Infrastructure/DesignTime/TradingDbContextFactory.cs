@@ -8,6 +8,11 @@ namespace AlpacaFleece.Infrastructure.DesignTime;
 /// </summary>
 public sealed class TradingDbContextFactory : IDesignTimeDbContextFactory<TradingDbContext>
 {
+    /// <summary>
+    /// Creates a new TradingDbContext instance for design-time operations (migrations).
+    /// </summary>
+    /// <param name="args">Command-line arguments (unused for this implementation).</param>
+    /// <returns>A configured TradingDbContext instance.</returns>
     public TradingDbContext CreateDbContext(string[] args)
     {
         var optionsBuilder = new DbContextOptionsBuilder<TradingDbContext>();

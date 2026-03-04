@@ -6,15 +6,11 @@ namespace AlpacaFleece.Trading.Exits;
 /// Exit manager: checks positions every 30s for stop loss, trailing stop, profit target.
 /// Uses a 3-rule priority system with ATR-based dynamic levels (mutual exclusion with fixed-%):
 ///
-///   Rule 1: ATR stop loss     — entry - (ATR × AtrStopLossMultiplier)
-///   Rule 2: ATR profit target — entry + (ATR × AtrProfitTargetMultiplier)
-///   Rule 4: Trailing stop     — TrailingStopPrice (always active)
+///   Rule 1: ATR stop loss     — entry - (ATR x AtrStopLossMultiplier)
+///   Rule 2: ATR profit target — entry + (ATR x AtrProfitTargetMultiplier)
+///   Rule 3: Trailing stop     — TrailingStopPrice (always active)
 ///
-/// ATR mutual exclusion (atr_computed): when valid ATR levels exist, fixed-percentage rules
-/// (3 and 5) are skipped entirely. The early ATR-validity guard ensures we never reach the
-/// fixed-% checks when ATR is valid, so fixed-% rules are effectively disabled in production
-/// (ATR is required to open a position).
-///
+/// ATR mutual exclusion: when valid ATR levels exist, fixed-percentage rules are skipped.
 /// Publishes ExitSignalEvent to unbounded event bus (never dropped).
 /// PendingExit flag is set AFTER successful publish to avoid phantom locks on bus failures.
 /// </summary>

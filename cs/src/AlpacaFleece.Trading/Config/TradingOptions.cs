@@ -3,16 +3,61 @@ namespace AlpacaFleece.Trading.Config;
 /// <summary>
 /// Root trading configuration loaded from appsettings.json.
 /// </summary>
+/// <example>
+/// <code>
+/// var options = new TradingOptions
+/// {
+///     Symbols = new SymbolLists { EquitySymbols = new[] { "AAPL", "MSFT" }.ToList() },
+///     RiskLimits = new RiskLimits { MaxDailyLoss = 500m },
+///     Session = new SessionOptions { TimeZone = "America/New_York" }
+/// };
+/// </code>
+/// </example>
 public sealed class TradingOptions
 {
+    /// <summary>
+    /// Gets or sets the symbol classification lists (crypto and equity).
+    /// </summary>
     public SymbolLists Symbols { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the session configuration (market hours, timezone).
+    /// </summary>
     public SessionOptions Session { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the risk limits configuration.
+    /// </summary>
     public RiskLimits RiskLimits { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the exit rules configuration.
+    /// </summary>
     public ExitOptions Exit { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the execution configuration.
+    /// </summary>
     public ExecutionOptions Execution { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the filters configuration (spread, volume, time-of-day).
+    /// </summary>
     public FiltersOptions Filters { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the drawdown monitoring configuration.
+    /// </summary>
     public DrawdownOptions Drawdown { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the correlation limits options.
+    /// </summary>
     public CorrelationLimitsOptions CorrelationLimits { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets the signal filter options.
+    /// </summary>
     public SignalFilterOptions SignalFilters { get; set; } = new();
 }
 
@@ -42,8 +87,19 @@ public sealed class SymbolLists
 /// </summary>
 public sealed class SessionOptions
 {
+    /// <summary>
+    /// Gets or sets the timezone for market hours (default: America/New_York).
+    /// </summary>
     public string TimeZone { get; set; } = "America/New_York";
+
+    /// <summary>
+    /// Gets or sets the market opening time in hours:minutes format (default: 09:30).
+    /// </summary>
     public TimeSpan MarketOpenTime { get; set; } = TimeSpan.Parse("09:30");
+
+    /// <summary>
+    /// Gets or sets the market closing time in hours:minutes format (default: 16:00).
+    /// </summary>
     public TimeSpan MarketCloseTime { get; set; } = TimeSpan.Parse("16:00");
 }
 
@@ -52,9 +108,24 @@ public sealed class SessionOptions
 /// </summary>
 public sealed class RiskLimits
 {
+    /// <summary>
+    /// Gets or sets the maximum daily loss before trading is halted.
+    /// </summary>
     public decimal MaxDailyLoss { get; set; } = 500m;
+
+    /// <summary>
+    /// Gets or sets the maximum risked amount per individual trade.
+    /// </summary>
     public decimal MaxTradeRisk { get; set; } = 100m;
+
+    /// <summary>
+    /// Gets or sets the maximum number of trades allowed per day.
+    /// </summary>
     public int MaxTradesPerDay { get; set; } = 5;
+
+    /// <summary>
+    /// Gets or sets the maximum number of concurrent open positions.
+    /// </summary>
     public int MaxConcurrentPositions { get; set; } = 2;
 
     /// <summary>
@@ -89,35 +160,53 @@ public sealed class RiskLimits
 /// </summary>
 public sealed class ExitOptions
 {
-    // Check interval in seconds (default 30s)
+    /// <summary>
+    /// Gets or sets the interval in seconds between exit checks (default 30 seconds).
+    /// </summary>
     public int CheckIntervalSeconds { get; set; } = 30;
 
     /// <summary>
-    /// Maximum age in seconds for a price bar returned by GetSnapshotAsync.
+    /// Gets or sets the maximum age in seconds for a price bar returned by GetSnapshotAsync.
     /// Bars older than this threshold cause a MarketDataException (stale price).
     /// 0 disables the check. Default: 300 (5 minutes).
     /// </summary>
     public int MaxPriceAgeSeconds { get; set; } = 300;
 
-    // Exponential backoff base in seconds for failed exit attempts
+    /// <summary>
+    /// Gets or sets the exponential backoff base in seconds for failed exit attempts (default 2 seconds).
+    /// </summary>
     public int BackoffBaseSeconds { get; set; } = 2;
 
-    // Maximum backoff cap in seconds
+    /// <summary>
+    /// Gets or sets the maximum backoff cap in seconds (default 300 seconds).
+    /// </summary>
     public int BackoffMaxSeconds { get; set; } = 300;
 
-    // ATR multiplier for stop loss level (default 1.5)
+    /// <summary>
+    /// Gets or sets the ATR multiplier for stop loss level calculation (default 1.5).
+    /// Stop loss = entry price - (ATR * AtrStopLossMultiplier).
+    /// </summary>
     public decimal AtrStopLossMultiplier { get; set; } = 1.5m;
 
-    // ATR multiplier for profit target level (default 3.0)
+    /// <summary>
+    /// Gets or sets the ATR multiplier for profit target level calculation (default 3.0).
+    /// Profit target = entry price + (ATR * AtrProfitTargetMultiplier).
+    /// </summary>
     public decimal AtrProfitTargetMultiplier { get; set; } = 3.0m;
 
-    // Fixed percentage stop loss (default 1%)
+    /// <summary>
+    /// Gets or sets the fixed percentage stop loss (default 0.01 = 1%).
+    /// </summary>
     public decimal StopLossPercentage { get; set; } = 0.01m;
 
-    // Fixed percentage profit target (default 2%)
+    /// <summary>
+    /// Gets or sets the fixed percentage profit target (default 0.02 = 2%).
+    /// </summary>
     public decimal ProfitTargetPercentage { get; set; } = 0.02m;
 
-    // Trailing stop percent (e.g., 2 = 2%)
+    /// <summary>
+    /// Gets or sets the trailing stop percentage (default 2 = 2%).
+    /// </summary>
     public decimal TrailingStopPercent { get; set; } = 2m;
 }
 
@@ -126,34 +215,39 @@ public sealed class ExitOptions
 /// </summary>
 public sealed class ExecutionOptions
 {
+    /// <summary>
+    /// Gets or sets a value indicating whether to run in dry-run mode (no broker submissions).
+    /// </summary>
     public bool DryRun { get; set; } = false;
+
+    /// <summary>
+    /// Gets or sets a value indicating whether the kill switch is enabled.
+    /// </summary>
     public bool KillSwitch { get; set; } = false;
 
     /// <summary>
+    /// Gets or sets a value indicating whether fractional orders are allowed.
     /// When false (default), all quantities are floored to whole numbers (minimum 1).
     /// Set to true only when the SDK supports fractional read-back correctly.
     /// </summary>
     public bool AllowFractionalOrders { get; set; } = false;
 
     /// <summary>
-    /// Order type for entry orders: "Market" (default) passes limitPrice=0 to the broker;
-    /// "AggressiveLimit" uses the bar-close price from the signal.
+    /// Gets or sets the order type for entry orders.
+    /// "Market" (default) passes limitPrice=0 to the broker; "AggressiveLimit" uses the bar-close price.
     /// </summary>
     public string EntryOrderType { get; set; } = "Market";
 
     /// <summary>
-    /// Number of bars to fetch per poll cycle for strategy warmup.
-    /// Recommended to be ≥ SmaCrossoverStrategy.RequiredBars (51) to have sufficient history
-    /// from the first poll. The worker clamps this value up to strategy.RequiredHistory at
-    /// runtime, so configuring a lower value will not cause incorrect behaviour — only a
-    /// warning log. Default: 100 (≈ 100 minutes of 1-min bars).
+    /// Gets or sets the number of bars to fetch per poll cycle for strategy warmup.
+    /// Recommended to be >= 51 (SmaCrossoverStrategy.RequiredBars). Default: 100.
     /// </summary>
     public int BarHistoryDepth { get; set; } = 100;
 
     /// <summary>
-    /// Maximum age in minutes for a bar to be eligible for signal generation.
-    /// Bars older than this threshold update indicator history (warm-up) but do not
-    /// produce signals. 0 disables the gate. Default: 3 (covers 1-min bar + API latency).
+    /// Gets or sets the maximum age in minutes for a bar to be eligible for signal generation.
+    /// Bars older than this threshold update indicator history but do not produce signals.
+    /// 0 disables the gate. Default: 3 (covers 1-min bar + API latency).
     /// </summary>
     public int MaxBarAgeMinutes { get; set; } = 3;
 }
@@ -163,13 +257,28 @@ public sealed class ExecutionOptions
 /// </summary>
 public sealed class FiltersOptions
 {
+    /// <summary>
+    /// Gets or sets the maximum bid/ask spread as a percentage (default 0.1 = 0.1%).
+    /// </summary>
     public decimal MaxBidAskSpreadPercent { get; set; } = 0.1m;
+
+    /// <summary>
+    /// Gets or sets the minimum bar volume required for signal generation (default 100000).
+    /// </summary>
     public long MinBarVolume { get; set; } = 100000;
+
+    /// <summary>
+    /// Gets or sets the minimum minutes after market open before signals are accepted (default 5).
+    /// </summary>
     public int MinMinutesAfterOpen { get; set; } = 5;
+
+    /// <summary>
+    /// Gets or sets the minimum minutes before market close during which signals are accepted (default 10).
+    /// </summary>
     public int MinMinutesBeforeClose { get; set; } = 10;
 
     /// <summary>
-    /// Maximum allowed bid/ask spread as a fraction of bid price (e.g. 0.005 = 0.5%).
+    /// Gets or sets the maximum allowed bid/ask spread as a fraction of bid price (default 0.005 = 0.5%).
     /// Signals with a wider spread are soft-skipped (FILTER tier).
     /// </summary>
     public decimal MaxSpreadPct { get; set; } = 0.005m;
