@@ -105,7 +105,11 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         await Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        // Zero out AAPL position_tracking row so subsequent tests see no open position.
+        await _positionTracker.ClosePositionAsync("AAPL");
+    }
 
     [Fact]
     public async Task TestVector1_BarToOrderFlow()
@@ -240,7 +244,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
     public async Task TestVector4_FillReceivedPositionTrackedExitTriggered()
     {
         // Arrange
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         var orderUpdate = new OrderUpdateEvent(
             AlpacaOrderId: "alpaca_123",
@@ -274,7 +278,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
     public async Task TestVector5_GracefulShutdownFlattensPositions()
     {
         // Arrange
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         var housekeeping = new HousekeepingService(
             _brokerMock,
@@ -321,7 +325,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
     public async Task ExitManagerWorkflowComplete()
     {
         // Full exit manager workflow
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
             .Returns(new ClockInfo(

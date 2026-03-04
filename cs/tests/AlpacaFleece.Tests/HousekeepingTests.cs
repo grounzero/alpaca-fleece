@@ -40,7 +40,11 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         await Task.CompletedTask;
     }
 
-    public Task DisposeAsync() => Task.CompletedTask;
+    public async Task DisposeAsync()
+    {
+        // Zero out AAPL position_tracking row so subsequent tests see no open position.
+        await _positionTracker.ClosePositionAsync("AAPL");
+    }
 
     [Fact]
     public async Task ExecuteAsync_RunsConcurrentTasks()
@@ -98,7 +102,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
     public async Task StopAsync_FlattensPositions()
     {
         // Arrange
-        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
         _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
             .Returns(new List<OrderInfo>());

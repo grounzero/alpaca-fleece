@@ -123,31 +123,53 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles order update events (updates position tracker, etc.).
+    /// Handles order update events: opens/closes positions on fill, clears PendingExit.
     /// </summary>
     private async ValueTask HandleOrderUpdateEventAsync(OrderUpdateEvent updateEvent)
     {
         logger.LogInformation(
-            "Handling OrderUpdateEvent: {symbol} {status}",
-            updateEvent.Symbol, updateEvent.Status);
+            "Handling OrderUpdateEvent: {symbol} {status} {side}",
+            updateEvent.Symbol, updateEvent.Status, updateEvent.Side);
 
         try
         {
-            var positionTracker = serviceProvider.GetRequiredService<PositionTracker>();
+            var positionTracker = serviceProvider.GetRequiredService<IPositionTracker>();
+            var exitManager = serviceProvider.GetRequiredService<ExitManager>();
 
-            // Update position based on order status
             if (updateEvent.Status == OrderState.Filled)
             {
-                // Update position tracker with filled quantity and price
-                positionTracker.UpdateTrailingStop(updateEvent.Symbol, updateEvent.AverageFilledPrice);
+                if (string.Equals(updateEvent.Side, "BUY", StringComparison.OrdinalIgnoreCase))
+                {
+                    // Look up the stored ATR seed from the original signal intent
+                    var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
+                    var intent = await stateRepo.GetOrderIntentAsync(updateEvent.ClientOrderId);
+                    var atr = intent?.AtrSeed ?? 0m;
+
+                    await positionTracker.OpenPositionAsync(
+                        updateEvent.Symbol,
+                        updateEvent.FilledQuantity,
+                        updateEvent.AverageFilledPrice,
+                        atr);
+                }
+                else
+                {
+                    // SELL fill — exit; zero out the position
+                    await positionTracker.ClosePositionAsync(updateEvent.Symbol);
+                }
+
+                // Clear PendingExit flag after any fill
+                await exitManager.HandleOrderUpdateAsync(updateEvent, CancellationToken.None);
+            }
+            else if (updateEvent.Status is OrderState.Canceled or OrderState.Expired or OrderState.Rejected)
+            {
+                // Non-fill terminal states — still clear PendingExit if it was set
+                await exitManager.HandleOrderUpdateAsync(updateEvent, CancellationToken.None);
             }
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to handle order update for {symbol}", updateEvent.Symbol);
         }
-
-        await Task.CompletedTask;
     }
 
     /// <summary>

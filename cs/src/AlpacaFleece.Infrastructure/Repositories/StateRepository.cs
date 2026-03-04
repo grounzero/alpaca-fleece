@@ -157,7 +157,8 @@ public sealed class StateRepository(
         decimal quantity,
         decimal limitPrice,
         DateTimeOffset createdAt,
-        CancellationToken ct = default)
+        CancellationToken ct = default,
+        decimal? atrSeed = null)
     {
         try
         {
@@ -176,7 +177,8 @@ public sealed class StateRepository(
                 Quantity = quantity,
                 LimitPrice = limitPrice,
                 Status = OrderState.PendingNew.ToString(),
-                CreatedAt = createdAt
+                CreatedAt = createdAt,
+                AtrSeed = atrSeed
             });
 
             await dbContext.SaveChangesAsync(ct);
@@ -248,7 +250,8 @@ public sealed class StateRepository(
                 LimitPrice: intent.LimitPrice,
                 Status: Enum.Parse<OrderState>(intent.Status),
                 CreatedAt: intent.CreatedAt,
-                UpdatedAt: intent.UpdatedAt);
+                UpdatedAt: intent.UpdatedAt,
+                AtrSeed: intent.AtrSeed);
         }
         catch (Exception ex)
         {
@@ -570,7 +573,8 @@ public sealed class StateRepository(
                     LimitPrice: intent.LimitPrice,
                     Status: Enum.Parse<OrderState>(intent.Status),
                     CreatedAt: intent.CreatedAt,
-                    UpdatedAt: intent.UpdatedAt));
+                    UpdatedAt: intent.UpdatedAt,
+                    AtrSeed: intent.AtrSeed));
             }
 
             return dtos.AsReadOnly();
@@ -606,6 +610,55 @@ public sealed class StateRepository(
         {
             logger.LogError(ex, "Failed to get all position tracking records");
             throw new StateRepositoryException($"Failed to get all position tracking records", ex);
+        }
+    }
+
+    /// <summary>
+    /// Upserts a position tracking row (find-or-create on Symbol).
+    /// Set qty/entryPrice/atr/trailingStop to 0 to mark a position as closed.
+    /// </summary>
+    public async ValueTask UpsertPositionTrackingAsync(
+        string symbol,
+        decimal qty,
+        decimal entryPrice,
+        decimal atrValue,
+        decimal trailingStop,
+        CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            var entity = await dbContext.PositionTracking
+                .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
+
+            if (entity == null)
+            {
+                dbContext.PositionTracking.Add(new PositionTrackingEntity
+                {
+                    Symbol = symbol,
+                    CurrentQuantity = qty,
+                    EntryPrice = entryPrice,
+                    AtrValue = atrValue,
+                    TrailingStopPrice = trailingStop,
+                    LastUpdateAt = DateTimeOffset.UtcNow
+                });
+            }
+            else
+            {
+                entity.CurrentQuantity = qty;
+                entity.EntryPrice = entryPrice;
+                entity.AtrValue = atrValue;
+                entity.TrailingStopPrice = trailingStop;
+                entity.LastUpdateAt = DateTimeOffset.UtcNow;
+            }
+
+            await dbContext.SaveChangesAsync(ct);
+            logger.LogDebug("Upserted position_tracking: {symbol} qty={qty} entry={entry}", symbol, qty, entryPrice);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to upsert position tracking for {symbol}", symbol);
+            throw new StateRepositoryException($"Failed to upsert position tracking for {symbol}", ex);
         }
     }
 

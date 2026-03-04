@@ -31,6 +31,9 @@ BuildHost-netcore/
 *.user
 *.suo
 
+## Archives
+*.zip
+
 ## Test
 coverage/
 TestResults/

@@ -105,6 +105,9 @@ py/data/metrics.json
 *.backup
 *.backup.*
 
+# Archives
+*.zip
+
 docs/
 
 # Scripts directory (local utilities)
