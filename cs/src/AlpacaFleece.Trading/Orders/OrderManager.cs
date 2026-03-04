@@ -373,13 +373,13 @@ public sealed class OrderManager(
 
                 // If this exact clientOrderId was already submitted to the broker (has an AlpacaOrderId),
                 // skip re-submission to prevent duplicate orders on restart.
+                // Do NOT increment submitted — this call did not submit an order.
                 var existingFlattenIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
                 if (existingFlattenIntent is { AlpacaOrderId: not null })
                 {
                     logger.LogInformation(
                         "Flatten order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
                         pos.Symbol, existingFlattenIntent.AlpacaOrderId);
-                    submitted++;
                     continue;
                 }
 

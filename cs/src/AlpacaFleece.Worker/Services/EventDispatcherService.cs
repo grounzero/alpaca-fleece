@@ -229,8 +229,10 @@ public sealed class EventDispatcherService(
                         if (remainingQty <= 0m)
                             await positionTracker.ClosePositionAsync(updateEvent.Symbol);
                         else
+                            // Preserve the original entry price — for a partial exit the cost
+                            // basis of the remaining position is unchanged; only qty is reduced.
                             await positionTracker.UpdateQuantityAsync(
-                                updateEvent.Symbol, remainingQty, updateEvent.AverageFilledPrice);
+                                updateEvent.Symbol, remainingQty, pos.EntryPrice);
                     }
                 }
             }

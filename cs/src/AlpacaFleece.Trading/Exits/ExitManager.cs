@@ -225,15 +225,22 @@ public class ExitManager(
         {
             var snapshot = await marketDataClient.GetSnapshotAsync(symbol, ct);
 
-            // Success: reset this symbol's failure counter
+            // Success: reset this symbol's failure counter.
             if (_priceFetchFailures.TryGetValue(symbol, out var prev) && prev > 0)
             {
                 _priceFetchFailures[symbol] = 0;
-                // Clear the degraded flag when all tracked symbols have recovered
+
+                // Clear the degraded flag only when every *currently held* position has a
+                // clean price feed. Counters for symbols that are no longer held are stale
+                // and must not prevent recovery — prune them here.
+                var currentSymbols = positionTracker.GetAllPositions().Keys.ToHashSet();
+                foreach (var key in _priceFetchFailures.Keys.Where(k => !currentSymbols.Contains(k)).ToList())
+                    _priceFetchFailures.Remove(key);
+
                 if (_priceFetchFailures.Values.All(v => v == 0))
                 {
                     await stateRepository.SetStateAsync("market_data_degraded", "false", ct);
-                    logger.LogInformation("Market data recovered for all symbols; cleared market_data_degraded flag");
+                    logger.LogInformation("Market data recovered for all held positions; cleared market_data_degraded flag");
                 }
             }
 

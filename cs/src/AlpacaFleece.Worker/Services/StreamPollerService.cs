@@ -396,7 +396,12 @@ public sealed class StreamPollerService(
                 return;
 
             // Always track the latest filled qty, regardless of which condition triggered.
-            _lastFilledQty[intent.ClientOrderId] = order.FilledQuantity;
+            // Remove tracking for terminal orders so the dictionary stays bounded in memory.
+            if (order.Status is OrderState.Filled or OrderState.Canceled or
+                OrderState.Expired or OrderState.Rejected or OrderState.Replaced)
+                _lastFilledQty.TryRemove(intent.ClientOrderId, out _);
+            else
+                _lastFilledQty[intent.ClientOrderId] = order.FilledQuantity;
 
             logger.LogInformation(
                 "Order {ClientOrderId} status: {Old} → {New} (filled: {Filled}/{Total})",

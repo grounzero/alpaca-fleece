@@ -152,38 +152,4 @@ public sealed class PartialFillTests(TradingFixture fixture) : IAsyncLifetime
         Assert.Null(pos);
     }
 
-    // ── StreamPoller qty-increase dedupe ─────────────────────────────────────
-
-    [Fact]
-    public async Task StreamPoller_QtyIncreaseDict_TracksFills()
-    {
-        // Verify that the ConcurrentDictionary tracking works correctly for idempotency.
-        // Since _lastFilledQty is private, we test via the public PollOrderUpdatesAsync
-        // behaviour indirectly by verifying the state repository reflects the correct state.
-        // This test confirms the logic: same qty = no event; higher qty = event.
-
-        // Arrange: an order intent in PartiallyFilled state with 30 qty filled
-        var orderManager = Substitute.For<IBrokerService>();
-
-        // Get a partial-fill order from the repo to simulate the scenario
-        var intents = await fixture.StateRepository.GetAllOrderIntentsAsync();
-
-        // The key logic under test: ConcurrentDictionary.GetValueOrDefault returns 0 for unknown keys.
-        var dict = new System.Collections.Concurrent.ConcurrentDictionary<string, decimal>();
-
-        const string orderId = "test_order_1";
-        var lastQty = dict.GetValueOrDefault(orderId, 0m);
-        Assert.Equal(0m, lastQty); // No entry → 0 baseline
-
-        // Simulate first partial fill at 30
-        dict[orderId] = 30m;
-        lastQty = dict.GetValueOrDefault(orderId, 0m);
-        Assert.Equal(30m, lastQty);
-
-        // Qty increase (50 > 30) → should emit
-        Assert.True(50m > lastQty);
-
-        // Same qty (30 = 30) → should NOT emit
-        Assert.False(30m > dict.GetValueOrDefault(orderId, 0m));
-    }
 }

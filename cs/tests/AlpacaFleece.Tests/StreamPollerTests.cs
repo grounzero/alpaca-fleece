@@ -588,6 +588,118 @@ public sealed class StreamPollerTests
     }
 
     [Fact]
+    public async Task OrderPollLoop_EmitsEvent_WhenQtyIncreasesWithSameStatus()
+    {
+        // Regression test: status stays PartiallyFilled across two polls but filled qty
+        // increases from 5 → 8. The second poll must still emit an OrderUpdateEvent.
+        var brokerService = Substitute.For<IBrokerService>();
+        var stateRepository = Substitute.For<IStateRepository>();
+        var eventBus = Substitute.For<IEventBus>();
+
+        // First poll returns intent with status PendingNew; second poll returns PartiallyFilled.
+        var pollCount = 0;
+        stateRepository.GetAllOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                pollCount++;
+                var status = pollCount == 1 ? OrderState.PendingNew : OrderState.PartiallyFilled;
+                var intent = new OrderIntentDto(
+                    "client-qty", "alpaca-qty", "TSLA", "buy", 10, 200m,
+                    status, DateTimeOffset.UtcNow, null);
+                return new ValueTask<IReadOnlyList<OrderIntentDto>>(
+                    new List<OrderIntentDto> { intent }.AsReadOnly());
+            });
+
+        // First broker response: 5 filled (status changes PendingNew → PartiallyFilled).
+        // Second broker response: 8 filled (status stays PartiallyFilled, qty increases).
+        var brokerCallCount = 0;
+        brokerService.GetOrderByIdAsync("alpaca-qty", Arg.Any<CancellationToken>())
+            .Returns(_ =>
+            {
+                brokerCallCount++;
+                var filledQty = brokerCallCount == 1 ? 5m : 8m;
+                return new ValueTask<OrderInfo?>(new OrderInfo(
+                    "alpaca-qty", "client-qty", "TSLA", "buy", 10, filledQty, 200m,
+                    OrderState.PartiallyFilled, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+            });
+
+        // Allow UpdateOrderIntentAsync to succeed
+        stateRepository.UpdateOrderIntentAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<OrderState>(),
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+
+        var service = MakeService(
+            brokerService: brokerService,
+            stateRepository: stateRepository,
+            eventBus: eventBus);
+
+        // First poll: status changes PendingNew → PartiallyFilled (filledQty 0→5) → event emitted
+        await service.PollOrderUpdatesAsync(CancellationToken.None);
+
+        await eventBus.Received(1).PublishAsync(
+            Arg.Is<OrderUpdateEvent>(e => e.FilledQuantity == 5m),
+            Arg.Any<CancellationToken>());
+
+        eventBus.ClearReceivedCalls();
+
+        // Second poll: status unchanged (PartiallyFilled), but filledQty 5→8 → event must still fire
+        await service.PollOrderUpdatesAsync(CancellationToken.None);
+
+        await eventBus.Received(1).PublishAsync(
+            Arg.Is<OrderUpdateEvent>(e => e.FilledQuantity == 8m && e.Status == OrderState.PartiallyFilled),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OrderPollLoop_NoEvent_WhenStatusAndQtyBothUnchanged()
+    {
+        // Confirm the guard: status unchanged AND qty unchanged → no event (avoids spurious republish).
+        var brokerService = Substitute.For<IBrokerService>();
+        var stateRepository = Substitute.For<IStateRepository>();
+        var eventBus = Substitute.For<IEventBus>();
+
+        var intent = new OrderIntentDto(
+            "client-nodup", "alpaca-nodup", "META", "buy", 10, 300m,
+            OrderState.PartiallyFilled, DateTimeOffset.UtcNow, null);
+
+        stateRepository.GetAllOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
+                new List<OrderIntentDto> { intent }.AsReadOnly()));
+
+        // Broker returns same PartiallyFilled status and same filledQty = 5 on both calls
+        brokerService.GetOrderByIdAsync("alpaca-nodup", Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<OrderInfo?>(new OrderInfo(
+                "alpaca-nodup", "client-nodup", "META", "buy", 10, 5m, 300m,
+                OrderState.PartiallyFilled, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow)));
+
+        stateRepository.UpdateOrderIntentAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<OrderState>(),
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>())
+            .Returns(ValueTask.CompletedTask);
+
+        var service = MakeService(
+            brokerService: brokerService,
+            stateRepository: stateRepository,
+            eventBus: eventBus);
+
+        // First poll: status changes (PendingNew intent was saved, but here intent is already
+        // PartiallyFilled). In this test the intent status equals the broker status AND qty=5
+        // equals lastFilledQty=0 (not tracked yet) → first poll emits because status changed
+        // from DB-stored PartiallyFilled... Actually, since intent.Status==PartiallyFilled
+        // AND order.Status==PartiallyFilled → statusChanged=false, qtyIncreased=(5>0)=true → emits.
+        await service.PollOrderUpdatesAsync(CancellationToken.None);
+        eventBus.ClearReceivedCalls();
+
+        // Second poll: status unchanged (PartiallyFilled = PartiallyFilled), qty 5 = lastTracked 5
+        // → no event
+        await service.PollOrderUpdatesAsync(CancellationToken.None);
+
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Any<OrderUpdateEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task OrderPollLoop_EmitsPartialFillEvent_WhenStatusChangesToPartiallyFilled()
     {
         var brokerService = Substitute.For<IBrokerService>();
