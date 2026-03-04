@@ -3,7 +3,7 @@ using AlpacaFleece.Infrastructure.Symbols;
 namespace AlpacaFleece.Trading.Exits;
 
 /// <summary>
-/// Exit manager: checks positions every 30s for stop loss, trailing stop, profit target.
+/// Exit manager: checks positions for stop loss, trailing stop, profit target.
 /// Uses a 3-rule priority system with ATR-based dynamic levels (mutual exclusion with fixed-%):
 ///
 ///   Rule 1: ATR stop loss     — entry - (ATR x AtrStopLossMultiplier)

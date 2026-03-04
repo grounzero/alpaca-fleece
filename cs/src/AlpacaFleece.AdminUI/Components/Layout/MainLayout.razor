@@ -1,0 +1,75 @@
+@inherits LayoutComponentBase
+
+<MudThemeProvider Theme="_theme" IsDarkMode="true" />
+<MudDialogProvider FullWidth="true" MaxWidth="MaxWidth.Small" />
+<MudSnackbarProvider />
+
+<MudLayout>
+    <MudAppBar Elevation="0" Color="Color.Dark" Dense="true">
+        <MudIconButton Icon="@Icons.Material.Filled.Menu"
+                       Color="Color.Inherit"
+                       Edge="Edge.Start"
+                       OnClick="@(() => _drawerOpen = !_drawerOpen)"
+                       title="Toggle navigation" />
+        <MudText Typo="Typo.subtitle1" Class="ml-2 fw-600">AlpacaFleece</MudText>
+        <MudText Typo="Typo.caption" Class="ml-1 mud-text-secondary">Admin</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Outlined.Logout"
+                       Color="Color.Inherit"
+                       Href="/logout"
+                       title="Sign out"
+                       Size="Size.Small" />
+    </MudAppBar>
+
+    <MudDrawer @bind-Open="_drawerOpen"
+               ClipMode="DrawerClipMode.Always"
+               Elevation="0"
+               Variant="DrawerVariant.Responsive"
+               Breakpoint="Breakpoint.Md">
+        <MudDrawerHeader>
+            <MudText Typo="Typo.caption" Class="mud-text-secondary px-2">NAVIGATION</MudText>
+        </MudDrawerHeader>
+        <NavMenu />
+    </MudDrawer>
+
+    <MudMainContent>
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4 pa-md-6">
+            @Body
+        </MudContainer>
+    </MudMainContent>
+</MudLayout>
+
+@code {
+    private bool _drawerOpen = true;
+
+    private readonly MudTheme _theme = new()
+    {
+        PaletteLight = new PaletteLight
+        {
+            Primary = "#00BFA5",
+            Secondary = "#4FC3F7",
+            AppbarBackground = "#1a1a2e",
+        },
+        PaletteDark = new PaletteDark
+        {
+            Primary = "#00BFA5",
+            Secondary = "#4FC3F7",
+            AppbarBackground = "#0d0d1a",
+            Background = "#0f0f1e",
+            Surface = "#1a1a2e",
+            DrawerBackground = "#12122a",
+            DrawerText = "rgba(255,255,255,0.7)",
+            DrawerIcon = "#00BFA5",
+            TextPrimary = "rgba(255,255,255,0.87)",
+            TextSecondary = "rgba(255,255,255,0.54)",
+            ActionDefault = "rgba(255,255,255,0.54)",
+            Divider = "rgba(255,255,255,0.1)",
+            TableLines = "rgba(255,255,255,0.08)",
+            LinesDefault = "rgba(255,255,255,0.1)",
+        },
+        Typography = new Typography
+        {
+            Default = new DefaultTypography { FontFamily = ["Inter", "Roboto", "sans-serif"] },
+        }
+    };
+}

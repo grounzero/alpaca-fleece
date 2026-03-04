@@ -1,0 +1,43 @@
+@page "/login"
+@model LoginModel
+@{ Layout = null; }
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Sign In — AlpacaFleece Admin</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&display=swap" />
+    <link rel="stylesheet" href="/css/login.css" />
+</head>
+<body>
+    <div class="login-bg">
+        <div class="login-card">
+            <div class="login-logo">
+                <svg width="40" height="40" viewBox="0 0 40 40" fill="none">
+                    <rect width="40" height="40" rx="8" fill="#00BFA5"/>
+                    <path d="M8 28 L16 16 L24 22 L32 10" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+                <span>AlpacaFleece</span>
+            </div>
+            <h1>Admin Dashboard</h1>
+            <form method="post" asp-antiforgery="true">
+                @Html.AntiForgeryToken()
+                @if (Model.Error != null)
+                {
+                    <div class="error-banner">@Model.Error</div>
+                }
+                <div class="field">
+                    <label for="password">Password</label>
+                    <input id="password" type="password" name="Password"
+                           placeholder="Enter admin password"
+                           autocomplete="current-password" autofocus />
+                </div>
+                <button type="submit" class="btn-signin">Sign In</button>
+            </form>
+            <p class="hint">Access restricted to authorised users only.</p>
+        </div>
+    </div>
+</body>
+</html>

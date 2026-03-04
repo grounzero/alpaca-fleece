@@ -1,0 +1,52 @@
+services:
+
+  # ── Trading bot ───────────────────────────────────────────
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alpaca-fleece-bot
+    volumes:
+      - ./data:/app/data        # SQLite database + health.json + metrics.json
+      - ./logs:/app/logs        # Serilog rolling log files
+      - ./config:/app/config    # appsettings.json (writable by admin UI)
+    env_file: .env
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "AlpacaFleece.Worker"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Admin dashboard ───────────────────────────────────────
+  admin:
+    build:
+      context: .
+      dockerfile: AdminUI.Dockerfile
+    container_name: alpaca-fleece-admin
+    ports:
+      # Bind to localhost only — use SSH tunnel or VPN for remote access
+      - "127.0.0.1:5001:8080"
+    volumes:
+      - ./data:/app/data        # Read-only access to SQLite + metrics + health
+      - ./logs:/app/logs        # Read log files for log viewer
+      - ./config:/app/config    # Read/write appsettings.json
+      - /var/run/docker.sock:/var/run/docker.sock  # Manage bot container
+    environment:
+      - ADMIN_PASSWORD_HASH=${ADMIN_PASSWORD_HASH}
+      - Admin__BotContainerName=alpaca-fleece-bot
+      - Admin__DatabasePath=/app/data/trading.db
+      - Admin__LogPath=/app/logs/alpaca-fleece.log
+      - Admin__BotSettingsPath=/app/config/appsettings.json
+      - Admin__MetricsPath=/app/data/metrics.json
+      - Admin__HealthPath=/app/data/health.json
+    depends_on:
+      - bot
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
