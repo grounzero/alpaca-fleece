@@ -14,7 +14,7 @@ public sealed class OrderIntentEntity
     public string? AlpacaOrderId { get; set; }
     public string Symbol { get; set; } = string.Empty;
     public string Side { get; set; } = string.Empty;
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
     public decimal LimitPrice { get; set; }
     public string Status { get; set; } = string.Empty;
     public DateTimeOffset CreatedAt { get; set; }
@@ -31,8 +31,8 @@ public sealed class TradeEntity
     public string? AlpacaOrderId { get; set; }
     public string Symbol { get; set; } = string.Empty;
     public string Side { get; set; } = string.Empty;
-    public int InitialQuantity { get; set; }
-    public int FilledQuantity { get; set; }
+    public decimal InitialQuantity { get; set; }
+    public decimal FilledQuantity { get; set; }
     public decimal AverageEntryPrice { get; set; }
     public decimal RealizedPnl { get; set; }
     public DateTimeOffset EnteredAt { get; set; }
@@ -87,7 +87,7 @@ public sealed class PositionSnapshotEntity
 {
     public int Id { get; set; }
     public string Symbol { get; set; } = string.Empty;
-    public int Quantity { get; set; }
+    public decimal Quantity { get; set; }
     public decimal AverageEntryPrice { get; set; }
     public decimal CurrentPrice { get; set; }
     public decimal UnrealizedPnl { get; set; }
@@ -114,7 +114,7 @@ public sealed class FillEntity
     public int Id { get; set; }
     public string AlpacaOrderId { get; set; } = string.Empty;
     public string ClientOrderId { get; set; } = string.Empty;
-    public int FilledQuantity { get; set; }
+    public decimal FilledQuantity { get; set; }
     public decimal FilledPrice { get; set; }
     public string FillDedupeKey { get; set; } = string.Empty;
     public DateTimeOffset FilledAt { get; set; }
@@ -127,7 +127,7 @@ public sealed class PositionTrackingEntity
 {
     public int Id { get; set; }
     public string Symbol { get; set; } = string.Empty;
-    public int CurrentQuantity { get; set; }
+    public decimal CurrentQuantity { get; set; }
     public decimal EntryPrice { get; set; }
     public decimal AtrValue { get; set; }
     public decimal TrailingStopPrice { get; set; }

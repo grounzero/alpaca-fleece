@@ -14,6 +14,7 @@ public sealed class OrderIntentEntityConfiguration : IEntityTypeConfiguration<Or
         builder.HasIndex(x => x.ClientOrderId).IsUnique();
         builder.Property(x => x.Symbol).HasMaxLength(10).IsRequired();
         builder.Property(x => x.Side).HasMaxLength(4).IsRequired();
+        builder.Property(x => x.Quantity).HasPrecision(18, 8);
         builder.Property(x => x.LimitPrice).HasPrecision(10, 4);
         builder.Property(x => x.Status).HasMaxLength(20).IsRequired();
     }
@@ -28,6 +29,8 @@ public sealed class TradeEntityConfiguration : IEntityTypeConfiguration<TradeEnt
         builder.Property(x => x.ClientOrderId).HasMaxLength(32).IsRequired();
         builder.Property(x => x.Symbol).HasMaxLength(10).IsRequired();
         builder.Property(x => x.Side).HasMaxLength(4).IsRequired();
+        builder.Property(x => x.InitialQuantity).HasPrecision(18, 8);
+        builder.Property(x => x.FilledQuantity).HasPrecision(18, 8);
         builder.Property(x => x.AverageEntryPrice).HasPrecision(10, 4);
         builder.Property(x => x.RealizedPnl).HasPrecision(10, 4);
         builder.HasIndex(x => x.Symbol);
@@ -83,6 +86,7 @@ public sealed class PositionSnapshotEntityConfiguration : IEntityTypeConfigurati
         builder.ToTable("position_snapshots");
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Symbol).HasMaxLength(10).IsRequired();
+        builder.Property(x => x.Quantity).HasPrecision(18, 8);
         builder.Property(x => x.AverageEntryPrice).HasPrecision(10, 4);
         builder.Property(x => x.CurrentPrice).HasPrecision(10, 4);
         builder.Property(x => x.UnrealizedPnl).HasPrecision(10, 4);
@@ -109,6 +113,7 @@ public sealed class FillEntityConfiguration : IEntityTypeConfiguration<FillEntit
         builder.HasKey(x => x.Id);
         builder.Property(x => x.AlpacaOrderId).HasMaxLength(50).IsRequired();
         builder.Property(x => x.ClientOrderId).HasMaxLength(32).IsRequired();
+        builder.Property(x => x.FilledQuantity).HasPrecision(18, 8);
         builder.Property(x => x.FilledPrice).HasPrecision(10, 4);
         builder.Property(x => x.FillDedupeKey).HasMaxLength(100).IsRequired();
         builder.HasIndex(x => new { x.AlpacaOrderId, x.FillDedupeKey }).IsUnique();
@@ -123,6 +128,7 @@ public sealed class PositionTrackingEntityConfiguration : IEntityTypeConfigurati
         builder.HasKey(x => x.Id);
         builder.Property(x => x.Symbol).HasMaxLength(10).IsRequired();
         builder.HasIndex(x => x.Symbol).IsUnique();
+        builder.Property(x => x.CurrentQuantity).HasPrecision(18, 8);
         builder.Property(x => x.EntryPrice).HasPrecision(10, 4);
         builder.Property(x => x.AtrValue).HasPrecision(10, 4);
         builder.Property(x => x.TrailingStopPrice).HasPrecision(10, 4);

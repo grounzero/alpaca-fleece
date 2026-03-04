@@ -30,7 +30,7 @@ public sealed class EventDispatcherTests(TradingFixture fixture) : IAsyncLifetim
 
         _orderManagerMock.SubmitSignalAsync(
             Arg.Any<SignalEvent>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<CancellationToken>())
             .Returns("client_order_id_123");

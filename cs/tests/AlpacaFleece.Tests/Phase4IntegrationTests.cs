@@ -86,7 +86,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -182,7 +182,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         failingBroker.GetPositionsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<PositionInfo>());
         failingBroker.SubmitOrderAsync(
-            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(),
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
             Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
             .Returns(_ => ValueTask.FromException<OrderInfo>(new BrokerException("Broker unavailable")));
 
@@ -288,7 +288,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -311,7 +311,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         await _brokerMock.Received(1).SubmitOrderAsync(
             Arg.Is<string>(s => s == "AAPL"),
             Arg.Is<string>(s => s == "SELL"),
-            Arg.Is<int>(q => q == 100),
+            Arg.Is<decimal>(q => q == 100m),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());

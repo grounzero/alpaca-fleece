@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Trading.Strategy;
 
 /// <summary>
-/// Multi-timeframe SMA crossover strategy with full ATR wiring (#35 fix).
+/// Multi-timeframe SMA crossover strategy with full ATR wiring and regime detection.
 /// Uses 3 SMA pairs: (5,15), (10,30), (20,50).
 /// Emits signals based on crossovers with confidence scoring.
 /// Requires 51 bars minimum (20 + 14 ATR + buffer).
@@ -9,12 +9,14 @@ namespace AlpacaFleece.Trading.Strategy;
 public sealed class SmaCrossoverStrategy(
     IEventBus eventBus,
     ILogger<SmaCrossoverStrategy> logger,
-    IEnumerable<string>? cryptoSymbols = null) : IStrategy
+    TrendFilter? trendFilter = null,
+    VolumeFilter? volumeFilter = null) : IStrategy
 {
     private readonly RegimeDetector _regimeDetector = new();
     private readonly Dictionary<string, BarHistory> _barHistories = new();
-    private readonly HashSet<string> _cryptoSymbols = new(cryptoSymbols ?? []);
     private readonly object _syncLock = new();
+    // Tracks which symbols have already logged the "strategy ready" transition.
+    private readonly HashSet<string> _readySymbols = new();
 
     // SMA periods: 3 pairs for multi-timeframe analysis
     private const int FastPeriod1 = 5;
@@ -40,6 +42,9 @@ public sealed class SmaCrossoverStrategy(
     /// </summary>
     public async ValueTask OnBarAsync(BarEvent bar, CancellationToken ct = default)
     {
+        List<SignalEvent> localSignals = [];
+        IReadOnlyList<(decimal Open, decimal High, decimal Low, decimal Close, long Volume)>? localSnapshot = null;
+
         lock (_syncLock)
         {
             // Get history for symbol if needed
@@ -55,10 +60,15 @@ public sealed class SmaCrossoverStrategy(
             // Not ready yet
             if (history.Count < RequiredBars)
             {
-                logger.LogDebug("Strategy not ready for {symbol}: {count}/{required} bars",
+                logger.LogDebug("Strategy not ready for {Symbol}: {Available}/{Required} bars",
                     bar.Symbol, history.Count, RequiredBars);
                 return;
             }
+
+            // Log once per symbol when it first crosses the warmup threshold
+            if (_readySymbols.Add(bar.Symbol))
+                logger.LogInformation("Strategy ready for {Symbol}: {Required} bars accumulated",
+                    bar.Symbol, RequiredBars);
 
             // Calculate SMAs and ATR
             var fast1 = history.CalculateSma(FastPeriod1);
@@ -69,7 +79,7 @@ public sealed class SmaCrossoverStrategy(
             var slow3 = history.CalculateSma(SlowPeriod3);
             var atr = history.CalculateAtr(AtrPeriod);
 
-            // Validate ATR (FIX FOR #35)
+            // Validate ATR before using it in signals; if invalid, log and set to 0 to avoid misleading values in metadata
             if (atr <= 0)
             {
                 logger.LogWarning("Invalid ATR for {symbol}: {atr}", bar.Symbol, atr);
@@ -138,17 +148,35 @@ public sealed class SmaCrossoverStrategy(
             _previousSmaPair1[bar.Symbol] = (fast1, slow1);
             _previousSmaPair2[bar.Symbol] = (fast2, slow2);
             _previousSmaPair3[bar.Symbol] = (fast3, slow3);
+
+            // Capture signals and snapshot before releasing the lock.
+            // Locals are iterated outside the lock so async filter/publish calls are safe.
+            localSignals = signals;
+            if (localSignals.Count > 0)
+                localSnapshot = history.GetBars().ToArray();
         }
 
-        // Publish signals asynchronously
-        foreach (var signal in _pendingSignals)
+        // Apply filters and publish signals outside the lock (async calls cannot be inside lock)
+        foreach (var signal in localSignals)
         {
+            if (volumeFilter != null && localSnapshot != null
+                && !volumeFilter.Check(localSnapshot))
+            {
+                logger.LogDebug(
+                    "Volume filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
+                continue;
+            }
+
+            if (trendFilter != null && !await trendFilter.CheckAsync(signal.Symbol, signal.Side, ct))
+            {
+                logger.LogDebug(
+                    "Trend filter blocked {Symbol} {Side}", signal.Symbol, signal.Side);
+                continue;
+            }
+
             await eventBus.PublishAsync(signal, ct);
         }
-        _pendingSignals.Clear();
     }
-
-    private readonly List<SignalEvent> _pendingSignals = new();
 
     /// <summary>
     /// Checks for SMA crossover and emits signal if detected.
@@ -220,7 +248,6 @@ public sealed class SmaCrossoverStrategy(
             Metadata: metadata);
 
         signals.Add(signal);
-        _pendingSignals.Add(signal);
     }
 
     /// <summary>

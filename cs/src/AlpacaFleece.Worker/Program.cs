@@ -80,11 +80,23 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Symbol classifier (centralised symbol type detection using TradingOptions lists)
         services.AddSingleton<ISymbolClassifier>(sp =>
             new SymbolClassifier(tradingOptions.Symbols.CryptoSymbols, tradingOptions.Symbols.EquitySymbols));
+
+        // Signal quality filters (must be registered before SmaCrossoverStrategy)
+        services.AddSingleton(sp => new TrendFilter(
+            sp.GetRequiredService<IMarketDataClient>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<TrendFilter>>()));
+        services.AddSingleton(sp => new VolumeFilter(
+            tradingOptions,
+            sp.GetRequiredService<ILogger<VolumeFilter>>()));
+
         services.AddSingleton<IStrategy>(sp => new SmaCrossoverStrategy(
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
-            tradingOptions.Symbols.CryptoSymbols));
+            trendFilter: sp.GetRequiredService<TrendFilter>(),
+            volumeFilter: sp.GetRequiredService<VolumeFilter>()));
         services.AddSingleton<PositionTracker>();
+        services.AddSingleton<IPositionTracker>(sp => sp.GetRequiredService<PositionTracker>());
 
         // Phase 2: Data Handling
         services.AddSingleton<IDataHandler, DataHandler>();
@@ -115,6 +127,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             sp.GetRequiredService<ILogger<RiskManager>>(),
             drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
             correlationService: sp.GetRequiredService<CorrelationService>(),
+            positionTracker: sp.GetRequiredService<IPositionTracker>(),
             symbolClassifier: sp.GetRequiredService<ISymbolClassifier>()));
         services.AddScoped<IOrderManager>(sp => new OrderManager(
             sp.GetRequiredService<IBrokerService>(),

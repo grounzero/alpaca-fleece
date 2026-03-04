@@ -15,16 +15,19 @@ public sealed class StreamPollerTests
         IStateRepository? stateRepository = null,
         IEventBus? eventBus = null,
         IOptions<TradingOptions>? options = null,
+        IStrategy? strategy = null,
         ILogger<StreamPollerService>? logger = null,
         List<string>? symbols = null)
     {
         var opts = options ?? BuildOptions(symbols ?? []);
+        var strat = strategy ?? Substitute.For<IStrategy>();
         return new StreamPollerService(
             marketDataClient ?? Substitute.For<IMarketDataClient>(),
             brokerService ?? Substitute.For<IBrokerService>(),
             stateRepository ?? Substitute.For<IStateRepository>(),
             eventBus ?? Substitute.For<IEventBus>(),
             opts,
+            strat,
             logger ?? Substitute.For<ILogger<StreamPollerService>>());
     }
 
@@ -149,6 +152,7 @@ public sealed class StreamPollerTests
             stateRepository,
             Substitute.For<IEventBus>(),
             opts,
+            Substitute.For<IStrategy>(),
             Substitute.For<ILogger<StreamPollerService>>());
 
         // Start with a generous timeout; cancel only after we've confirmed crypto was polled
@@ -168,6 +172,94 @@ public sealed class StreamPollerTests
         // AAPL must NOT have been polled when market is closed (equity)
         await marketDataClient.DidNotReceive().GetBarsAsync(
             "AAPL", Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task StreamPollerService_ClampsBarDepth_UpToStrategyMinimum()
+    {
+        // BarHistoryDepth=10 is below RequiredHistory=51; effective depth must be clamped to 51.
+        var brokerService = Substitute.For<IBrokerService>();
+        var marketDataClient = Substitute.For<IMarketDataClient>();
+        var stateRepository = Substitute.For<IStateRepository>();
+
+        brokerService.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<ClockInfo>(OpenClock()));
+        stateRepository.GetAllOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
+                new List<OrderIntentDto>().AsReadOnly()));
+
+        var capturedLimit = new TaskCompletionSource<int>();
+        marketDataClient.GetBarsAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedLimit.TrySetResult(callInfo.ArgAt<int>(2));
+                return new ValueTask<IReadOnlyList<Quote>>(new List<Quote>().AsReadOnly());
+            });
+
+        var opts = Options.Create(new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = new List<string> { "AAPL" } },
+            Execution = new ExecutionOptions { BarHistoryDepth = 10 }
+        });
+        var strategy = Substitute.For<IStrategy>();
+        strategy.RequiredHistory.Returns(51);
+
+        var service = new StreamPollerService(
+            marketDataClient, brokerService, stateRepository,
+            Substitute.For<IEventBus>(), opts, strategy,
+            Substitute.For<ILogger<StreamPollerService>>());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await service.StartAsync(cts.Token);
+        var limit = await capturedLimit.Task.WaitAsync(TimeSpan.FromSeconds(4));
+        await cts.CancelAsync();
+
+        Assert.Equal(51, limit);
+    }
+
+    [Fact]
+    public async Task StreamPollerService_ClampsBarDepth_DownToApiMaximum()
+    {
+        // BarHistoryDepth=20000 exceeds Alpaca API maximum of 10000; effective depth must be clamped to 10000.
+        var brokerService = Substitute.For<IBrokerService>();
+        var marketDataClient = Substitute.For<IMarketDataClient>();
+        var stateRepository = Substitute.For<IStateRepository>();
+
+        brokerService.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<ClockInfo>(OpenClock()));
+        stateRepository.GetAllOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<OrderIntentDto>>(
+                new List<OrderIntentDto>().AsReadOnly()));
+
+        var capturedLimit = new TaskCompletionSource<int>();
+        marketDataClient.GetBarsAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                capturedLimit.TrySetResult(callInfo.ArgAt<int>(2));
+                return new ValueTask<IReadOnlyList<Quote>>(new List<Quote>().AsReadOnly());
+            });
+
+        var opts = Options.Create(new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = new List<string> { "AAPL" } },
+            Execution = new ExecutionOptions { BarHistoryDepth = 20_000 }
+        });
+        var strategy = Substitute.For<IStrategy>();
+        strategy.RequiredHistory.Returns(51);
+
+        var service = new StreamPollerService(
+            marketDataClient, brokerService, stateRepository,
+            Substitute.For<IEventBus>(), opts, strategy,
+            Substitute.For<ILogger<StreamPollerService>>());
+
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
+        await service.StartAsync(cts.Token);
+        var limit = await capturedLimit.Task.WaitAsync(TimeSpan.FromSeconds(4));
+        await cts.CancelAsync();
+
+        Assert.Equal(10_000, limit);
     }
 
     [Fact]

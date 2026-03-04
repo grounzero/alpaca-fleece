@@ -106,7 +106,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -129,7 +129,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         await _brokerMock.Received(1).SubmitOrderAsync(
             Arg.Is<string>(s => s == "AAPL"),
             Arg.Is<string>(s => s == "SELL"),
-            Arg.Is<int>(q => q == 100),
+            Arg.Is<decimal>(q => q == 100m),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());

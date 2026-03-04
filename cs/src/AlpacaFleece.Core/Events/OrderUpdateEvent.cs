@@ -8,8 +8,8 @@ public sealed record OrderUpdateEvent(
     string ClientOrderId,
     string Symbol,
     string Side,
-    int FilledQuantity,
-    int RemainingQuantity,
+    decimal FilledQuantity,
+    decimal RemainingQuantity,
     decimal AverageFilledPrice,
     OrderState Status,
     DateTimeOffset UpdatedAt) : IEvent;

@@ -5,7 +5,7 @@ namespace AlpacaFleece.Core.Models;
 /// </summary>
 public sealed record PositionInfo(
     string Symbol,
-    int Quantity,
+    decimal Quantity,
     decimal AverageEntryPrice,
     decimal CurrentPrice,
     decimal UnrealizedPnl,

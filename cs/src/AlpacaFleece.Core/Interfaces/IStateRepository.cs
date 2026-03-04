@@ -35,7 +35,7 @@ public interface IStateRepository
         string clientOrderId,
         string symbol,
         string side,
-        int quantity,
+        decimal quantity,
         decimal limitPrice,
         DateTimeOffset createdAt,
         CancellationToken ct = default);
@@ -61,7 +61,7 @@ public interface IStateRepository
     ValueTask InsertFillIdempotentAsync(
         string alpacaOrderId,
         string clientOrderId,
-        int filledQuantity,
+        decimal filledQuantity,
         decimal filledPrice,
         string dedupeKey, // timestamp or sequence-based
         DateTimeOffset filledAt,
@@ -122,7 +122,7 @@ public interface IStateRepository
     /// <summary>
     /// Gets all position tracking records from the database.
     /// </summary>
-    ValueTask<IReadOnlyList<(string Symbol, int Quantity, decimal EntryPrice, decimal AtrValue)>>
+    ValueTask<IReadOnlyList<(string Symbol, decimal Quantity, decimal EntryPrice, decimal AtrValue)>>
         GetAllPositionTrackingAsync(CancellationToken ct = default);
 
     /// <summary>
@@ -162,7 +162,7 @@ public record OrderIntentDto(
     string? AlpacaOrderId,
     string Symbol,
     string Side,
-    int Quantity,
+    decimal Quantity,
     decimal LimitPrice,
     OrderState Status,
     DateTimeOffset CreatedAt,

@@ -192,6 +192,137 @@ public sealed class RuntimeReconcilerTests(TradingFixture fixture) : IAsyncLifet
     }
 
     [Fact]
+    public async Task Reconciliation_EstimatesAtrForMissingPosition()
+    {
+        // Broker has AAPL; market data returns 30 bars so ATR can be computed
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>
+            {
+                new("AAPL", 10, 150m, 155m, 50m, 3.3m, DateTimeOffset.UtcNow)
+            });
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
+
+        // Build 30 synthetic daily bars with a consistent High-Low range of 2m → ATR ≈ 2m
+        var marketDataMock = Substitute.For<IMarketDataClient>();
+        var bars = Enumerable.Range(0, 30)
+            .Select(i => new Quote("AAPL",
+                DateTimeOffset.UtcNow.AddDays(-30 + i),
+                Open: 148m, High: 151m, Low: 149m, Close: 150m, Volume: 1_000_000))
+            .ToList();
+        marketDataMock.GetBarsAsync("AAPL", "1Day", 30, Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<Quote>>((IReadOnlyList<Quote>)bars));
+
+        var options = Options.Create(new RuntimeReconciliationOptions { CheckIntervalSeconds = 1 });
+        var reconciler = new RuntimeReconcilerService(
+            _brokerMock, fixture.StateRepository, _positionTracker, _logger, options,
+            marketDataClient: marketDataMock);
+
+        var cts = new CancellationTokenSource();
+        try
+        {
+            var runTask = reconciler.StartAsync(cts.Token);
+            await Task.Delay(1500, CancellationToken.None);
+            cts.Cancel();
+            await runTask;
+        }
+        catch (OperationCanceledException) { }
+
+        var position = _positionTracker.GetPosition("AAPL");
+        Assert.NotNull(position);
+        Assert.True(position.AtrValue > 0, "ATR should be positive after estimation from daily bars");
+    }
+
+    [Fact]
+    public async Task Reconciliation_AddsAlpacaPositionsMissingFromTracker()
+    {
+        // Broker has AAPL; tracker is empty — reconciler should add it
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>
+            {
+                new("AAPL", 10, 150m, 155m, 50m, 3.3m, DateTimeOffset.UtcNow)
+            });
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
+
+        var options = Options.Create(new RuntimeReconciliationOptions { CheckIntervalSeconds = 1 });
+        var reconciler = new RuntimeReconcilerService(
+            _brokerMock, fixture.StateRepository, _positionTracker, _logger, options);
+
+        var cts = new CancellationTokenSource();
+        try
+        {
+            var runTask = reconciler.StartAsync(cts.Token);
+            await Task.Delay(1500, CancellationToken.None);
+            cts.Cancel();
+            await runTask;
+        }
+        catch (OperationCanceledException) { }
+
+        var position = _positionTracker.GetPosition("AAPL");
+        Assert.NotNull(position);
+        Assert.Equal(10, position.CurrentQuantity);
+        Assert.Equal(150m, position.EntryPrice);
+    }
+
+    [Fact]
+    public async Task Reconciliation_RemovesGhostPositionsFromTracker()
+    {
+        // Tracker has AAPL; broker returns nothing — reconciler should remove it
+        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
+
+        var options = Options.Create(new RuntimeReconciliationOptions { CheckIntervalSeconds = 1 });
+        var reconciler = new RuntimeReconcilerService(
+            _brokerMock, fixture.StateRepository, _positionTracker, _logger, options);
+
+        var cts = new CancellationTokenSource();
+        try
+        {
+            var runTask = reconciler.StartAsync(cts.Token);
+            await Task.Delay(1500, CancellationToken.None);
+            cts.Cancel();
+            await runTask;
+        }
+        catch (OperationCanceledException) { }
+
+        Assert.Null(_positionTracker.GetPosition("AAPL"));
+    }
+
+    [Fact]
+    public async Task Reconciliation_TradingNotHaltedAfterRepair()
+    {
+        // Tracker has AAPL (ghost); broker returns nothing — repair removes it, trading stays live
+        _positionTracker.OpenPosition("AAPL", 100, 150m, 2m);
+
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>());
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
+
+        var options = Options.Create(new RuntimeReconciliationOptions { CheckIntervalSeconds = 1 });
+        var reconciler = new RuntimeReconcilerService(
+            _brokerMock, fixture.StateRepository, _positionTracker, _logger, options);
+
+        var cts = new CancellationTokenSource();
+        try
+        {
+            var runTask = reconciler.StartAsync(cts.Token);
+            await Task.Delay(1500, CancellationToken.None);
+            cts.Cancel();
+            await runTask;
+        }
+        catch (OperationCanceledException) { }
+
+        var halted = await fixture.StateRepository.GetStateAsync("trading_halted", CancellationToken.None);
+        Assert.Equal("false", halted);
+    }
+
+    [Fact]
     public async Task Reconciliation_HandlesEmptyDiscrepancies()
     {
         // Arrange

@@ -10,7 +10,8 @@ public sealed class RuntimeReconcilerService(
     IStateRepository stateRepository,
     PositionTracker positionTracker,
     ILogger<RuntimeReconcilerService> logger,
-    IOptions<RuntimeReconciliationOptions> options) : BackgroundService
+    IOptions<RuntimeReconciliationOptions> options,
+    IMarketDataClient? marketDataClient = null) : BackgroundService
 {
     private readonly RuntimeReconciliationOptions _options = options.Value;
     private int _consecutiveFailures;
@@ -72,28 +73,42 @@ public sealed class RuntimeReconcilerService(
             // Repair stuck exits
             await RepairStuckExitsAsync(ct);
 
-            // Check for discrepancies (simplified)
+            // Reconcile positions: repair both directions so PositionTracker stays in sync with Alpaca.
             var alpacaPositions = await brokerService.GetPositionsAsync(ct);
-            var trackedPositions = positionTracker.GetAllPositions();
+            var trackedKeys = positionTracker.GetAllPositions().Keys.ToList(); // snapshot before mutation
 
-            foreach (var tracked in trackedPositions)
+            // Ghost positions: tracked but no longer in Alpaca → remove
+            foreach (var symbol in trackedKeys)
             {
-                if (alpacaPositions.All(ap => ap.Symbol != tracked.Key))
+                if (alpacaPositions.All(ap => ap.Symbol != symbol))
                 {
-                    discrepancies.Add($"Position {tracked.Key} tracked but not in Alpaca");
+                    positionTracker.ClosePosition(symbol);
+                    discrepancies.Add($"Removed ghost position: {symbol}");
+                    logger.LogWarning("Reconciliation: removed ghost position {symbol} from tracker", symbol);
                 }
             }
 
-            // Update bot_state
+            // Missing positions: in Alpaca but not in tracker → add.
+            // ATR is estimated from recent daily bars so exit levels are active immediately.
+            // Falls back to 0 when unavailable; ExitManager safely skips zero-ATR positions.
+            foreach (var alpacaPos in alpacaPositions)
+            {
+                if (!trackedKeys.Contains(alpacaPos.Symbol))
+                {
+                    var atr = await EstimateAtrAsync(alpacaPos.Symbol, ct);
+                    positionTracker.OpenPosition(
+                        alpacaPos.Symbol, alpacaPos.Quantity, alpacaPos.AverageEntryPrice, atrValue: atr);
+                    discrepancies.Add($"Added missing position: {alpacaPos.Symbol}");
+                    logger.LogWarning(
+                        "Reconciliation: added missing position {symbol} qty={qty} entry={entry} atr={atr:F4}",
+                        alpacaPos.Symbol, alpacaPos.Quantity, alpacaPos.AverageEntryPrice, atr);
+                }
+            }
+
+            // After repair, positions are consistent — keep trading running
+            await stateRepository.SetStateAsync("trading_halted", "false", ct);
             if (discrepancies.Any())
-            {
-                logger.LogWarning("Found {count} discrepancies", discrepancies.Count);
-                await stateRepository.SetStateAsync("trading_halted", "true", ct);
-            }
-            else
-            {
-                await stateRepository.SetStateAsync("trading_halted", "false", ct);
-            }
+                logger.LogInformation("Reconciliation repaired {count} discrepancy/ies", discrepancies.Count);
 
             // Persist report
             await PersistReconciliationReportAsync(startTime, discrepancies, ct);
@@ -176,6 +191,43 @@ public sealed class RuntimeReconcilerService(
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to persist reconciliation report");
+        }
+    }
+
+    /// <summary>
+    /// Estimates ATR from 30 recent daily bars (14-period). Returns 0 when unavailable.
+    /// Used to seed exit levels for positions added during reconciliation so the ExitManager
+    /// can protect them immediately rather than waiting for the next organic fill.
+    /// </summary>
+    private async ValueTask<decimal> EstimateAtrAsync(string symbol, CancellationToken ct)
+    {
+        if (marketDataClient == null)
+            return 0m;
+
+        try
+        {
+            const int barCount = 30;
+            const int atrPeriod = 14;
+
+            var bars = await marketDataClient.GetBarsAsync(symbol, "1Day", barCount, ct);
+            if (bars.Count < atrPeriod)
+            {
+                logger.LogDebug(
+                    "Insufficient bars to estimate ATR for {symbol}: {count}/{required}",
+                    symbol, bars.Count, atrPeriod);
+                return 0m;
+            }
+
+            var history = new BarHistory(barCount);
+            foreach (var bar in bars)
+                history.AddBar(bar.Open, bar.High, bar.Low, bar.Close, bar.Volume);
+
+            return history.CalculateAtr(atrPeriod);
+        }
+        catch (Exception ex)
+        {
+            logger.LogWarning(ex, "Failed to estimate ATR for {symbol}, falling back to 0", symbol);
+            return 0m;
         }
     }
 

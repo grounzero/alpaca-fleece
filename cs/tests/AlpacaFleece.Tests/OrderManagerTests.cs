@@ -37,7 +37,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -91,7 +91,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -144,7 +144,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -167,7 +167,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         await _brokerMock.Received(1).SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
@@ -177,14 +177,14 @@ public sealed class OrderManagerTests(TradingFixture fixture)
     public async Task SubmitSignalAsync_AutoSizesQuantity_WhenZeroPassedAsQuantity()
     {
         // qty = min(equity_cap, risk_cap)
-        // equity_cap = floor(100000 * 0.01 / 150m) = floor(6.67) = 6
+        // equity_cap = floor(100000 * 0.05 / 150m) = floor(33.33) = 33
         // risk_cap   = floor(100000 * 0.01 / (150m * 0.02)) = floor(33.33) = 33
-        // result = min(6, 33) = 6
-        const int expectedQty = 6;
+        // result = min(33, 33) = 33
+        const decimal expectedQty = 33m;
 
         var options = new TradingOptions
         {
-            RiskLimits = new RiskLimits { MaxRiskPerTradePct = 0.01m, StopLossPct = 0.02m },
+            RiskLimits = new RiskLimits { MaxPositionSizePct = 0.05m, MaxRiskPerTradePct = 0.01m, StopLossPct = 0.02m },
             Execution = new ExecutionOptions { DryRun = false },
         };
 
@@ -225,7 +225,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -248,7 +248,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         await _brokerMock.Received(1).SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Is<int>(q => q == expectedQty),
+            Arg.Is<decimal>(q => q == expectedQty),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
@@ -264,7 +264,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         _brokerMock.SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>())
@@ -285,7 +285,7 @@ public sealed class OrderManagerTests(TradingFixture fixture)
         await _brokerMock.Received(1).SubmitOrderAsync(
             Arg.Any<string>(),
             Arg.Any<string>(),
-            Arg.Any<int>(),
+            Arg.Any<decimal>(),
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());

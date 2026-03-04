@@ -19,6 +19,7 @@ global using AlpacaFleece.Infrastructure.MarketData;
 global using AlpacaFleece.Infrastructure.Repositories;
 global using AlpacaFleece.Trading.Config;
 global using AlpacaFleece.Trading.Exits;
+global using AlpacaFleece.Trading.Filters;
 global using AlpacaFleece.Trading.Orders;
 global using AlpacaFleece.Trading.Positions;
 global using AlpacaFleece.Trading.Risk;

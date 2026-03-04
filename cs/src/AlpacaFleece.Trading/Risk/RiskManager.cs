@@ -20,6 +20,7 @@ public sealed class RiskManager(
     IMarketDataClient? marketDataClient = null,
     DrawdownMonitor? drawdownMonitor = null,
     CorrelationService? correlationService = null,
+    IPositionTracker? positionTracker = null,
     ISymbolClassifier? symbolClassifier = null) : IRiskManager
 {
     private readonly TimeZoneInfo _timeZone = TimeZoneInfo.FindSystemTimeZoneById(options.Session.TimeZone);
@@ -174,29 +175,47 @@ public sealed class RiskManager(
             }
         }
 
-        // Max concurrent positions check
-        var positions = await broker.GetPositionsAsync(ct);
-        if (positions.Count >= options.RiskLimits.MaxConcurrentPositions)
+        // Max concurrent positions check — PositionTracker is the source of truth when injected;
+        // fall back to broker for backwards compatibility (e.g. tests without tracker injected).
+        int positionCount;
+        bool signalSymbolTracked;
+        if (positionTracker != null)
         {
-            // Allow if this is a reversal (closing old, opening new)
-            if (!positions.Any(p => p.Symbol == signal.Symbol))
-            {
-                return new RiskCheckResult(
-                    AllowsSignal: false,
-                    Reason: $"Max concurrent positions reached: {positions.Count} >= {options.RiskLimits.MaxConcurrentPositions}",
-                    RiskTier: "RISK");
-            }
+            var tracked = positionTracker.GetAllPositions();
+            positionCount = tracked.Count;
+            signalSymbolTracked = tracked.ContainsKey(signal.Symbol);
+        }
+        else
+        {
+            var brokerPositions = await broker.GetPositionsAsync(ct);
+            positionCount = brokerPositions.Count;
+            signalSymbolTracked = brokerPositions.Any(p => p.Symbol == signal.Symbol);
         }
 
-        // Max position size check
-        const decimal defaultMaxPositionPct = 0.05m; // 5% of account per position
-        var maxQty = (account.PortfolioValue * defaultMaxPositionPct) / signal.Metadata.CurrentPrice;
-        if (maxQty < 1)
+        if (positionCount >= options.RiskLimits.MaxConcurrentPositions && !signalSymbolTracked)
         {
             return new RiskCheckResult(
                 AllowsSignal: false,
-                Reason: $"Position size too small for account: max_qty={maxQty:F2}",
+                Reason: $"Max concurrent positions reached: {positionCount} >= {options.RiskLimits.MaxConcurrentPositions}",
                 RiskTier: "RISK");
+        }
+
+        // Equity position-size guard: PositionSizer floors equities to a minimum of 1 share,
+        // so if even 1 share costs more than MaxPositionSizePct of portfolio the trade would
+        // breach the configured risk cap. Crypto is exempt (fractional quantities). Exit/SELL
+        // signals are also exempt — sizing does not apply to closing an existing position.
+        if (!_symbolClassifier.IsCrypto(signal.Symbol)
+            && signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+        {
+            var maxNotional = account.PortfolioValue * options.RiskLimits.MaxPositionSizePct;
+            if (signal.Metadata.CurrentPrice > maxNotional)
+            {
+                return new RiskCheckResult(
+                    AllowsSignal: false,
+                    Reason: $"Share price {signal.Metadata.CurrentPrice:F2} exceeds max position notional " +
+                            $"{maxNotional:F2} ({options.RiskLimits.MaxPositionSizePct:P0} of {account.PortfolioValue:F2})",
+                    RiskTier: "RISK");
+            }
         }
 
         return new RiskCheckResult(

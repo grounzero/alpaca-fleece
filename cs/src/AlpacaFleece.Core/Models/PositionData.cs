@@ -6,7 +6,7 @@ namespace AlpacaFleece.Core.Models;
 public sealed class PositionData
 {
     public string Symbol { get; set; } = string.Empty;
-    public int CurrentQuantity { get; set; }
+    public decimal CurrentQuantity { get; set; }
     public decimal EntryPrice { get; set; }
     public decimal AtrValue { get; set; }
     public decimal TrailingStopPrice { get; set; }
@@ -17,7 +17,7 @@ public sealed class PositionData
 
     public PositionData(
         string symbol,
-        int currentQuantity,
+        decimal currentQuantity,
         decimal entryPrice,
         decimal atrValue,
         decimal trailingStopPrice)

@@ -22,6 +22,7 @@ public sealed class StreamPollerService(
     IStateRepository stateRepository,
     IEventBus eventBus,
     IOptions<TradingOptions> tradingOptions,
+    IStrategy strategy,
     ILogger<StreamPollerService> logger) : BackgroundService
 {
     private const int SymbolBatchSize = 25;
@@ -77,6 +78,22 @@ public sealed class StreamPollerService(
         var allSymbolsList = allSymbols.ToList();
         const string timeframe = "1m";
 
+        var configuredDepth = tradingOptions.Value.Execution.BarHistoryDepth;
+        var effectiveDepth = Math.Max(configuredDepth, strategy.RequiredHistory);
+        if (effectiveDepth != configuredDepth)
+            logger.LogWarning(
+                "BarHistoryDepth {Configured} is below the strategy minimum {Required}; clamping to {Effective}",
+                configuredDepth, strategy.RequiredHistory, effectiveDepth);
+
+        const int MaxApiBarLimit = 10_000;
+        if (effectiveDepth > MaxApiBarLimit)
+        {
+            logger.LogWarning(
+                "Effective BarHistoryDepth {Effective} exceeds the Alpaca API maximum {Max}; clamping to {Max}",
+                effectiveDepth, MaxApiBarLimit, MaxApiBarLimit);
+            effectiveDepth = MaxApiBarLimit;
+        }
+
         logger.LogInformation("Bar poll loop starting with {count} symbols", allSymbolsList.Count);
 
         while (!ct.IsCancellationRequested)
@@ -115,7 +132,7 @@ public sealed class StreamPollerService(
                     equitySymbols.Count,
                     symbolsToPoll.Count);
 
-                await PollSymbolBatchesAsync(symbolsToPoll, timeframe, ct);
+                await PollSymbolBatchesAsync(symbolsToPoll, timeframe, effectiveDepth, ct);
 
                 // Reset backoff on success
                 _backoffMs = BaseBackoffMs;
@@ -162,6 +179,7 @@ public sealed class StreamPollerService(
     private async Task PollSymbolBatchesAsync(
         List<string> symbols,
         string timeframe,
+        int barDepth,
         CancellationToken ct)
     {
         logger.LogInformation("PollSymbolBatchesAsync starting with {count} symbols", symbols.Count);
@@ -175,7 +193,7 @@ public sealed class StreamPollerService(
             {
                 try
                 {
-                    await PollBatchAsync(batchList, timeframe, ct);
+                    await PollBatchAsync(batchList, timeframe, barDepth, ct);
                     logger.LogDebug("Batch completed successfully");
                     break;
                 }
@@ -202,6 +220,7 @@ public sealed class StreamPollerService(
     private async Task PollBatchAsync(
         List<string> batch,
         string timeframe,
+        int barDepth,
         CancellationToken ct)
     {
         logger.LogInformation("PollBatchAsync starting with {Count} symbols: {Symbols}",
@@ -213,7 +232,7 @@ public sealed class StreamPollerService(
             try
             {
                 logger.LogDebug("Fetching bars for {Symbol}...", symbol);
-                var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, 50, ct);
+                var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, barDepth, ct);
                 logger.LogDebug("Fetched {Count} bars for {Symbol}", quotes.Count, symbol);
 
                 _lastPublishedBarTs.TryGetValue(symbol, out var lastTs);
@@ -384,7 +403,7 @@ public sealed class StreamPollerService(
             }
 
             // Publish event so OrderManager / PositionTracker can react
-            var remaining = Math.Max(0, intent.Quantity - order.FilledQuantity);
+            var remaining = Math.Max(0m, intent.Quantity - order.FilledQuantity);
             var ev = new OrderUpdateEvent(
                 AlpacaOrderId: order.AlpacaOrderId,
                 ClientOrderId: order.ClientOrderId,

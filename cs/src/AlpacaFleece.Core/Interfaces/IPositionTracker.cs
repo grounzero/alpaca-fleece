@@ -19,7 +19,7 @@ public interface IPositionTracker
     /// <summary>
     /// Opens a position.
     /// </summary>
-    void OpenPosition(string symbol, int quantity, decimal entryPrice, decimal atrValue);
+    void OpenPosition(string symbol, decimal quantity, decimal entryPrice, decimal atrValue);
 
     /// <summary>
     /// Closes a position.

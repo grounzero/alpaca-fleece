@@ -92,15 +92,26 @@ public sealed class EventDispatcherService(
         try
         {
             var orderManager = serviceProvider.GetRequiredService<IOrderManager>();
+            var positionTracker = serviceProvider.GetRequiredService<IPositionTracker>();
 
-            // Exit side depends on what position we're closing
-            // For now, assume we're selling (closing long position)
+            // Long-only strategy: exits are always sells.
             var exitSide = "SELL";
+
+            // Quantity comes from the in-memory position tracker (set when the fill was received).
+            var posData = positionTracker.GetPosition(exitEvent.Symbol);
+            var exitQty = posData?.CurrentQuantity ?? 0m;
+            if (exitQty <= 0m)
+            {
+                logger.LogWarning(
+                    "No open position found for {symbol} during exit — skipping",
+                    exitEvent.Symbol);
+                return;
+            }
 
             await orderManager.SubmitExitAsync(
                 symbol: exitEvent.Symbol,
                 side: exitSide,
-                quantity: 100, // Default quantity, would come from position tracker in real flow
+                quantity: exitQty,
                 limitPrice: exitEvent.ExitPrice,
                 ct: CancellationToken.None);
         }
@@ -164,12 +175,9 @@ public sealed class EventDispatcherService(
                 return;
             }
 
-            // Calculate position size
-            var account = await serviceProvider
-                .GetRequiredService<IBrokerService>()
-                .GetAccountAsync(CancellationToken.None);
-
-            var qty = (int)PositionSizer.CalculateQuantity(signalEvent, account.PortfolioValue);
+            // Pass 0m as sentinel so OrderManager auto-sizes using the dual-formula PositionSizer
+            // (equity cap + risk cap, with fractional support for crypto).
+            var qty = 0m;
 
             // Submit order
             var clientOrderId = await orderManager.SubmitSignalAsync(
