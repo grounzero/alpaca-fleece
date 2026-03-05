@@ -2,7 +2,6 @@ using AlpacaFleece.AdminUI.Auth;
 using AlpacaFleece.AdminUI.Config;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace AlpacaFleece.Tests;
 
