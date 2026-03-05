@@ -109,6 +109,7 @@ else
             <MudText Typo="Typo.subtitle2" Class="mb-2">Equity Curve (30 days)</MudText>
             <MudChart ChartType="ChartType.Line"
                       ChartSeries="@_equitySeries"
+                      ChartLabels="@_equityLabels"
                       Width="100%"
                       Height="200px"
                       ChartOptions="@GetChartOptions()" />
