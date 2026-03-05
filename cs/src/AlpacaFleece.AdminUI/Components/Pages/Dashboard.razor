@@ -193,23 +193,18 @@ else if (_vm is not null)
     private string? _error;
     private System.Timers.Timer? _timer;
 
-    private List<ChartSeries> _equitySeries = [];
+    private List<ChartSeries<double>> _equitySeries = [];
     private string[] _equityLabels = [];
-    private List<ChartSeries> _dailyPnlSeries = [];
+    private List<ChartSeries<double>> _dailyPnlSeries = [];
     private string[] _dailyPnlLabels = [];
 
     private readonly ChartOptions _lineOptions = new()
     {
-        YAxisTicks = 5,
-        MaxNumYAxisTicks = 6,
-        LineStrokeWidth = 2,
         ChartPalette = ["#00BFA5"]
     };
 
     private readonly ChartOptions _barOptions = new()
     {
-        YAxisTicks = 4,
-        MaxNumYAxisTicks = 5,
         ChartPalette = ["#4FC3F7", "#ef5350"]
     };
 
@@ -256,7 +251,7 @@ else if (_vm is not null)
         {
             _equitySeries =
             [
-                new ChartSeries
+                new ChartSeries<double>
                 {
                     Name = "Equity",
                     Data = _vm.EquityCurve.Select(p => (double)p.Value).ToArray()
@@ -270,7 +265,7 @@ else if (_vm is not null)
         {
             _dailyPnlSeries =
             [
-                new ChartSeries
+                new ChartSeries<double>
                 {
                     Name = "P&L",
                     Data = _vm.DailyPnl30.Select(p => (double)p.Pnl).ToArray()

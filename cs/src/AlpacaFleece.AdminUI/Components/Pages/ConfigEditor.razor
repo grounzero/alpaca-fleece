@@ -226,7 +226,7 @@ else if (_draft is not null)
         var dlg = await DialogService.ShowAsync<PreviewChangesModal>("Preview Changes", parameters,
             new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
         var result = await dlg.Result;
-        if (result.Canceled) return;
+        if (result?.Canceled ?? true) return;
 
         _saving = true;
         try
@@ -275,7 +275,7 @@ else if (_draft is not null)
         };
         var dlg = await DialogService.ShowAsync<ConfirmDialog>("Restore Backup", parameters);
         var result = await dlg.Result;
-        if (result.Canceled) return;
+        if (result?.Canceled ?? true) return;
 
         try
         {

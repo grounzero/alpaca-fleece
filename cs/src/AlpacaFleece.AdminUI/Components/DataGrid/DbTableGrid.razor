@@ -154,7 +154,7 @@
     public IReadOnlyList<DbColumnDef<TItem>> Columns { get; set; } = [];
 
     [Parameter]
-    public Func<GridState<TItem>, Task<GridData<TItem>>> ServerData { get; set; } = null!;
+    public Func<GridState<TItem>, CancellationToken, Task<GridData<TItem>>> ServerData { get; set; } = null!;
 
     [Parameter]
     public string? Title { get; set; }
@@ -215,12 +215,12 @@
     /// <summary>
     /// Server data proxy callback.
     /// </summary>
-    private async Task<GridData<TItem>> ServerDataProxy(GridState<TItem> state)
+    private async Task<GridData<TItem>> ServerDataProxy(GridState<TItem> state, CancellationToken ct)
     {
         try
         {
             _hasActiveFilters = (state.FilterDefinitions?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(_quickSearch);
-            var result = await ServerData(state);
+            var result = await ServerData(state, ct);
             _totalCount = result.TotalItems;
 
             // Persist state
@@ -333,7 +333,7 @@
     /// <summary>
     /// Format a value for display.
     /// </summary>
-    private static string FormatValue(object value, DbColumnDef<TItem> col)
+    private static string FormatValue(object? value, DbColumnDef<TItem> col)
     {
         if (value is null)
             return "—";

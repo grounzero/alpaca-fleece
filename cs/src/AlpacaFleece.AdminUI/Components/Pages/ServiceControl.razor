@@ -220,7 +220,7 @@ else if (_error is not null)
         };
         var result = await DialogService.ShowAsync<ConfirmDialog>($"{action} Container", parameters);
         var r = await result.Result;
-        if (r.Canceled) return;
+        if (r?.Canceled ?? true) return;
 
         _actionInProgress = true;
         StateHasChanged();

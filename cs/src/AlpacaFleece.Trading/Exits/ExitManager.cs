@@ -35,7 +35,6 @@ public class ExitManager(
     /// <summary>
     /// Protected no-arg constructor for NSubstitute proxy creation in testing.
     /// </summary>
-    // Protected no-arg constructor for NSubstitute proxy creation
     protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions()), null!) { }
 
     private readonly ExitOptions _options = options.Value.Exit;

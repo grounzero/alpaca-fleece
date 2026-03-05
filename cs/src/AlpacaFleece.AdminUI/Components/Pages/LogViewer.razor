@@ -116,7 +116,7 @@
     private List<LogLine> _bufferedLines  = [];
     private List<LogLine> _allLines       = [];
 
-    private IEnumerable<string> _levelFilters = new HashSet<string> { "DBG", "INF", "WRN", "ERR", "FTL" };
+    private IReadOnlyCollection<string> _levelFilters = new HashSet<string> { "DBG", "INF", "WRN", "ERR", "FTL" };
     private string _searchText  = "";
     private bool   _paused;
     private bool   _loading   = true;

@@ -137,7 +137,7 @@ public sealed class ConfigService(
 
     public async ValueTask WriteAsync(ConfigDraft draft, CancellationToken ct = default)
     {
-        var path = opts.Value.BotSettingsPath;
+        var path = options.Value.BotSettingsPath;
         var dir = Path.GetDirectoryName(path);
         if (!string.IsNullOrEmpty(dir) && !Directory.Exists(dir))
             Directory.CreateDirectory(dir);
@@ -193,7 +193,7 @@ public sealed class ConfigService(
 
     public ValueTask<IReadOnlyList<string>> GetBackupsAsync()
     {
-        var path = opts.Value.BotSettingsPath;
+        var path = options.Value.BotSettingsPath;
         var dir = Path.GetDirectoryName(path) ?? ".";
         var name = Path.GetFileName(path);
         if (!Directory.Exists(dir)) return ValueTask.FromResult<IReadOnlyList<string>>([]);
@@ -207,7 +207,7 @@ public sealed class ConfigService(
 
     public async ValueTask RestoreBackupAsync(string backupPath, CancellationToken ct = default)
     {
-        var dest = opts.Value.BotSettingsPath;
+        var dest = options.Value.BotSettingsPath;
         var json = await File.ReadAllTextAsync(backupPath, ct);
         await File.WriteAllTextAsync(dest, json, ct);
         logger.LogInformation("Restored backup {Backup} to {Dest}", backupPath, dest);
@@ -215,7 +215,7 @@ public sealed class ConfigService(
 
     public async ValueTask<string> GetRawJsonAsync(CancellationToken ct = default)
     {
-        var path = opts.Value.BotSettingsPath;
+        var path = options.Value.BotSettingsPath;
         if (!File.Exists(path)) return "{}";
         return await File.ReadAllTextAsync(path, ct);
     }

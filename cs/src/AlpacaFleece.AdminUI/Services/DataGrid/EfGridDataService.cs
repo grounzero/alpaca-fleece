@@ -1,7 +1,4 @@
 using System.Linq.Dynamic.Core;
-using Microsoft.EntityFrameworkCore;
-using Microsoft.Extensions.Logging;
-using MudBlazor;
 
 namespace AlpacaFleece.AdminUI.Services.DataGrid;
 
@@ -97,6 +94,7 @@ public sealed class EfGridDataService(ILogger<EfGridDataService> logger)
         catch (Exception ex)
         {
             // Log and return unfiltered if quick search fails
+            Console.WriteLine($"Failed to apply quick search filter: {ex.Message}");
             return source;
         }
     }

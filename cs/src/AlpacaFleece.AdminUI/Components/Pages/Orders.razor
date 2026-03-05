@@ -142,7 +142,7 @@
     private string _filterStatus = "All";
     private string? _error;
 
-    private async Task<GridData<OrderIntentEntity>> LoadServerData(GridState<OrderIntentEntity> state)
+    private async Task<GridData<OrderIntentEntity>> LoadServerData(GridState<OrderIntentEntity> state, CancellationToken ct)
     {
         _error = null;
         try

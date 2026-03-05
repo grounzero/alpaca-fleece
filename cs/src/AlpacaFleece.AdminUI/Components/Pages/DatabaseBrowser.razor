@@ -371,7 +371,7 @@
 
     // ── Server data callbacks (one per table) ──
 
-    private async Task<GridData<TradeEntity>> LoadTrades(GridState<TradeEntity> state)
+    private async Task<GridData<TradeEntity>> LoadTrades(GridState<TradeEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -379,7 +379,7 @@
             searchableProps: ["Symbol", "Side", "ClientOrderId"]);
     }
 
-    private async Task<GridData<OrderIntentEntity>> LoadOrderIntents(GridState<OrderIntentEntity> state)
+    private async Task<GridData<OrderIntentEntity>> LoadOrderIntents(GridState<OrderIntentEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -387,14 +387,14 @@
             searchableProps: ["Symbol", "Side", "ClientOrderId", "Status"]);
     }
 
-    private async Task<GridData<EquityCurveEntity>> LoadEquityCurve(GridState<EquityCurveEntity> state)
+    private async Task<GridData<EquityCurveEntity>> LoadEquityCurve(GridState<EquityCurveEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
             db.EquityCurve.AsNoTracking(), state);
     }
 
-    private async Task<GridData<BotStateEntity>> LoadBotState(GridState<BotStateEntity> state)
+    private async Task<GridData<BotStateEntity>> LoadBotState(GridState<BotStateEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -402,7 +402,7 @@
             searchableProps: ["Key", "Value"]);
     }
 
-    private async Task<GridData<BarEntity>> LoadBars(GridState<BarEntity> state)
+    private async Task<GridData<BarEntity>> LoadBars(GridState<BarEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -410,7 +410,7 @@
             searchableProps: ["Symbol", "Timeframe"]);
     }
 
-    private async Task<GridData<PositionSnapshotEntity>> LoadPositionSnapshots(GridState<PositionSnapshotEntity> state)
+    private async Task<GridData<PositionSnapshotEntity>> LoadPositionSnapshots(GridState<PositionSnapshotEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -418,7 +418,7 @@
             searchableProps: ["Symbol"]);
     }
 
-    private async Task<GridData<SignalGateEntity>> LoadSignalGates(GridState<SignalGateEntity> state)
+    private async Task<GridData<SignalGateEntity>> LoadSignalGates(GridState<SignalGateEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -426,7 +426,7 @@
             searchableProps: ["GateName"]);
     }
 
-    private async Task<GridData<FillEntity>> LoadFills(GridState<FillEntity> state)
+    private async Task<GridData<FillEntity>> LoadFills(GridState<FillEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -434,7 +434,7 @@
             searchableProps: ["AlpacaOrderId", "ClientOrderId"]);
     }
 
-    private async Task<GridData<PositionTrackingEntity>> LoadPositionTracking(GridState<PositionTrackingEntity> state)
+    private async Task<GridData<PositionTrackingEntity>> LoadPositionTracking(GridState<PositionTrackingEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -442,7 +442,7 @@
             searchableProps: ["Symbol"]);
     }
 
-    private async Task<GridData<ExitAttemptEntity>> LoadExitAttempts(GridState<ExitAttemptEntity> state)
+    private async Task<GridData<ExitAttemptEntity>> LoadExitAttempts(GridState<ExitAttemptEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -450,7 +450,7 @@
             searchableProps: ["Symbol"]);
     }
 
-    private async Task<GridData<ReconciliationReportEntity>> LoadReconciliationReports(GridState<ReconciliationReportEntity> state)
+    private async Task<GridData<ReconciliationReportEntity>> LoadReconciliationReports(GridState<ReconciliationReportEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -458,7 +458,7 @@
             searchableProps: ["Status"]);
     }
 
-    private async Task<GridData<SchemaMetaEntity>> LoadSchemaMeta(GridState<SchemaMetaEntity> state)
+    private async Task<GridData<SchemaMetaEntity>> LoadSchemaMeta(GridState<SchemaMetaEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
@@ -466,14 +466,14 @@
             searchableProps: ["Description"]);
     }
 
-    private async Task<GridData<CircuitBreakerStateEntity>> LoadCircuitBreakerState(GridState<CircuitBreakerStateEntity> state)
+    private async Task<GridData<CircuitBreakerStateEntity>> LoadCircuitBreakerState(GridState<CircuitBreakerStateEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(
             db.CircuitBreakerState.AsNoTracking(), state);
     }
 
-    private async Task<GridData<DrawdownStateEntity>> LoadDrawdownState(GridState<DrawdownStateEntity> state)
+    private async Task<GridData<DrawdownStateEntity>> LoadDrawdownState(GridState<DrawdownStateEntity> state, CancellationToken ct)
     {
         await using var db = await DbFactory.CreateDbContextAsync();
         return await EfGridService.QueryAsync(

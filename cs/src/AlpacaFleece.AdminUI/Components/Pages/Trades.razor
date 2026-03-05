@@ -123,11 +123,10 @@ else
     private bool _loading = true;
     private string? _error;
 
-    private List<ChartSeries> _equitySeries = [];
+    private List<ChartSeries<double>> _equitySeries = [];
     private string[] _equityLabels = [];
     private readonly ChartOptions _chartOpts = new()
     {
-        LineStrokeWidth = 2,
         ChartPalette = ["#00BFA5"]
     };
 
@@ -141,7 +140,7 @@ else
             {
                 _equitySeries =
                 [
-                    new ChartSeries
+                    new ChartSeries<double>
                     {
                         Name = "Equity",
                         Data = equity.Select(e => (double)e.PortfolioValue).ToArray()
@@ -160,7 +159,7 @@ else
         }
     }
 
-    private async Task<GridData<TradeEntity>> LoadServerData(GridState<TradeEntity> state)
+    private async Task<GridData<TradeEntity>> LoadServerData(GridState<TradeEntity> state, CancellationToken ct)
     {
         try
         {
