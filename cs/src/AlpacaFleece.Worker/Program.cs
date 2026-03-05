@@ -17,6 +17,21 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Optional so the bot starts normally when running without Docker.
         config.AddJsonFile("/app/config/appsettings.json", optional: true, reloadOnChange: false);
 
+        // Support both old and new environment variable formats:
+        // - Legacy: ALPACA_API_KEY, ALPACA_SECRET_KEY (maps to Broker:ApiKey, Broker:SecretKey)
+        // - Current: Broker__ApiKey, Broker__SecretKey (standard double-underscore format)
+        var alpacaApiKey = Environment.GetEnvironmentVariable("ALPACA_API_KEY");
+        var alpacaSecretKey = Environment.GetEnvironmentVariable("ALPACA_SECRET_KEY");
+
+        if (!string.IsNullOrEmpty(alpacaApiKey) || !string.IsNullOrEmpty(alpacaSecretKey))
+        {
+            config.AddInMemoryCollection(new Dictionary<string, string?>
+            {
+                { "Broker:ApiKey", alpacaApiKey },
+                { "Broker:SecretKey", alpacaSecretKey }
+            }!);
+        }
+
         // Standard env vars — double underscore is the section separator.
         // Broker__ApiKey, Broker__SecretKey (set by docker-compose from .env)
         config.AddEnvironmentVariables();

@@ -3,7 +3,8 @@
 <div class="@WrapperClass d-flex align-center gap-2">
     <MudSlider T="decimal"
                Min="Min" Max="Max" Step="Step"
-               @bind-Value="Value"
+               Value="Value"
+               ValueChanged="OnValueChanged"
                Color="@SliderColor"
                Class="flex-grow-1">
         @Value.ToString(Format)
@@ -18,11 +19,18 @@
     [Parameter, EditorRequired] public decimal Max { get; set; }
     [Parameter] public decimal Step { get; set; } = 1;
     [Parameter, EditorRequired] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
     [Parameter] public string Label { get; set; } = "";
     [Parameter] public string Format { get; set; } = "G";
     [Parameter] public decimal[] GreenUpTo { get; set; } = [];
     [Parameter] public decimal[] AmberUpTo { get; set; } = [];
     [Parameter] public decimal DefaultValue { get; set; }
+
+    private async Task OnValueChanged(decimal newValue)
+    {
+        Value = newValue;
+        await ValueChanged.InvokeAsync(newValue);
+    }
 
     private Color SliderColor => GetZone() switch
     {

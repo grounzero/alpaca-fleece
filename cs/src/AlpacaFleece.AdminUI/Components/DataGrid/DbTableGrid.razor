@@ -37,7 +37,7 @@
                     <MudIconButton
                         Icon="@Icons.Material.Filled.Refresh"
                         Size="Size.Small"
-                        OnClick="@(() => _grid?.ReloadServerData())" />
+                        OnClick="@ReloadData" />
 
                     <MudIconButton
                         Icon="@Icons.Material.Filled.Settings"
@@ -184,7 +184,6 @@
 
     private MudDataGrid<TItem>? _grid;
     private string _quickSearch = "";
-    private Timer? _debounceTimer;
     private int _totalCount = 0;
     private HashSet<string> _hiddenColumns = [];
     private bool _showColumnsPanel = false;
@@ -247,7 +246,17 @@
     {
         if (e.Key == "Enter" && _grid is not null)
         {
-            _debounceTimer?.Dispose();
+            await _grid.ReloadServerData();
+        }
+    }
+
+    /// <summary>
+    /// Reload grid data (wrapper for OnClick handler).
+    /// </summary>
+    private async Task ReloadData()
+    {
+        if (_grid is not null)
+        {
             await _grid.ReloadServerData();
         }
     }
@@ -301,15 +310,19 @@
     }
 
     /// <summary>
-    /// Clear filters.
+    /// Clear filters and quick search.
     /// </summary>
     private async Task ClearFilters()
     {
+        _quickSearch = "";
+
         if (_grid is not null)
         {
             _grid.FilterDefinitions.Clear();
             await _grid.ReloadServerData();
         }
+
+        StateHasChanged();
     }
 
     /// <summary>

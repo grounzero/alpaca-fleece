@@ -36,7 +36,7 @@
         </MudItem>
         <MudItem xs="12" sm="4">
             <MudButton Variant="Variant.Filled" Color="Color.Primary"
-                       OnClick="@(() => _grid?.ReloadServerData())">
+                       OnClick="@ApplyFilters">
                 Apply
             </MudButton>
             <MudButton Variant="Variant.Outlined" Class="ml-2"
@@ -157,6 +157,12 @@
             _error = $"Failed to load orders: {ex.Message}";
             return new GridData<OrderIntentEntity> { Items = [], TotalItems = 0 };
         }
+    }
+
+    private async Task ApplyFilters()
+    {
+        if (_grid is not null)
+            await _grid.ReloadServerData();
     }
 
     private async Task ClearFilters()
