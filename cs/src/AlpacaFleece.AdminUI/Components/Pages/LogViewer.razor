@@ -15,7 +15,7 @@
 
 @* ── Controls ── *@
 <MudPaper Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3" Elevation="1">
-    <MudSelect T="string" @bind-SelectedValues="_levelFilters" Label="Levels" Dense Style="max-width:180px"
+    <MudSelect T="string" @bind-SelectedValues="_levelFilters" Label="Levels" Style="max-width:180px"
                MultiSelection="true" @bind-SelectedValues:after="ApplyFilters"
                SelectAll="true" SelectAllText="All">
         <MudSelectItem T="string" Value="@("DBG")">Debug</MudSelectItem>
@@ -28,7 +28,6 @@
     <MudTextField @bind-Value="_searchText"
                   Label="Search"
                   Immediate
-                  Dense
                   Style="max-width:240px"
                   @bind-Value:after="ApplyFilters"
                   Adornment="Adornment.End"

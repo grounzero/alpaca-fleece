@@ -155,10 +155,9 @@ else if (_vm is not null)
                 {
                     <MudChart ChartType="ChartType.Line"
                               ChartSeries="@_equitySeries"
-                              XAxisLabels="@_equityLabels"
                               Width="100%"
                               Height="220px"
-                              ChartOptions="_lineOptions" />
+                              ChartOptions="@GetLineChartOptions()" />
                 }
                 else
                 {
@@ -173,10 +172,9 @@ else if (_vm is not null)
                 {
                     <MudChart ChartType="ChartType.Bar"
                               ChartSeries="@_dailyPnlSeries"
-                              XAxisLabels="@_dailyPnlLabels"
                               Width="100%"
                               Height="220px"
-                              ChartOptions="_barOptions" />
+                              ChartOptions="@GetBarChartOptions()" />
                 }
                 else
                 {
@@ -198,12 +196,12 @@ else if (_vm is not null)
     private List<ChartSeries<double>> _dailyPnlSeries = [];
     private string[] _dailyPnlLabels = [];
 
-    private readonly ChartOptions _lineOptions = new()
+    private ChartOptions _lineOptions = new()
     {
         ChartPalette = ["#00BFA5"]
     };
 
-    private readonly ChartOptions _barOptions = new()
+    private ChartOptions _barOptions = new()
     {
         ChartPalette = ["#4FC3F7", "#ef5350"]
     };
@@ -273,6 +271,22 @@ else if (_vm is not null)
             ];
             _dailyPnlLabels = [.. _vm.DailyPnl30.Select(p => p.Date)];
         }
+    }
+
+    private ChartOptions GetLineChartOptions()
+    {
+        return new ChartOptions
+        {
+            ChartPalette = ["#00BFA5"]
+        };
+    }
+
+    private ChartOptions GetBarChartOptions()
+    {
+        return new ChartOptions
+        {
+            ChartPalette = ["#4FC3F7", "#ef5350"]
+        };
     }
 
     public async ValueTask DisposeAsync()

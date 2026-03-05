@@ -38,31 +38,31 @@ else if (_draft is not null)
             <MudTabPanel Text="Visual">
                 <MudPaper Class="pa-4" Elevation="0">
                     <MudExpansionPanels MultiExpansion="true">
-                        <MudExpansionPanel Text="Danger Zone" @bind-IsExpanded="_dangerExpanded">
+                        <MudExpansionPanel Text="Danger Zone" @bind-Expanded="_dangerExpanded">
                             <DangerZoneSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Credentials" @bind-IsExpanded="_credExpanded">
+                        <MudExpansionPanel Text="Credentials" @bind-Expanded="_credExpanded">
                             <CredentialsSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Symbols" @bind-IsExpanded="_symbolsExpanded">
+                        <MudExpansionPanel Text="Symbols" @bind-Expanded="_symbolsExpanded">
                             <SymbolsSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Risk Limits" @bind-IsExpanded="_riskExpanded">
+                        <MudExpansionPanel Text="Risk Limits" @bind-Expanded="_riskExpanded">
                             <RiskLimitsSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Drawdown Monitor" @bind-IsExpanded="_drawdownExpanded">
+                        <MudExpansionPanel Text="Drawdown Monitor" @bind-Expanded="_drawdownExpanded">
                             <DrawdownSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Exit Rules" @bind-IsExpanded="_exitExpanded">
+                        <MudExpansionPanel Text="Exit Rules" @bind-Expanded="_exitExpanded">
                             <ExitRulesSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Signal Filters" @bind-IsExpanded="_filtersExpanded">
+                        <MudExpansionPanel Text="Signal Filters" @bind-Expanded="_filtersExpanded">
                             <SignalFiltersSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Execution" @bind-IsExpanded="_execExpanded">
+                        <MudExpansionPanel Text="Execution" @bind-Expanded="_execExpanded">
                             <ExecutionSection />
                         </MudExpansionPanel>
-                        <MudExpansionPanel Text="Correlation Limits" @bind-IsExpanded="_corrExpanded">
+                        <MudExpansionPanel Text="Correlation Limits" @bind-Expanded="_corrExpanded">
                             <CorrelationSection />
                         </MudExpansionPanel>
                     </MudExpansionPanels>

@@ -3,9 +3,7 @@
 <div class="@WrapperClass d-flex align-center gap-2">
     <MudSlider T="decimal"
                Min="Min" Max="Max" Step="Step"
-               Value="Value"
-               ValueChanged="OnValueChanged"
-               Label="@Label"
+               @bind-Value="Value"
                Color="@SliderColor"
                Class="flex-grow-1">
         @Value.ToString(Format)
@@ -20,7 +18,6 @@
     [Parameter, EditorRequired] public decimal Max { get; set; }
     [Parameter] public decimal Step { get; set; } = 1;
     [Parameter, EditorRequired] public decimal Value { get; set; }
-    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
     [Parameter] public string Label { get; set; } = "";
     [Parameter] public string Format { get; set; } = "G";
     [Parameter] public decimal[] GreenUpTo { get; set; } = [];
@@ -41,11 +38,5 @@
         foreach (var g in GreenUpTo) if (Value <= g) return "green";
         foreach (var a in AmberUpTo) if (Value <= a) return "amber";
         return (GreenUpTo.Length == 0 && AmberUpTo.Length == 0) ? "green" : "red";
-    }
-
-    private async Task OnValueChanged(decimal v)
-    {
-        Value = v;
-        if (ValueChanged.HasDelegate) await ValueChanged.InvokeAsync(v);
     }
 }

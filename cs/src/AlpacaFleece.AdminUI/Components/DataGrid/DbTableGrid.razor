@@ -69,8 +69,8 @@
                     @if (col.Hideable)
                     {
                         <MudCheckBox T="bool"
-                            Checked="@(!_hiddenColumns.Contains(col.PropertyName))"
-                            CheckedChanged="@((bool isVisible) => ToggleColumnVisibility(col.PropertyName, isVisible))"
+                            Value="@(!_hiddenColumns.Contains(col.PropertyName))"
+                            ValueChanged="@((bool isVisible) => ToggleColumnVisibility(col.PropertyName, isVisible))"
                             Label="@col.Title" />
                     }
                 }
@@ -107,7 +107,6 @@
 
                 <TemplateColumn T="TItem"
                                 Title="@col.Title"
-                                Field="@col.PropertyName"
                                 Hideable="@col.Hideable"
                                 Sortable="@col.Sortable"
                                 Filterable="@col.Filterable"

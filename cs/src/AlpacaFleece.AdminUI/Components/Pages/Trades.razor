@@ -109,10 +109,9 @@ else
             <MudText Typo="Typo.subtitle2" Class="mb-2">Equity Curve (30 days)</MudText>
             <MudChart ChartType="ChartType.Line"
                       ChartSeries="@_equitySeries"
-                      XAxisLabels="@_equityLabels"
                       Width="100%"
                       Height="200px"
-                      ChartOptions="_chartOpts" />
+                      ChartOptions="@GetChartOptions()" />
         </MudPaper>
     }
 }
@@ -125,10 +124,6 @@ else
 
     private List<ChartSeries<double>> _equitySeries = [];
     private string[] _equityLabels = [];
-    private readonly ChartOptions _chartOpts = new()
-    {
-        ChartPalette = ["#00BFA5"]
-    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -171,5 +166,13 @@ else
             _error = $"Failed to load trades: {ex.Message}";
             return new GridData<TradeEntity> { Items = [], TotalItems = 0 };
         }
+    }
+
+    private ChartOptions GetChartOptions()
+    {
+        return new ChartOptions
+        {
+            ChartPalette = ["#00BFA5"]
+        };
     }
 }
