@@ -10,7 +10,6 @@ namespace AlpacaFleece.AdminUI.Services;
 /// </summary>
 public sealed class ServiceManagerService(
     IOptions<AdminOptions> opts,
-    IHttpClientFactory httpClientFactory,
     ILogger<ServiceManagerService> logger)
 {
     private const string DockerApiVersion = "v1.47";

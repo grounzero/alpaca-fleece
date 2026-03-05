@@ -65,8 +65,10 @@ public sealed partial class LogService(
 
         try
         {
-            var allRaw = await File.ReadAllLinesAsync(path, ct);
-            var all = ParseLines(allRaw);
+            // Read a bounded amount of lines (estimate: pageSize * requested page + buffer for filtering)
+            var estimatedReadSize = Math.Max(pageSize * 10, 10000);
+            var rawLines = await ReadLastLinesAsync(path, estimatedReadSize, ct);
+            var all = ParseLines(rawLines);
 
             if (!string.IsNullOrWhiteSpace(level) && level != "All")
                 all = all.Where(l => l.Level.Equals(level, StringComparison.OrdinalIgnoreCase)).ToList();

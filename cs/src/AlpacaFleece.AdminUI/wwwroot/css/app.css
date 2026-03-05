@@ -8,6 +8,16 @@ body {
 
 .fw-600 { font-weight: 600; }
 
+/* ─── Animations ──────────────────────────────────────────── */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin-animation {
+    animation: spin 1s linear infinite;
+}
+
 /* ─── P&L colours ────────────────────────────────────────── */
 .pnl-positive { color: #00BFA5 !important; }
 .pnl-negative { color: #EF5350 !important; }

@@ -20,5 +20,15 @@
     <script src="js/device-interop.js"></script>
     <script src="js/highlight-interop.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+    <script>
+        Blazor.start({
+            reconnectionHandler: {
+                onConnectionDown: () => console.log('Connection lost'),
+                onConnectionUp: () => console.log('Connection restored'),
+                getMaxReconnectAttempts: () => 10,
+                getReconnectDelay: () => 1000
+            }
+        });
+    </script>
 </body>
 </html>

@@ -30,7 +30,7 @@
                 <MudSelectItem Value="@("accepted")">Accepted</MudSelectItem>
                 <MudSelectItem Value="@("partially_filled")">Partially Filled</MudSelectItem>
                 <MudSelectItem Value="@("filled")">Filled</MudSelectItem>
-                <MudSelectItem Value="@("cancelled")">Cancelled</MudSelectItem>
+                <MudSelectItem Value="@("canceled")">Cancelled</MudSelectItem>
                 <MudSelectItem Value="@("rejected")">Rejected</MudSelectItem>
             </MudSelect>
         </MudItem>
@@ -178,7 +178,7 @@
         "accepted"       => Color.Info,
         "submitted"      => Color.Info,
         "partially_filled" => Color.Warning,
-        "cancelled" or "rejected" or "expired" => Color.Error,
+        "canceled" or "rejected" or "expired" => Color.Error,
         _                => Color.Default
     };
 }

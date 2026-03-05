@@ -150,7 +150,22 @@ public sealed class ConfigService(
             CleanOldBackups(path);
         }
 
-        var node = BuildJsonNode(draft);
+        // Read existing JSON to preserve credentials if draft has blanks
+        JsonNode? existingNode = null;
+        if (File.Exists(path))
+        {
+            try
+            {
+                var existingJson = await File.ReadAllTextAsync(path, ct);
+                existingNode = JsonNode.Parse(existingJson);
+            }
+            catch (Exception ex)
+            {
+                logger.LogDebug(ex, "Could not read existing config for credential preservation");
+            }
+        }
+
+        var node = BuildJsonNode(draft, existingNode);
         var json = node.ToJsonString(JsonOpts);
         var tmp = path + ".tmp";
 
@@ -220,14 +235,22 @@ public sealed class ConfigService(
         }
     }
 
-    private static JsonNode BuildJsonNode(ConfigDraft d)
+    private static JsonNode BuildJsonNode(ConfigDraft d, JsonNode? existingNode = null)
     {
+        // Preserve existing credentials if draft values are blank (blank means unchanged)
+        var apiKey = string.IsNullOrWhiteSpace(d.ApiKey)
+            ? GetExistingValue(existingNode, "Broker", "ApiKey", "")
+            : d.ApiKey;
+        var secretKey = string.IsNullOrWhiteSpace(d.SecretKey)
+            ? GetExistingValue(existingNode, "Broker", "SecretKey", "")
+            : d.SecretKey;
+
         return new JsonObject
         {
             ["Broker"] = new JsonObject
             {
-                ["ApiKey"] = d.ApiKey,
-                ["SecretKey"] = d.SecretKey,
+                ["ApiKey"] = apiKey,
+                ["SecretKey"] = secretKey,
                 ["IsPaperTrading"] = d.IsPaperTrading,
                 ["AllowLiveTrading"] = d.AllowLiveTrading,
                 ["KillSwitch"] = d.KillSwitch,
@@ -326,6 +349,13 @@ public sealed class ConfigService(
     {
         if (el.TryGetProperty(key, out var v) && v.ValueKind == JsonValueKind.True) return true;
         if (el.TryGetProperty(key, out v) && v.ValueKind == JsonValueKind.False) return false;
+        return fallback;
+    }
+
+    private static string GetExistingValue(JsonNode? node, string section, string key, string fallback)
+    {
+        if (node?[section]?[key]?.GetValue<string>() is { } value && !string.IsNullOrEmpty(value))
+            return value;
         return fallback;
     }
 }

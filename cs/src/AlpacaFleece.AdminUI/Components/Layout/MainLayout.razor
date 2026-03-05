@@ -15,6 +15,23 @@
         <MudText Typo="Typo.subtitle1" Class="ml-2 fw-600">AlpacaFleece</MudText>
         <MudText Typo="Typo.caption" Class="ml-1 mud-text-secondary">Admin</MudText>
         <MudSpacer />
+
+        @if (_connectionState is not ConnectionState.Connected)
+        {
+            <div class="d-flex align-center gap-2 mr-3">
+                @if (_connectionState is ConnectionState.Connecting)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CloudSync" Size="Size.Small" Class="spin-animation" />
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Reconnecting…</MudText>
+                }
+                else if (_connectionState is ConnectionState.Disconnected)
+                {
+                    <MudIcon Icon="@Icons.Material.Filled.CloudOff" Size="Size.Small" />
+                    <MudText Typo="Typo.caption" Class="mud-error-text">Disconnected</MudText>
+                }
+            </div>
+        }
+
         <MudIconButton Icon="@Icons.Material.Outlined.Logout"
                        Color="Color.Inherit"
                        Href="/logout"
@@ -41,7 +58,16 @@
 </MudLayout>
 
 @code {
+    private enum ConnectionState { Connected, Connecting, Disconnected }
+
     private bool _drawerOpen = true;
+    private ConnectionState _connectionState = ConnectionState.Connected;
+
+    protected override void OnInitialized()
+    {
+        // Listen to circuit reconnecting events
+        // Blazor circuit will handle reconnection automatically
+    }
 
     private readonly MudTheme _theme = new()
     {

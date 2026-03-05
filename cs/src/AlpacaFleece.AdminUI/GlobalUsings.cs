@@ -16,4 +16,3 @@ global using AlpacaFleece.AdminUI.Models;
 global using AlpacaFleece.AdminUI.Services;
 global using AlpacaFleece.AdminUI.Services.DataGrid;
 global using AlpacaFleece.AdminUI.Components.DataGrid;
-global using Microsoft.AspNetCore.SignalR.Client;
