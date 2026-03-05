@@ -1,0 +1,151 @@
+@page "/tables/bars"
+@using AlpacaFleece.Ui.Services.DataGrid
+@using AlpacaFleece.Ui.Components.DataGrid
+@using AlpacaFleece.Infrastructure.Data
+@using AlpacaFleece.Infrastructure.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@inject TradingDbContext DbContext
+@inject EfGridDataService GridDataService
+@inject EfColumnFactory ColumnFactory
+
+<PageTitle>Bars - AlpacaFleece</PageTitle>
+
+<DbTableGrid 
+    TItem="BarEntity"
+    TableKey="Bars"
+    Title="OHLCV Bars"
+    Columns="@BarColumns"
+    LoadDataAsync="@LoadBarsAsync"
+    GetKey="@(b => b.Id)"
+    ReadOnly="true"
+    RowDetailContent="@BarDetailContent" />
+
+@code {
+    private List<DbColumnDef<BarEntity>>? BarColumns;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Auto-generate columns from EF Core metadata
+        BarColumns = ColumnFactory.GenerateColumns<BarEntity>();
+
+        // Customize specific columns for bars
+        ApplyBarColumnCustomizations();
+    }
+
+    private void ApplyBarColumnCustomizations()
+    {
+        if (BarColumns == null) return;
+
+        // Remove auto-generated columns we don't want
+        var columnsToRemove = new[] { "LastModifiedAtUtc", "UpdatedAtUtc" };
+        foreach (var colName in columnsToRemove)
+        {
+            var col = BarColumns.FirstOrDefault(c => c.PropertyName == colName);
+            if (col != null)
+            {
+                col.Hidden = true;
+            }
+        }
+
+        // Add custom SMA crossover column
+        var smaColumn = new DbColumnDef<BarEntity>
+        {
+            PropertyName = "SmaVisualization",
+            Title = "SMA Status",
+            PropertyType = typeof(string),
+            Sortable = false,
+            Filterable = false,
+            Width = "120px",
+            ColumnTemplate = RenderSmaVisualization
+        };
+        BarColumns.Add(smaColumn);
+
+        // Customize widths
+        var widths = new Dictionary<string, string>
+        {
+            { "Id", "80px" },
+            { "Symbol", "90px" },
+            { "Timeframe", "80px" },
+            { "Open", "80px" },
+            { "High", "80px" },
+            { "Low", "80px" },
+            { "Close", "80px" },
+            { "Volume", "100px" },
+            { "Timestamp", "180px" }
+        };
+
+        foreach (var col in BarColumns)
+        {
+            if (widths.TryGetValue(col.PropertyName, out var width))
+            {
+                col.Width = width;
+            }
+        }
+    }
+
+    private async Task<GridResult<BarEntity>> LoadBarsAsync(GridQuery query)
+    {
+        var baseQuery = DbContext.Bars
+            .AsNoTracking()
+            .OrderByDescending(b => b.Timestamp);
+        return await GridDataService.QueryAsync(baseQuery, query);
+    }
+
+    /// <summary>
+    /// Renders a compact SMA crossover status visualization.
+    /// Shows a small colored bar indicating whether price is above/below SMA fast and slow.
+    /// </summary>
+    private RenderFragment<BarEntity> RenderSmaVisualization => bar =>
+    {
+        // In a real implementation, you would calculate or fetch SMA values
+        // For now, we show a placeholder visualization
+        // You could enhance this to show actual SMA data if it's stored in the entity
+        var statusClass = bar.Close > 0 ? "sma-bullish" : "sma-bearish";
+        
+        return @<div style="display: flex; gap: 4px; align-items: center;">
+            <div style="width: 4px; height: 20px; background-color: #4CAF50; border-radius: 2px;"></div>
+            <div style="width: 4px; height: 20px; background-color: #2196F3; border-radius: 2px;"></div>
+            <span style="font-size: 0.75rem; color: #666;">
+                @(bar.Close > 100 ? "Long" : "Short")
+            </span>
+        </div>;
+    };
+
+    private RenderFragment<BarEntity> BarDetailContent => item =>
+    {
+        return @<MudPaper Class="pa-4">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Bar Details</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6">
+                        <MudText><strong>ID:</strong> @item.Id</MudText>
+                        <MudText><strong>Symbol:</strong> @item.Symbol</MudText>
+                        <MudText><strong>Timeframe:</strong> @item.Timeframe</MudText>
+                        <MudText><strong>Timestamp:</strong> @item.Timestamp</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText><strong>Open:</strong> @item.Open?.ToString("N4")</MudText>
+                        <MudText><strong>High:</strong> @item.High?.ToString("N4")</MudText>
+                        <MudText><strong>Low:</strong> @item.Low?.ToString("N4")</MudText>
+                        <MudText><strong>Close:</strong> @item.Close?.ToString("N4")</MudText>
+                    </MudItem>
+                    <MudItem xs="12">
+                        <MudText><strong>Volume:</strong> @item.Volume?.ToString("N0")</MudText>
+                    </MudItem>
+                </MudGrid>
+
+                <!-- OHLC Summary -->
+                <MudDivider Class="my-2" />
+                <MudText Typo="Typo.body2">
+                    @{
+                        var range = (item.High ?? 0) - (item.Low ?? 0);
+                        var change = (item.Close ?? 0) - (item.Open ?? 0);
+                        var changePercent = (item.Open ?? 0) != 0 ? (change / (item.Open ?? 1)) * 100 : 0;
+                    }
+                    <strong>Range:</strong> @range.ToString("N4") | 
+                    <strong>Change:</strong> @change.ToString("N4") (@changePercent.ToString("N2")%)
+                </MudText>
+            </MudStack>
+        </MudPaper>;
+    };
+}

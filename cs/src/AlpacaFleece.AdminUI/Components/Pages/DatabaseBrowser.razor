@@ -1,13 +1,17 @@
 @page "/database"
 @attribute [Authorize]
+@using AlpacaFleece.AdminUI.Services.DataGrid
+@using AlpacaFleece.AdminUI.Components.DataGrid
+@using Microsoft.AspNetCore.Components.Rendering
 @inject AdminDbService DbService
+@inject AdminGridDataService GridDataService
 @inject ISnackbar Snackbar
 
 <PageTitle>Database — AlpacaFleece Admin</PageTitle>
 
 <MudText Typo="Typo.h5" Class="mb-1">Database</MudText>
 <MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
-    Browse all database tables (read-only).
+    Browse all database tables with advanced filtering, sorting, and searching (read-only).
 </MudText>
 
 <MudGrid Spacing="3">
@@ -38,166 +42,96 @@
         </MudPaper>
     </MudItem>
 
-    @* ── Data panel ── *@
+    @* ── Data Grid Panel ── *@
     <MudItem xs="12" md="9">
         @if (_selected is null)
         {
             <MudAlert Severity="Severity.Info">Select a table on the left to browse its data.</MudAlert>
         }
+        else if (_dataGridColumns == null || _dataGridColumns.Count == 0)
+        {
+            <MudAlert Severity="Severity.Warning">No columns found for this table.</MudAlert>
+        }
         else
         {
-            <MudPaper Elevation="2" Class="pa-3">
-                <div class="d-flex align-center justify-space-between mb-2">
-                    <MudText Typo="Typo.subtitle1">@_selected.DisplayName</MudText>
-                    <MudIconButton Icon="@Icons.Material.Filled.Refresh"
-                                   Size="Size.Small"
-                                   OnClick="@ReloadData"
-                                   Disabled="_dataLoading" />
-                </div>
-
-                @if (_dataLoading)
-                {
-                    <MudProgressLinear Indeterminate Color="Color.Primary" />
-                }
-                else if (_dataError is not null)
-                {
-                    <MudAlert Severity="Severity.Error">@_dataError</MudAlert>
-                }
-                else if (_rows.Count == 0)
-                {
-                    <MudText Class="mud-text-secondary">No rows in this table.</MudText>
-                }
-                else
-                {
-                    @* Dynamic column headers *@
-                    <div style="overflow-x:auto">
-                        <MudTable T="object"
-                                  Items="_rows"
-                                  Dense="true"
-                                  Hover="true"
-                                  Striped="true"
-                                  FixedHeader
-                                  Height="450px">
-                            <HeaderContent>
-                                @foreach (var col in _columns)
-                                {
-                                    <MudTh>@col</MudTh>
-                                }
-                            </HeaderContent>
-                            <RowTemplate>
-                                @foreach (var col in _columns)
-                                {
-                                    <MudTd>
-                                        <MudText Typo="Typo.caption">
-                                            @FormatValue(GetPropValue(context, col))
-                                        </MudText>
-                                    </MudTd>
-                                }
-                            </RowTemplate>
-                        </MudTable>
-                    </div>
-
-                    @* Paging controls *@
-                    <div class="d-flex align-center justify-space-between mt-2">
-                        <MudText Typo="Typo.caption" Class="mud-text-secondary">
-                            Showing @((_page - 1) * PageSize + 1)–@(Math.Min(_page * PageSize, _totalRows)) of @_totalRows rows
-                        </MudText>
-                        <div>
-                            <MudIconButton Icon="@Icons.Material.Filled.ChevronLeft"
-                                           Size="Size.Small"
-                                           Disabled="@(_page <= 1)"
-                                           OnClick="@PrevPage" />
-                            <MudText Typo="Typo.caption" Style="display:inline">Page @_page</MudText>
-                            <MudIconButton Icon="@Icons.Material.Filled.ChevronRight"
-                                           Size="Size.Small"
-                                           Disabled="@(_page * PageSize >= _totalRows)"
-                                           OnClick="@NextPage" />
-                        </div>
-                    </div>
-                }
-            </MudPaper>
+            @* DbTableGrid - dynamic table viewer *@
+            @(RenderDbTableGrid())
         }
     </MudItem>
 </MudGrid>
 
 @code {
-    private const int PageSize = 25;
-
     private List<TableInfo> _tables = [];
     private TableInfo? _selected;
     private bool _tableLoading = true;
-    private bool _dataLoading;
-    private string? _dataError;
-
-    private List<object> _rows = [];
-    private IReadOnlyList<string> _columns = [];
-    private int _totalRows;
-    private int _page = 1;
+    
+    private IReadOnlyList<DbColumnDef<object>>? _dataGridColumns;
 
     protected override async Task OnInitializedAsync()
     {
-        try { _tables = (await DbService.GetTableInfoAsync()).ToList(); }
-        catch (Exception ex) { Snackbar.Add($"Failed to load table list: {ex.Message}", Severity.Error); }
-        finally { _tableLoading = false; }
+        try 
+        { 
+            _tables = (await DbService.GetTableInfoAsync()).ToList(); 
+        }
+        catch (Exception ex) 
+        { 
+            Snackbar.Add($"Failed to load table list: {ex.Message}", Severity.Error); 
+        }
+        finally 
+        { 
+            _tableLoading = false; 
+        }
     }
 
     private async Task SelectTable(TableInfo? t)
     {
         _selected = t;
-        _page = 1;
-        await ReloadData();
+        
+        // Load column definitions for the selected table
+        if (t != null)
+        {
+            try
+            {
+                _dataGridColumns = await GridDataService.GetColumnsAsync(t.Name);
+            }
+            catch (Exception ex)
+            {
+                Snackbar.Add($"Failed to load columns: {ex.Message}", Severity.Error);
+                _dataGridColumns = new List<DbColumnDef<object>>();
+            }
+        }
     }
 
-    private async Task ReloadData()
+    /// <summary>
+    /// Callback for DbTableGrid to load data asynchronously.
+    /// </summary>
+    private async Task<GridResult<object>> LoadGridDataAsync(GridQuery query)
     {
-        if (_selected is null) return;
-        _dataLoading = true;
-        _dataError = null;
-        _rows = [];
+        if (_selected == null)
+        {
+            return new GridResult<object>(new List<object>(), 0);
+        }
+
         try
         {
-            var (rows, total, columns) =
-                await DbService.GetTableDataAsync(_selected.Name, _page, PageSize);
-            _rows = rows.ToList();
-            _totalRows = total;
-            _columns = columns;
+            var result = await GridDataService.QueryAsync(_selected.Name, query);
+            return result;
         }
         catch (Exception ex)
         {
-            _dataError = $"Failed to load data: {ex.Message}";
-        }
-        finally
-        {
-            _dataLoading = false;
+            Snackbar.Add($"Error loading data: {ex.Message}", Severity.Error);
+            return new GridResult<object>(new List<object>(), 0);
         }
     }
 
-    private async Task PrevPage()
+    private RenderFragment RenderDbTableGrid() => builder =>
     {
-        if (_page <= 1) return;
-        _page--;
-        await ReloadData();
-    }
-
-    private async Task NextPage()
-    {
-        if (_page * PageSize >= _totalRows) return;
-        _page++;
-        await ReloadData();
-    }
-
-    private static object? GetPropValue(object obj, string propName)
-    {
-        try { return obj.GetType().GetProperty(propName)?.GetValue(obj); }
-        catch { return null; }
-    }
-
-    private static string FormatValue(object? v) => v switch
-    {
-        null => "—",
-        DateTimeOffset dto => dto.LocalDateTime.ToString("g"),
-        DateTime dt => dt.ToString("g"),
-        bool b => b ? "✓" : "✗",
-        _ => v.ToString() ?? "—"
+        builder.OpenComponent<DbTableGrid<object>>(0);
+        builder.AddAttribute(1, "TableKey", $"database_{_selected!.Name}");
+        builder.AddAttribute(2, "Title", _selected!.DisplayName);
+        builder.AddAttribute(3, "Columns", _dataGridColumns);
+        builder.AddAttribute(4, "LoadDataAsync", (Func<GridQuery, Task<GridResult<object>>>)LoadGridDataAsync);
+        builder.AddAttribute(5, "ReadOnly", true);
+        builder.CloseComponent();
     };
 }

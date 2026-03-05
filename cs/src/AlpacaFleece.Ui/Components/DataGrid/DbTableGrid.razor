@@ -1,0 +1,192 @@
+@namespace AlpacaFleece.Ui.Components.DataGrid
+@typeparam TItem where TItem : class
+@using AlpacaFleece.Ui.Services.DataGrid
+@using MudBlazor
+
+<MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4">
+    <!-- Toolbar -->
+    <MudPaper Class="mb-4 pa-4">
+        <MudGrid>
+            <MudItem xs="12" sm="6">
+                <MudStack Row="true" Spacing="2">
+                    <MudText Typo="Typo.h6">@Title</MudText>
+                    <MudChip>@CurrentResult?.TotalItems records</MudChip>
+                </MudStack>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudStack Row="true" Spacing="2" Style="justify-content: flex-end;">
+                    <MudIconButton Icon="@Icons.Material.Filled.Refresh" OnClick="@RefreshData" Title="Refresh" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Settings" OnClick="@ToggleColumnsPanel" Title="Columns" />
+                    <MudIconButton Icon="@Icons.Material.Filled.RestartAlt" OnClick="@ResetLayout" Title="Reset Layout" />
+                    @if (!ReadOnly && CreateAsync != null)
+                    {
+                        <MudIconButton Icon="@Icons.Material.Filled.Add" OnClick="@OpenCreateDialog" Title="Add New" />
+                    }
+                </MudStack>
+            </MudItem>
+        </MudGrid>
+
+        <!-- Search Bar -->
+        <MudStack Row="true" Spacing="2" Class="mt-3">
+            <MudTextField 
+                @bind-Value="@CurrentQuery.SearchText" 
+                Placeholder="Search..." 
+                Variant="Variant.Outlined"
+                Size="Size.Small"
+                OnKeyUp="@OnSearchKeyUp"
+                Class="flex-grow-1"
+                ClearButton="true" />
+            @ToolBarExtraContent
+        </MudStack>
+
+        <!-- Selected Rows Bulk Actions -->
+        @if (SelectedKeys.Count > 0 && !ReadOnly)
+        {
+            <MudAlert Severity="Severity.Info" Class="mt-3">
+                <MudStack Row="true">
+                    <MudText>@SelectedKeys.Count row@(SelectedKeys.Count != 1 ? "s" : "") selected</MudText>
+                    @if (DeleteAsync != null)
+                    {
+                        <MudButton Size="Size.Small" OnClick="@DeleteSelectedRows" Color="Color.Error">Delete</MudButton>
+                    }
+                </MudStack>
+            </MudAlert>
+        }
+
+        @ToolBarExtraContent
+    </MudPaper>
+
+    <!-- Columns Panel (Desktop) -->
+    @if (ShowColumnPanel)
+    {
+        <ColumnsPanel TItem="@typeof(TItem)" Columns="@Columns" OnClose="@(() => ShowColumnPanel = false)" />
+    }
+
+    <!-- Data Grid -->
+    <MudDataGrid @ref="@Grid"
+                 T="@TItem"
+                 Items="@CurrentResult?.Items"
+                 Loading="@IsLoading"
+                 Virtualize="true"
+                 Hover="true"
+                 Dense="false"
+                 Striped="true"
+                 Bordered="false"
+                 ColumnResizeMode="ResizeMode.Container"
+                 DragDropColumnReordering="true"
+                 ShowColumnOptions="true"
+                 SelectionMode="SelectionMode.Multiple"
+                 SelectedItemsChanged="@OnSelectedItemsChanged"
+                 ServerData="@LoadServerDataAsync"
+                 OnRowClick="@OnRowClick"
+                 RowClassFunc="@RowClassFunc"
+                 RowStyleFunc="@RowStyleFunc"
+                 SortMode="SortMode.Multiple"
+                 FilterMode="DataGridFilterMode.ColumnFilterRow">
+
+        <!-- Loading Template -->
+        <LoadingContent>
+            <MudStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 400px;">
+                <MudProgressCircular Color="Color.Primary" Indeterminate="true" />
+                <MudText>Loading data...</MudText>
+            </MudStack>
+        </LoadingContent>
+
+        <!-- No Records Template -->
+        <NoRecordsContent>
+            <MudStack AlignItems="AlignItems.Center" JustifyContent="JustifyContent.Center" Style="height: 400px;">
+                <MudIcon Icon="@Icons.Material.Filled.Info" Size="Size.Large" />
+                <MudText Typo="Typo.body1">No matching records found</MudText>
+                @if (CurrentQuery.Filters.Count > 0 || !string.IsNullOrEmpty(CurrentQuery.SearchText))
+                {
+                    <MudButton Size="Size.Small" OnClick="@ClearFilters" Variant="Variant.Outlined" Color="Color.Primary">Clear Filters</MudButton>
+                }
+                <MudButton Size="Size.Small" OnClick="@RefreshData" Variant="Variant.Outlined">Refresh</MudButton>
+            </MudStack>
+        </NoRecordsContent>
+
+        <!-- Detail Row / Expandable Row -->
+        @if (RowDetailContent != null)
+        {
+            <DetailTemplate>
+                @RowDetailContent(context)
+            </DetailTemplate>
+        }
+
+        <!-- Columns -->
+        @foreach (var column in Columns.Where(c => !c.Hidden))
+        {
+            <!-- Dynamic PropertyColumn -->
+            @if (column.ColumnTemplate == null)
+            {
+                <PropertyColumn 
+                    T="TItem"
+                    Property="@GetPropertyExpression(column.PropertyName)"
+                    Title="@column.Title"
+                    Sortable="@column.Sortable"
+                    Filterable="@column.Filterable"
+                    Hideable="@column.Hideable"
+                    Resizable="@column.Resizable"
+                    Width="@column.Width"
+                    Style="@($"text-align: {column.Alignment.ToLower()};")"
+                    Format="@column.Format" />
+            }
+            else
+            {
+                <!-- TemplateColumn with custom rendering -->
+                <TemplateColumn 
+                    T="TItem"
+                    Title="@column.Title"
+                    Sortable="@column.Sortable"
+                    Filterable="@column.Filterable"
+                    Hideable="@column.Hideable"
+                    Resizable="@column.Resizable"
+                    Width="@column.Width"
+                    Style="@($"text-align: {column.Alignment.ToLower()};">">
+                    <CellTemplate>
+                        @column.ColumnTemplate(context.Item)
+                    </CellTemplate>
+                </TemplateColumn>
+            }
+        }
+
+        <!-- Actions Column -->
+        @if (!ReadOnly && (UpdateAsync != null || DeleteAsync != null))
+        {
+            <TemplateColumn Title="Actions" Width="150px" Sortable="false" Filterable="false">
+                <CellTemplate>
+                    <MudIconButton 
+                        Size="Size.Small"
+                        Icon="@Icons.Material.Filled.Edit"
+                        OnClick="@(() => OpenEditDialog(context.Item))"
+                        Title="Edit" />
+                    @if (DeleteAsync != null)
+                    {
+                        <MudIconButton 
+                            Size="Size.Small"
+                            Icon="@Icons.Material.Filled.Delete"
+                            OnClick="@(() => DeleteRow(context.Item))"
+                            Title="Delete"
+                            Color="Color.Error" />
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+        }
+
+        <!-- Pagination -->
+        <PagerContent>
+            <MudDataGridPager T="TItem" />
+        </PagerContent>
+    </MudDataGrid>
+</MudContainer>
+
+<!-- Edit Dialog -->
+@if (EditingItem != null)
+{
+    <EditDialog TItem="@TItem" 
+                Item="@EditingItem" 
+                Columns="@Columns"
+                IsNew="@IsEditingNew"
+                OnSave="@SaveEditingItem"
+                OnCancel="@CloseEditDialog" />
+}

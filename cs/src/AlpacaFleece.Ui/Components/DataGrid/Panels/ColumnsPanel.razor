@@ -1,0 +1,30 @@
+@namespace AlpacaFleece.Ui.Components.DataGrid
+@using MudBlazor
+
+<MudDrawer @bind-Open="@DrawerOpen" Anchor="Anchor.Right" Width="300px" Elevation="1">
+    <MudDrawerHeader>
+        <MudText Typo="Typo.h6">Columns</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Close" OnClick="@OnClose" />
+    </MudDrawerHeader>
+
+    <MudDivider />
+
+    <MudList Style="padding: 0;">
+        @foreach (var column in Columns.Cast<dynamic>())
+        {
+            <MudListItem Icon="@Icons.Material.Filled.DragIndicator" InitiallyExpanded="false">
+                <MudCheckBox 
+                    @bind-Checked="@column.Hidden" 
+                    Label="@column.Title" 
+                    Dense="true" />
+            </MudListItem>
+        }
+    </MudList>
+
+    <MudDivider Class="my-4" />
+
+    <MudStack Spacing="2">
+        <MudButton Variant="Variant.Outlined" FullWidth="true" OnClick="@OnClose">Done</MudButton>
+    </MudStack>
+</MudDrawer>

@@ -1,7 +1,9 @@
 using MudBlazor.Services;
 using Serilog;
+using Blazored.LocalStorage;
 using AlpacaFleece.AdminUI.Hubs;
 using AlpacaFleece.AdminUI.Services;
+using AlpacaFleece.AdminUI.Services.DataGrid;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -67,6 +69,13 @@ try
         config.SnackbarConfiguration.ShowCloseIcon = true;
         config.SnackbarConfiguration.VisibleStateDuration = 4000;
     });
+
+    // Blazored LocalStorage for DataGrid state persistence
+    builder.Services.AddBlazoredLocalStorage();
+
+    // DataGrid services (for admin database browser)
+    builder.Services.AddScoped<IGridStateStore, LocalStorageGridStateStore>();
+    builder.Services.AddScoped<AdminGridDataService>();
 
     // HTTP client (for AlpacaAssetService)
     builder.Services.AddHttpClient();

@@ -1,0 +1,99 @@
+@page "/tables/trades"
+@using AlpacaFleece.Ui.Services.DataGrid
+@using AlpacaFleece.Ui.Components.DataGrid
+@using AlpacaFleece.Infrastructure.Data
+@using AlpacaFleece.Infrastructure.Data.Entities
+@using Microsoft.EntityFrameworkCore
+@inject TradingDbContext DbContext
+@inject EfGridDataService GridDataService
+@inject EfColumnFactory ColumnFactory
+
+<PageTitle>Trades - AlpacaFleece</PageTitle>
+
+<DbTableGrid 
+    TItem="TradeEntity"
+    TableKey="Trades"
+    Title="Trades"
+    Columns="@TradeColumns"
+    LoadDataAsync="@LoadTradesAsync"
+    GetKey="@(t => t.Id)"
+    ReadOnly="true"
+    RowDetailContent="@TradeDetailContent" />
+
+@code {
+    private List<DbColumnDef<TradeEntity>>? TradeColumns;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Auto-generate columns from EF Core metadata
+        TradeColumns = ColumnFactory.GenerateColumns<TradeEntity>();
+
+        // Customize specific columns
+        ApplyTradeColumnCustomizations();
+    }
+
+    private void ApplyTradeColumnCustomizations()
+    {
+        if (TradeColumns == null) return;
+
+        // Hide certain columns by default
+        var hiddenCols = new[] { "LastModifiedAtUtc" };
+        foreach (var col in TradeColumns.Where(c => hiddenCols.Contains(c.PropertyName)))
+        {
+            col.Hidden = true;
+        }
+
+        // Set widths for specific columns
+        var widths = new Dictionary<string, string>
+        {
+            { "Id", "80px" },
+            { "Symbol", "100px" },
+            { "Direction", "90px" },
+            { "Quantity", "90px" },
+            { "EntryPrice", "100px" },
+            { "ExitPrice", "100px" },
+            { "PnL", "90px" },
+            { "ReturnPercent", "100px" },
+            { "Duration", "100px" },
+            { "Timestamp", "180px" }
+        };
+
+        foreach (var col in TradeColumns)
+        {
+            if (widths.TryGetValue(col.PropertyName, out var width))
+            {
+                col.Width = width;
+            }
+        }
+    }
+
+    private async Task<GridResult<TradeEntity>> LoadTradesAsync(GridQuery query)
+    {
+        var baseQuery = DbContext.Trades.AsNoTracking();
+        return await GridDataService.QueryAsync(baseQuery, query);
+    }
+
+    private RenderFragment<TradeEntity> TradeDetailContent => item =>
+    {
+        return @<MudPaper Class="pa-4">
+            <MudStack Spacing="2">
+                <MudText Typo="Typo.h6">Trade Details</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="12" sm="6">
+                        <MudText><strong>ID:</strong> @item.Id</MudText>
+                        <MudText><strong>Symbol:</strong> @item.Symbol</MudText>
+                        <MudText><strong>Direction:</strong> @item.Direction</MudText>
+                        <MudText><strong>Quantity:</strong> @item.Quantity</MudText>
+                    </MudItem>
+                    <MudItem xs="12" sm="6">
+                        <MudText><strong>Entry Price:</strong> @item.EntryPrice?.ToString("N4")</MudText>
+                        <MudText><strong>Exit Price:</strong> @item.ExitPrice?.ToString("N4")</MudText>
+                        <MudText><strong>PnL:</strong> @item.PnL?.ToString("N2")</MudText>
+                        <MudText><strong>Return %:</strong> @item.ReturnPercent?.ToString("N2")</MudText>
+                    </MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.caption"><strong>Created:</strong> @item.Timestamp</MudText>
+            </MudStack>
+        </MudPaper>;
+    };
+}

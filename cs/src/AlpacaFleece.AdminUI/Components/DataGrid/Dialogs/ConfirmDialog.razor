@@ -1,0 +1,24 @@
+@namespace AlpacaFleece.AdminUI.Components.DataGrid
+@using MudBlazor
+@using MudBlazor.Components
+
+<MudDialog>
+    <DialogContent>
+        <MudText>@ContentText</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@Cancel" Variant="Variant.Outlined">Cancel</MudButton>
+        <MudButton OnClick="@Confirm" Variant="Variant.Filled" Color="Color.Error">Delete</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    public dynamic MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public string ContentText { get; set; } = "Are you sure?";
+
+    private void Cancel() => ((dynamic)MudDialog).Cancel();
+    private void Confirm() => ((dynamic)MudDialog).Close(DialogResult.Ok(true));
+}

@@ -1,0 +1,152 @@
+@namespace AlpacaFleece.Ui.Components.DataGrid
+@typeparam TItem where TItem : class
+@using AlpacaFleece.Ui.Services.DataGrid
+@using System.ComponentModel.DataAnnotations
+@using System.Reflection
+@using MudBlazor
+
+<MudDialog>
+    <DialogContent>
+        <MudForm @ref="@Form" Model="@Item" ValidateOnChange="true">
+            <MudStack Spacing="3">
+                @foreach (var column in Columns.Where(c => c.EditTemplate == null && !c.IsKey))
+                {
+                    <div>
+                        <MudTextField 
+                            T="string"
+                            Label="@column.Title"
+                            Value="@GetPropertyValue(Item, column.PropertyName)?.ToString() ?? string.Empty"
+                            ValueChanged="@((string val) => SetPropertyValue(Item, column.PropertyName, val))"
+                            Variant="Variant.Outlined"
+                            Margin="Margin.Dense"
+                            MaxLength="@(column.MaxLength ?? 500)"
+                            Validation="@GetValidation(column)" />
+                    </div>
+                }
+
+                <!-- Custom edit templates -->
+                @foreach (var column in Columns.Where(c => c.EditTemplate != null && !c.IsKey))
+                {
+                    <div>
+                        @column.EditTemplate(Item)
+                    </div>
+                }
+            </MudStack>
+        </MudForm>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="@Cancel" Variant="Variant.Outlined">Cancel</MudButton>
+        <MudButton OnClick="@Save" Variant="Variant.Filled" Color="Color.Primary">Save</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter]
+    MudDialogInstance MudDialog { get; set; } = null!;
+
+    [Parameter]
+    public TItem Item { get; set; } = null!;
+
+    [Parameter]
+    public IReadOnlyList<DbColumnDef<TItem>> Columns { get; set; } = new List<DbColumnDef<TItem>>();
+
+    [Parameter]
+    public bool IsNew { get; set; }
+
+    [Parameter]
+    public EventCallback<TItem> OnSave { get; set; }
+
+    [Parameter]
+    public EventCallback OnCancel { get; set; }
+
+    private MudForm? Form;
+
+    private void Cancel()
+    {
+        MudDialog.Cancel();
+    }
+
+    private async Task Save()
+    {
+        if (Form != null && await Form.Validate())
+        {
+            await OnSave.InvokeAsync(Item);
+            MudDialog.Close(DialogResult.Ok(Item));
+        }
+    }
+
+    private object? GetPropertyValue(TItem item, string propertyPath)
+    {
+        var parts = propertyPath.Split('.');
+        object? current = item;
+
+        foreach (var part in parts)
+        {
+            if (current == null)
+                return null;
+
+            var property = current.GetType().GetProperty(part, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            if (property == null)
+                return null;
+
+            current = property.GetValue(current);
+        }
+
+        return current;
+    }
+
+    private void SetPropertyValue(TItem item, string propertyPath, object? value)
+    {
+        var parts = propertyPath.Split('.');
+        object? current = item;
+
+        for (int i = 0; i < parts.Length - 1; i++)
+        {
+            var property = current?.GetType().GetProperty(parts[i], BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            if (property?.CanRead == true)
+            {
+                current = property.GetValue(current);
+            }
+        }
+
+        if (current != null)
+        {
+            var lastProp = current.GetType().GetProperty(parts[^1], BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+            if (lastProp?.CanWrite == true)
+            {
+                try
+                {
+                    lastProp.SetValue(current, Convert.ChangeType(value, lastProp.PropertyType));
+                }
+                catch
+                {
+                    // Conversion failed, skip
+                }
+            }
+        }
+    }
+
+    private object? GetValidation(DbColumnDef<TItem> column)
+    {
+        var type = typeof(TItem);
+        var prop = type.GetProperty(column.PropertyName, BindingFlags.IgnoreCase | BindingFlags.Public | BindingFlags.Instance);
+
+        if (prop?.GetCustomAttributes(typeof(ValidationAttribute), true).FirstOrDefault() is ValidationAttribute validationAttr)
+        {
+            return new Func<string, IEnumerable<string>>(value =>
+            {
+                var ctx = new ValidationContext(Item ?? new object()) { MemberName = column.PropertyName };
+                var results = new List<ValidationResult>();
+                
+                if (!validationAttr.IsValid(value))
+                {
+                    results.Add(new ValidationResult(validationAttr.ErrorMessage ?? "Invalid value"));
+                }
+
+                return results.Select(r => r.ErrorMessage ?? "Invalid");
+            });
+        }
+
+        return null;
+    }
+}
