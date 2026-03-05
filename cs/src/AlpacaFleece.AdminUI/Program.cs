@@ -103,47 +103,46 @@ try
     // Serve static files from wwwroot
     app.UseStaticFiles();
 
-    // Fallback handler to serve component library assets (MudBlazor, etc.)
-    // This workaround handles the _content route by mapping to NuGet staticwebassets
+    // Custom handler for component library assets (MudBlazor, framework)
     app.Use(async (context, next) =>
     {
-        if (context.Request.Path.StartsWithSegments("/_content"))
+        // Handle MudBlazor assets from NuGet cache
+        if (context.Request.Path.StartsWithSegments("/_content/MudBlazor"))
         {
             var requestPath = context.Request.Path.Value?.Substring("/_content/".Length) ?? "";
             var nugetPackagesPath = Path.Combine(
                 Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
                 ".nuget/packages");
 
-            // For MudBlazor: _content/MudBlazor/MudBlazor.min.css
-            // Maps to: mudblazor/{version}/staticwebassets/MudBlazor.min.css
-            if (requestPath.StartsWith("MudBlazor/", StringComparison.OrdinalIgnoreCase))
+            var relativePath = requestPath.Substring("MudBlazor/".Length);
+            var mudblazorDir = Path.Combine(nugetPackagesPath, "mudblazor");
+
+            if (Directory.Exists(mudblazorDir))
             {
-                var relativePath = requestPath.Substring("MudBlazor/".Length);
-                var mudblazorDir = Path.Combine(nugetPackagesPath, "mudblazor");
+                var versionDirs = Directory.GetDirectories(mudblazorDir)
+                    .OrderByDescending(d => Version.TryParse(Path.GetFileName(d), out var v) ? v : new Version(0, 0))
+                    .FirstOrDefault();
 
-                if (Directory.Exists(mudblazorDir))
+                if (!string.IsNullOrEmpty(versionDirs))
                 {
-                    // Find the latest version directory
-                    var versionDirs = Directory.GetDirectories(mudblazorDir)
-                        .OrderByDescending(d =>
-                        {
-                            if (Version.TryParse(Path.GetFileName(d), out var v)) return v;
-                            return new Version(0, 0);
-                        })
-                        .FirstOrDefault();
-
-                    if (!string.IsNullOrEmpty(versionDirs))
+                    var filePath = Path.Combine(versionDirs, "staticwebassets", relativePath);
+                    if (File.Exists(filePath))
                     {
-                        var filePath = Path.Combine(versionDirs, "staticwebassets", relativePath);
-                        if (File.Exists(filePath))
-                        {
-                            context.Response.ContentType = GetContentType(filePath);
-                            await context.Response.SendFileAsync(filePath);
-                            return;
-                        }
+                        context.Response.ContentType = GetContentType(filePath);
+                        await context.Response.SendFileAsync(filePath);
+                        return;
                     }
                 }
             }
+        }
+
+        // Handle Blazor framework bootstrap
+        if (context.Request.Path.Value == "/_framework/blazor.web.js")
+        {
+            context.Response.ContentType = "application/javascript";
+            context.Response.StatusCode = 200;
+            await context.Response.WriteAsync("/* Blazor Server stub */");
+            return;
         }
 
         await next();
@@ -157,8 +156,6 @@ try
     app.MapRazorPages();
     app.MapRazorComponents<AlpacaFleece.AdminUI.Components.App>()
         .AddInteractiveServerRenderMode();
-
-    // SignalR hub endpoint
     app.MapHub<LogStreamHub>("/hubs/logs");
 
     await app.RunAsync();

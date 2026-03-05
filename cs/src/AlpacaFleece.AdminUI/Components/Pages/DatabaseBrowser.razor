@@ -15,6 +15,7 @@
     Browse all database tables with advanced filtering, sorting, and column management.
 </MudText>
 
+
 <MudGrid Spacing="3">
     @* ── Table list panel ── *@
     <MudItem xs="12" md="3">
@@ -53,121 +54,115 @@
         }
         else
         {
-            @switch (_selected.Name)
+            @if (!_columnsGenerated)
             {
-                case "Trades":
-                    <DbTableGrid T="TradeEntity"
-                        TableKey="Trades"
-                        Title="Trades"
-                        Columns="@_tradesCols"
-                        ServerData="@LoadTrades"
-                        RowDetail="@TradeDetail" />
-                    break;
-
-                case "OrderIntents":
-                    <DbTableGrid T="OrderIntentEntity"
-                        TableKey="OrderIntents"
-                        Title="Order Intents"
-                        Columns="@_orderIntentsCols"
-                        ServerData="@LoadOrderIntents"
-                        RowDetail="@OrderIntentDetail" />
-                    break;
-
-                case "EquityCurve":
-                    <DbTableGrid T="EquityCurveEntity"
-                        TableKey="EquityCurve"
-                        Title="Equity Curve"
-                        Columns="@_equityCurveCols"
-                        ServerData="@LoadEquityCurve" />
-                    break;
-
-                case "BotState":
-                    <DbTableGrid T="BotStateEntity"
-                        TableKey="BotState"
-                        Title="Bot State"
-                        Columns="@_botStateCols"
-                        ServerData="@LoadBotState" />
-                    break;
-
-                case "Bars":
-                    <DbTableGrid T="BarEntity"
-                        TableKey="Bars"
-                        Title="Bars"
-                        Columns="@_barsCols"
-                        ServerData="@LoadBars" />
-                    break;
-
-                case "PositionSnapshots":
-                    <DbTableGrid T="PositionSnapshotEntity"
-                        TableKey="PositionSnapshots"
-                        Title="Position Snapshots"
-                        Columns="@_positionSnapshotsCols"
-                        ServerData="@LoadPositionSnapshots" />
-                    break;
-
-                case "SignalGates":
-                    <DbTableGrid T="SignalGateEntity"
-                        TableKey="SignalGates"
-                        Title="Signal Gates"
-                        Columns="@_signalGatesCols"
-                        ServerData="@LoadSignalGates" />
-                    break;
-
-                case "Fills":
-                    <DbTableGrid T="FillEntity"
-                        TableKey="Fills"
-                        Title="Fills"
-                        Columns="@_fillsCols"
-                        ServerData="@LoadFills" />
-                    break;
-
-                case "PositionTracking":
-                    <DbTableGrid T="PositionTrackingEntity"
-                        TableKey="PositionTracking"
-                        Title="Position Tracking"
-                        Columns="@_positionTrackingCols"
-                        ServerData="@LoadPositionTracking" />
-                    break;
-
-                case "ExitAttempts":
-                    <DbTableGrid T="ExitAttemptEntity"
-                        TableKey="ExitAttempts"
-                        Title="Exit Attempts"
-                        Columns="@_exitAttemptsCols"
-                        ServerData="@LoadExitAttempts" />
-                    break;
-
-                case "ReconciliationReports":
-                    <DbTableGrid T="ReconciliationReportEntity"
-                        TableKey="ReconciliationReports"
-                        Title="Reconciliation Reports"
-                        Columns="@_reconciliationReportsCols"
-                        ServerData="@LoadReconciliationReports" />
-                    break;
-
-                case "SchemaMeta":
-                    <DbTableGrid T="SchemaMetaEntity"
-                        TableKey="SchemaMeta"
-                        Title="Schema Meta"
-                        Columns="@_schemaMetaCols"
-                        ServerData="@LoadSchemaMeta" />
-                    break;
-
-                case "CircuitBreakerState":
-                    <DbTableGrid T="CircuitBreakerStateEntity"
-                        TableKey="CircuitBreakerState"
-                        Title="Circuit Breaker"
-                        Columns="@_circuitBreakerStateCols"
-                        ServerData="@LoadCircuitBreakerState" />
-                    break;
-
-                case "DrawdownState":
-                    <DbTableGrid T="DrawdownStateEntity"
-                        TableKey="DrawdownState"
-                        Title="Drawdown State"
-                        Columns="@_drawdownStateCols"
-                        ServerData="@LoadDrawdownState" />
-                    break;
+                <MudProgressCircular Indeterminate="true" />
+            }
+            else
+            {
+                @switch (_selected.Name)
+                {
+                    case "OrderIntents":
+                        <DbTableGrid TItem="OrderIntentEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_orderIntentsCols"
+                            ServerData="@LoadOrderIntents"
+                            RowDetail="@OrderIntentDetail" />
+                        break;
+                    case "Trades":
+                        <DbTableGrid TItem="TradeEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_tradesCols"
+                            ServerData="@LoadTrades"
+                            RowDetail="@TradeDetail" />
+                        break;
+                    case "EquityCurve":
+                        <DbTableGrid TItem="EquityCurveEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_equityCurveCols"
+                            ServerData="@LoadEquityCurve" />
+                        break;
+                    case "BotState":
+                        <DbTableGrid TItem="BotStateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_botStateCols"
+                            ServerData="@LoadBotState" />
+                        break;
+                    case "Bars":
+                        <DbTableGrid TItem="BarEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_barsCols"
+                            ServerData="@LoadBars" />
+                        break;
+                    case "PositionSnapshots":
+                        <DbTableGrid TItem="PositionSnapshotEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_positionSnapshotsCols"
+                            ServerData="@LoadPositionSnapshots" />
+                        break;
+                    case "SignalGates":
+                        <DbTableGrid TItem="SignalGateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_signalGatesCols"
+                            ServerData="@LoadSignalGates" />
+                        break;
+                    case "Fills":
+                        <DbTableGrid TItem="FillEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_fillsCols"
+                            ServerData="@LoadFills" />
+                        break;
+                    case "PositionTracking":
+                        <DbTableGrid TItem="PositionTrackingEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_positionTrackingCols"
+                            ServerData="@LoadPositionTracking" />
+                        break;
+                    case "ExitAttempts":
+                        <DbTableGrid TItem="ExitAttemptEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_exitAttemptsCols"
+                            ServerData="@LoadExitAttempts" />
+                        break;
+                    case "ReconciliationReports":
+                        <DbTableGrid TItem="ReconciliationReportEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_reconciliationReportsCols"
+                            ServerData="@LoadReconciliationReports" />
+                        break;
+                    case "SchemaMeta":
+                        <DbTableGrid TItem="SchemaMetaEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_schemaMetaCols"
+                            ServerData="@LoadSchemaMeta" />
+                        break;
+                    case "CircuitBreakerState":
+                        <DbTableGrid TItem="CircuitBreakerStateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_circuitBreakerStateCols"
+                            ServerData="@LoadCircuitBreakerState" />
+                        break;
+                    case "DrawdownState":
+                        <DbTableGrid TItem="DrawdownStateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_drawdownStateCols"
+                            ServerData="@LoadDrawdownState" />
+                        break;
+                }
             }
         }
     </MudItem>
@@ -199,12 +194,17 @@
     {
         try
         {
+            Console.WriteLine("[DatabaseBrowser] OnInitializedAsync started");
+
             await using var db = await DbFactory.CreateDbContextAsync();
+            Console.WriteLine("[DatabaseBrowser] DbContext created");
+
             _dbModel = db.Model; // Cache model for column generation
+            Console.WriteLine("[DatabaseBrowser] DbModel cached");
 
             // Load table list
-            _tables =
-            [
+            _tables = new List<TableInfo>
+            {
                 new("OrderIntents",          "Order Intents",          await db.OrderIntents.CountAsync()),
                 new("Trades",                "Trades",                 await db.Trades.CountAsync()),
                 new("EquityCurve",           "Equity Curve",           await db.EquityCurve.CountAsync()),
@@ -219,15 +219,18 @@
                 new("SchemaMeta",            "Schema Meta",            await db.SchemaMeta.CountAsync()),
                 new("CircuitBreakerState",   "Circuit Breaker",        await db.CircuitBreakerState.CountAsync()),
                 new("DrawdownState",         "Drawdown State",         await db.DrawdownState.CountAsync()),
-            ];
+            };
+            Console.WriteLine("[DatabaseBrowser] Tables loaded successfully");
         }
         catch (Exception ex)
         {
+            Console.WriteLine($"[DatabaseBrowser] EXCEPTION in OnInitializedAsync: {ex}");
             Snackbar.Add($"Failed to load table list: {ex.Message}", Severity.Error);
         }
         finally
         {
             _tableLoading = false;
+            Console.WriteLine("[DatabaseBrowser] OnInitializedAsync completed");
         }
 
     }
