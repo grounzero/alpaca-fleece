@@ -1,9 +1,12 @@
 @page "/database"
+@rendermode InteractiveServer
 @* @attribute [Authorize] *@
 @using Microsoft.EntityFrameworkCore.Metadata
+@using Microsoft.AspNetCore.WebUtilities
 @inject IDbContextFactory<TradingDbContext> DbFactory
 @inject EfGridDataService EfGridService
 @inject ISnackbar Snackbar
+@inject NavigationManager Nav
 
 <PageTitle>Database — AlpacaFleece Admin</PageTitle>
 
@@ -23,19 +26,21 @@
             }
             else
             {
-                <MudList T="TableInfo" Dense SelectedValue="_selected" SelectedValueChanged="@SelectTable">
+                <div>
                     @foreach (var t in _tables)
                     {
-                        <MudListItem T="TableInfo" Value="t">
+                        var isSelected = _selected?.Name == t.Name;
+                        <div style="@($"cursor: pointer; padding: 8px; border-bottom: 1px solid #eee; background-color: {(isSelected ? "#e3f2fd" : "transparent")};")"
+                             @onclick="@(async () => await SelectTableAsync(t))">
                             <div class="d-flex justify-space-between align-center">
                                 <MudText Typo="Typo.body2">@t.DisplayName</MudText>
                                 <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
                                     @t.RowCount
                                 </MudChip>
                             </div>
-                        </MudListItem>
+                        </div>
                     }
-                </MudList>
+                </div>
             }
         </MudPaper>
     </MudItem>
@@ -224,71 +229,141 @@
         {
             _tableLoading = false;
         }
+
     }
 
-    private async Task SelectTable(TableInfo? t)
+    private bool _columnsGenerated = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
     {
-        _selected = t;
+        Console.WriteLine($"[DatabaseBrowser] OnAfterRenderAsync called, firstRender={firstRender}, _selected={_selected?.Name ?? "null"}, _columnsGenerated={_columnsGenerated}");
+
+        // Generate columns for selected table on first render after selection
+        if (_selected is not null && !_columnsGenerated)
+        {
+            try
+            {
+                Console.WriteLine($"[DatabaseBrowser] Generating columns for {_selected.Name}");
+                await GenerateColumnsForTableAsync(_selected);
+                _columnsGenerated = true;
+                Console.WriteLine($"[DatabaseBrowser] Columns generated, calling StateHasChanged");
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DatabaseBrowser] Error generating columns: {ex}");
+                Snackbar.Add($"Error generating columns: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task GenerateColumnsForTableAsync(TableInfo t)
+    {
+        if (_dbModel is null) return;
+
+        // Check if columns are already generated
+        switch (t.Name)
+        {
+            case "Trades" when _tradesCols is not null:
+            case "OrderIntents" when _orderIntentsCols is not null:
+            case "EquityCurve" when _equityCurveCols is not null:
+            case "BotState" when _botStateCols is not null:
+            case "Bars" when _barsCols is not null:
+            case "PositionSnapshots" when _positionSnapshotsCols is not null:
+            case "SignalGates" when _signalGatesCols is not null:
+            case "Fills" when _fillsCols is not null:
+            case "PositionTracking" when _positionTrackingCols is not null:
+            case "ExitAttempts" when _exitAttemptsCols is not null:
+            case "ReconciliationReports" when _reconciliationReportsCols is not null:
+            case "SchemaMeta" when _schemaMetaCols is not null:
+            case "CircuitBreakerState" when _circuitBreakerStateCols is not null:
+            case "DrawdownState" when _drawdownStateCols is not null:
+                return; // Already generated
+
+            default:
+                break;
+        }
+
+        // Generate columns synchronously
+        switch (t.Name)
+        {
+            case "Trades":
+                _tradesCols ??= EfColumnFactory.Generate<TradeEntity>(_dbModel);
+                break;
+            case "OrderIntents":
+                _orderIntentsCols ??= EfColumnFactory.Generate<OrderIntentEntity>(_dbModel);
+                break;
+            case "EquityCurve":
+                _equityCurveCols ??= EfColumnFactory.Generate<EquityCurveEntity>(_dbModel);
+                break;
+            case "BotState":
+                _botStateCols ??= EfColumnFactory.Generate<BotStateEntity>(_dbModel);
+                break;
+            case "Bars":
+                _barsCols ??= EfColumnFactory.Generate<BarEntity>(_dbModel);
+                break;
+            case "PositionSnapshots":
+                _positionSnapshotsCols ??= EfColumnFactory.Generate<PositionSnapshotEntity>(_dbModel);
+                break;
+            case "SignalGates":
+                _signalGatesCols ??= EfColumnFactory.Generate<SignalGateEntity>(_dbModel);
+                break;
+            case "Fills":
+                _fillsCols ??= EfColumnFactory.Generate<FillEntity>(_dbModel);
+                break;
+            case "PositionTracking":
+                _positionTrackingCols ??= EfColumnFactory.Generate<PositionTrackingEntity>(_dbModel);
+                break;
+            case "ExitAttempts":
+                _exitAttemptsCols ??= EfColumnFactory.Generate<ExitAttemptEntity>(_dbModel);
+                break;
+            case "ReconciliationReports":
+                _reconciliationReportsCols ??= EfColumnFactory.Generate<ReconciliationReportEntity>(_dbModel);
+                break;
+            case "SchemaMeta":
+                _schemaMetaCols ??= EfColumnFactory.Generate<SchemaMetaEntity>(_dbModel);
+                break;
+            case "CircuitBreakerState":
+                _circuitBreakerStateCols ??= EfColumnFactory.Generate<CircuitBreakerStateEntity>(_dbModel);
+                break;
+            case "DrawdownState":
+                _drawdownStateCols ??= EfColumnFactory.Generate<DrawdownStateEntity>(_dbModel);
+                break;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task SelectTableAsync(TableInfo? t)
+    {
+        Console.WriteLine($"[DatabaseBrowser] SelectTableAsync called with: {t?.Name ?? "null"}");
+
         if (t is null)
+        {
+            _selected = null;
+            _columnsGenerated = false;
+            StateHasChanged();
             return;
+        }
+
+        Console.WriteLine($"[DatabaseBrowser] Selecting table: {t.Name}");
 
         try
         {
-            // Lazily initialize columns for this table
-            switch (t.Name)
-            {
-                case "Trades":
-                    _tradesCols ??= EfColumnFactory.Generate<TradeEntity>(_dbModel!);
-                    break;
-                case "OrderIntents":
-                    _orderIntentsCols ??= EfColumnFactory.Generate<OrderIntentEntity>(_dbModel!);
-                    break;
-                case "EquityCurve":
-                    _equityCurveCols ??= EfColumnFactory.Generate<EquityCurveEntity>(_dbModel!);
-                    break;
-                case "BotState":
-                    _botStateCols ??= EfColumnFactory.Generate<BotStateEntity>(_dbModel!);
-                    break;
-                case "Bars":
-                    _barsCols ??= EfColumnFactory.Generate<BarEntity>(_dbModel!);
-                    break;
-                case "PositionSnapshots":
-                    _positionSnapshotsCols ??= EfColumnFactory.Generate<PositionSnapshotEntity>(_dbModel!);
-                    break;
-                case "SignalGates":
-                    _signalGatesCols ??= EfColumnFactory.Generate<SignalGateEntity>(_dbModel!);
-                    break;
-                case "Fills":
-                    _fillsCols ??= EfColumnFactory.Generate<FillEntity>(_dbModel!);
-                    break;
-                case "PositionTracking":
-                    _positionTrackingCols ??= EfColumnFactory.Generate<PositionTrackingEntity>(_dbModel!);
-                    break;
-                case "ExitAttempts":
-                    _exitAttemptsCols ??= EfColumnFactory.Generate<ExitAttemptEntity>(_dbModel!);
-                    break;
-                case "ReconciliationReports":
-                    _reconciliationReportsCols ??= EfColumnFactory.Generate<ReconciliationReportEntity>(_dbModel!);
-                    break;
-                case "SchemaMeta":
-                    _schemaMetaCols ??= EfColumnFactory.Generate<SchemaMetaEntity>(_dbModel!);
-                    break;
-                case "CircuitBreakerState":
-                    _circuitBreakerStateCols ??= EfColumnFactory.Generate<CircuitBreakerStateEntity>(_dbModel!);
-                    break;
-                case "DrawdownState":
-                    _drawdownStateCols ??= EfColumnFactory.Generate<DrawdownStateEntity>(_dbModel!);
-                    break;
-            }
+            // Just set the selection; columns will be generated in OnAfterRenderAsync
+            _selected = t;
+            _columnsGenerated = false; // Reset flag so OnAfterRenderAsync generates columns
+            Console.WriteLine($"[DatabaseBrowser] Table selected: {t.Name}, _selected is now: {_selected.Name}");
+            StateHasChanged();
+            Console.WriteLine($"[DatabaseBrowser] StateHasChanged() called");
         }
         catch (Exception ex)
         {
-            Snackbar.Add($"Error loading table {t.DisplayName}: {ex.Message}", Severity.Error);
+            Console.WriteLine($"[DatabaseBrowser] ERROR selecting {t.Name}: {ex}");
+            Snackbar.Add($"Error selecting {t.DisplayName}: {ex.Message}", Severity.Error);
             _selected = null;
+            _columnsGenerated = false;
         }
-
-        // Force re-render of the switch statement
-        StateHasChanged();
     }
 
     // ── Server data callbacks (one per table) ──
