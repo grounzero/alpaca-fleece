@@ -1,0 +1,360 @@
+@typeparam TItem where TItem : class
+@inject IGridStateStore StateStore
+@inject ISnackbar Snackbar
+
+<div class="db-table-grid">
+    @* Toolbar *@
+    <MudPaper Class="pa-3 mb-3" Elevation="1">
+        <MudGrid Spacing="2">
+            @* Title and record count *@
+            <MudItem xs="12" sm="6">
+                @if (!string.IsNullOrWhiteSpace(Title))
+                {
+                    <div class="d-flex align-center gap-2">
+                        <MudText Typo="Typo.h6">@Title</MudText>
+                        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Text">
+                            @_totalCount records
+                        </MudChip>
+                    </div>
+                }
+            </MudItem>
+
+            @* Quick search box *@
+            <MudItem xs="12" sm="6">
+                <MudTextField
+                    @bind-Value="_quickSearch"
+                    Placeholder="Quick search..."
+                    Adornment="Adornment.End"
+                    AdornmentIcon="@Icons.Material.Filled.Search"
+                    OnKeyDown="@OnQuickSearchKeyDown"
+                    Class="mb-0"
+                    Variant="Variant.Outlined" />
+            </MudItem>
+
+            @* Action buttons *@
+            <MudItem xs="12">
+                <div class="d-flex gap-2 flex-wrap">
+                    <MudIconButton
+                        Icon="@Icons.Material.Filled.Refresh"
+                        Size="Size.Small"
+                        OnClick="@(() => _grid?.ReloadServerData())" />
+
+                    <MudIconButton
+                        Icon="@Icons.Material.Filled.Settings"
+                        Size="Size.Small"
+                        OnClick="@(() => _showColumnsPanel = !_showColumnsPanel)" />
+
+                    <MudIconButton
+                        Icon="@Icons.Material.Filled.RestartAlt"
+                        Size="Size.Small"
+                        OnClick="@ResetLayout" />
+
+                    @if (ToolbarExtra is not null)
+                    {
+                        @ToolbarExtra
+                    }
+                </div>
+            </MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @* Column visibility panel *@
+    @if (_showColumnsPanel)
+    {
+        <MudPaper Class="pa-3 mb-3" Elevation="1">
+            <MudText Typo="Typo.subtitle2" Class="mb-2">Column Visibility</MudText>
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem;">
+                @foreach (var col in Columns)
+                {
+                    @if (col.Hideable)
+                    {
+                        <MudCheckBox T="bool"
+                            Checked="@(!_hiddenColumns.Contains(col.PropertyName))"
+                            CheckedChanged="@((bool isVisible) => ToggleColumnVisibility(col.PropertyName, isVisible))"
+                            Label="@col.Title" />
+                    }
+                }
+            </div>
+        </MudPaper>
+    }
+
+    @* Main grid *@
+    <MudDataGrid @ref="_grid"
+                 T="TItem"
+                 ServerData="@ServerDataProxy"
+                 Filterable="true"
+                 SortMode="SortMode.Multiple"
+                 MultiSelection="@MultiSelection"
+                 FixedHeader="true"
+                 Height="@Height"
+                 Dense="@Dense"
+                 Striped="@Striped"
+                 Hover="true"
+                 Elevation="2"
+                 RowClassFunc="@RowClassFunc">
+
+        <Columns>
+            @* Selection column if multi-select enabled *@
+            @if (MultiSelection)
+            {
+                <SelectColumn T="TItem" />
+            }
+
+            @* Dynamic columns from Columns parameter *@
+            @foreach (var col in Columns)
+            {
+                var isHidden = _hiddenColumns.Contains(col.PropertyName);
+
+                <TemplateColumn T="TItem"
+                                Title="@col.Title"
+                                Field="@col.PropertyName"
+                                Hideable="@col.Hideable"
+                                Sortable="@col.Sortable"
+                                Filterable="@col.Filterable"
+                                Groupable="false"
+                                Hidden="@isHidden">
+                    <CellTemplate>
+                        @RenderCellValue(context.Item, col)
+                    </CellTemplate>
+                </TemplateColumn>
+            }
+        </Columns>
+
+        @* No records state *@
+        <NoRecordsContent>
+            <div class="d-flex flex-column align-center justify-center pa-8" style="min-height: 200px;">
+                <MudIcon Icon="@Icons.Material.Filled.SearchOff" Size="Size.Large" Class="mb-2 mud-text-secondary" />
+                <MudText Class="mud-text-secondary">No records found</MudText>
+                @if (_hasActiveFilters)
+                {
+                    <MudButton Variant="Variant.Text" Color="Color.Primary" OnClick="@ClearFilters" Class="mt-4">
+                        Clear Filters
+                    </MudButton>
+                }
+            </div>
+        </NoRecordsContent>
+
+        @* Loading state *@
+        <LoadingContent>
+            <MudProgressLinear Indeterminate Color="Color.Primary" />
+        </LoadingContent>
+
+        @* Pager *@
+        <PagerContent>
+            <MudDataGridPager T="TItem" PageSizeOptions="@PageSizeOptions" />
+        </PagerContent>
+    </MudDataGrid>
+</div>
+
+@code {
+    [Parameter]
+    public string TableKey { get; set; } = "";
+
+    [Parameter]
+    public IReadOnlyList<DbColumnDef<TItem>> Columns { get; set; } = [];
+
+    [Parameter]
+    public Func<GridState<TItem>, Task<GridData<TItem>>> ServerData { get; set; } = null!;
+
+    [Parameter]
+    public string? Title { get; set; }
+
+    [Parameter]
+    public bool Dense { get; set; } = true;
+
+    [Parameter]
+    public bool Striped { get; set; } = true;
+
+    [Parameter]
+    public bool MultiSelection { get; set; } = false;
+
+    [Parameter]
+    public string Height { get; set; } = "550px";
+
+    [Parameter]
+    public RenderFragment? ToolbarExtra { get; set; }
+
+    [Parameter]
+    public RenderFragment<TItem>? RowDetail { get; set; }
+
+    [Parameter]
+    public Func<TItem, int, string>? RowClassFunc { get; set; }
+
+    [Parameter]
+    public int[] PageSizeOptions { get; set; } = [10, 25, 50, 100];
+
+    private MudDataGrid<TItem>? _grid;
+    private string _quickSearch = "";
+    private Timer? _debounceTimer;
+    private int _totalCount = 0;
+    private HashSet<string> _hiddenColumns = [];
+    private bool _showColumnsPanel = false;
+    private bool _hasActiveFilters = false;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load persisted state
+        if (!string.IsNullOrWhiteSpace(TableKey))
+        {
+            var state = await StateStore.LoadAsync(TableKey);
+            if (state is not null)
+            {
+                _hiddenColumns = new HashSet<string>(state.HiddenColumns ?? []);
+            }
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender && _grid is not null)
+        {
+            await _grid.ReloadServerData();
+        }
+    }
+
+    /// <summary>
+    /// Server data proxy callback.
+    /// </summary>
+    private async Task<GridData<TItem>> ServerDataProxy(GridState<TItem> state)
+    {
+        try
+        {
+            _hasActiveFilters = (state.FilterDefinitions?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(_quickSearch);
+            var result = await ServerData(state);
+            _totalCount = result.TotalItems;
+
+            // Persist state
+            if (!string.IsNullOrWhiteSpace(TableKey))
+            {
+                var persistedState = new GridPersistedState(
+                    PageSize: state.PageSize,
+                    HiddenColumns: [.._hiddenColumns]);
+                await StateStore.SaveAsync(TableKey, persistedState);
+            }
+
+            return result;
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Error loading data: {ex.Message}", Severity.Error);
+            return new GridData<TItem> { Items = [], TotalItems = 0 };
+        }
+    }
+
+    /// <summary>
+    /// Handle Enter key in quick search.
+    /// </summary>
+    private async Task OnQuickSearchKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _grid is not null)
+        {
+            _debounceTimer?.Dispose();
+            await _grid.ReloadServerData();
+        }
+    }
+
+    /// <summary>
+    /// Toggle column visibility.
+    /// </summary>
+    private async Task ToggleColumnVisibility(string propName, bool isVisible)
+    {
+        if (isVisible)
+        {
+            _hiddenColumns.Remove(propName);
+        }
+        else
+        {
+            _hiddenColumns.Add(propName);
+        }
+
+        if (!string.IsNullOrWhiteSpace(TableKey))
+        {
+            var state = new GridPersistedState(
+                PageSize: _grid?.RowsPerPage ?? 25,
+                HiddenColumns: [.._hiddenColumns]);
+            await StateStore.SaveAsync(TableKey, state);
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Reset layout.
+    /// </summary>
+    private async Task ResetLayout()
+    {
+        _hiddenColumns.Clear();
+        _quickSearch = "";
+        _showColumnsPanel = false;
+
+        if (!string.IsNullOrWhiteSpace(TableKey))
+        {
+            await StateStore.ClearAsync(TableKey);
+        }
+
+        if (_grid is not null)
+        {
+            _grid.FilterDefinitions.Clear();
+            await _grid.ReloadServerData();
+        }
+
+        StateHasChanged();
+    }
+
+    /// <summary>
+    /// Clear filters.
+    /// </summary>
+    private async Task ClearFilters()
+    {
+        if (_grid is not null)
+        {
+            _grid.FilterDefinitions.Clear();
+            await _grid.ReloadServerData();
+        }
+    }
+
+    /// <summary>
+    /// Render a cell value.
+    /// </summary>
+    private RenderFragment RenderCellValue(TItem item, DbColumnDef<TItem> col) => builder =>
+    {
+        try
+        {
+            var value = col.ValueFunc(item);
+            var formattedValue = FormatValue(value, col);
+            builder.AddContent(0, formattedValue);
+        }
+        catch (Exception ex)
+        {
+            builder.AddContent(0, $"Error: {ex.Message}");
+        }
+    };
+
+    /// <summary>
+    /// Format a value for display.
+    /// </summary>
+    private static string FormatValue(object value, DbColumnDef<TItem> col)
+    {
+        if (value is null)
+            return "—";
+
+        if (col.IsBool && value is bool boolVal)
+            return boolVal ? "✓" : "✗";
+
+        if (col.IsDecimal && value is decimal decVal)
+            return string.IsNullOrEmpty(col.FormatString)
+                ? decVal.ToString("N2")
+                : decVal.ToString(col.FormatString);
+
+        if (col.IsDateTimeOffset && value is DateTimeOffset dtoVal)
+            return dtoVal.LocalDateTime.ToString(col.FormatString ?? "yyyy-MM-dd HH:mm:ss");
+
+        if (value is DateTime dtVal)
+            return dtVal.ToString(col.FormatString ?? "yyyy-MM-dd HH:mm");
+
+        if (col.FormatString is not null && value is IFormattable formattable)
+            return formattable.ToString(col.FormatString, null);
+
+        return value.ToString() ?? "—";
+    }
+}

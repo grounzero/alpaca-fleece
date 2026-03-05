@@ -2,6 +2,7 @@ using MudBlazor.Services;
 using Serilog;
 using AlpacaFleece.AdminUI.Hubs;
 using AlpacaFleece.AdminUI.Services;
+using AlpacaFleece.AdminUI.Services.DataGrid;
 
 Log.Logger = new LoggerConfiguration()
     .WriteTo.Console()
@@ -53,6 +54,12 @@ try
     // Razor Pages — handles Login and Logout (require real HTTP context)
     builder.Services.AddRazorPages();
 
+    // Enable detailed circuit errors for debugging (development only)
+    if (builder.Environment.IsDevelopment())
+    {
+        builder.WebHost.UseSetting("circuitOptions:DetailedErrors", "true");
+    }
+
     // Blazor Server with SignalR
     builder.Services.AddRazorComponents()
         .AddInteractiveServerComponents();
@@ -85,13 +92,63 @@ try
     builder.Services.AddScoped<ClipboardService>();
     builder.Services.AddScoped<LocalStorageService>();
     builder.Services.AddScoped<HighlightInterop>();
+    builder.Services.AddScoped<EfGridDataService>();
+    builder.Services.AddScoped<IGridStateStore, LocalStorageGridStateStore>();
 
     var app = builder.Build();
 
     app.UseSerilogRequestLogging(opts => opts.MessageTemplate =
         "HTTP {RequestMethod} {RequestPath} responded {StatusCode} in {Elapsed:0.0000} ms");
 
+    // Serve static files from wwwroot
     app.UseStaticFiles();
+
+    // Fallback handler to serve component library assets (MudBlazor, etc.)
+    // This workaround handles the _content route by mapping to NuGet staticwebassets
+    app.Use(async (context, next) =>
+    {
+        if (context.Request.Path.StartsWithSegments("/_content"))
+        {
+            var requestPath = context.Request.Path.Value?.Substring("/_content/".Length) ?? "";
+            var nugetPackagesPath = Path.Combine(
+                Environment.GetFolderPath(Environment.SpecialFolder.UserProfile),
+                ".nuget/packages");
+
+            // For MudBlazor: _content/MudBlazor/MudBlazor.min.css
+            // Maps to: mudblazor/{version}/staticwebassets/MudBlazor.min.css
+            if (requestPath.StartsWith("MudBlazor/", StringComparison.OrdinalIgnoreCase))
+            {
+                var relativePath = requestPath.Substring("MudBlazor/".Length);
+                var mudblazorDir = Path.Combine(nugetPackagesPath, "mudblazor");
+
+                if (Directory.Exists(mudblazorDir))
+                {
+                    // Find the latest version directory
+                    var versionDirs = Directory.GetDirectories(mudblazorDir)
+                        .OrderByDescending(d =>
+                        {
+                            if (Version.TryParse(Path.GetFileName(d), out var v)) return v;
+                            return new Version(0, 0);
+                        })
+                        .FirstOrDefault();
+
+                    if (!string.IsNullOrEmpty(versionDirs))
+                    {
+                        var filePath = Path.Combine(versionDirs, "staticwebassets", relativePath);
+                        if (File.Exists(filePath))
+                        {
+                            context.Response.ContentType = GetContentType(filePath);
+                            await context.Response.SendFileAsync(filePath);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+
+        await next();
+    });
+
     app.UseRouting();
     app.UseAuthentication();
     app.UseAuthorization();
@@ -113,4 +170,25 @@ catch (Exception ex) when (ex is not OperationCanceledException)
 finally
 {
     await Log.CloseAndFlushAsync();
+}
+
+// Helper function to determine content type
+static string GetContentType(string filePath)
+{
+    var ext = Path.GetExtension(filePath).ToLowerInvariant();
+    return ext switch
+    {
+        ".css" => "text/css",
+        ".js" => "application/javascript",
+        ".json" => "application/json",
+        ".svg" => "image/svg+xml",
+        ".png" => "image/png",
+        ".jpg" or ".jpeg" => "image/jpeg",
+        ".gif" => "image/gif",
+        ".woff" => "font/woff",
+        ".woff2" => "font/woff2",
+        ".ttf" => "font/ttf",
+        ".eot" => "application/vnd.ms-fontobject",
+        _ => "application/octet-stream"
+    };
 }
