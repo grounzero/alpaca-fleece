@@ -1,7 +1,4 @@
 using System.Text.RegularExpressions;
-using System.Threading.Channels;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
 
 namespace AlpacaFleece.AdminUI.Services;
 
@@ -10,7 +7,7 @@ namespace AlpacaFleece.AdminUI.Services;
 /// and broadcasts them to connected SignalR clients via a pub/sub channel.
 /// </summary>
 public sealed partial class LogStreamService(
-    IOptions<AdminOptions> opts,
+    IOptions<AdminOptions> options,
     ILogger<LogStreamService> logger) : IHostedService, IDisposable
 {
     private static readonly Regex LineRegex = LogStreamLineRegex();
@@ -40,7 +37,7 @@ public sealed partial class LogStreamService(
     /// </summary>
     private string ResolveLogPath()
     {
-        var configured = opts.Value.LogPath;
+        var configured = options.Value.LogPath;
         if (File.Exists(configured)) return configured;
 
         var dir  = Path.GetDirectoryName(configured) ?? ".";
@@ -59,7 +56,7 @@ public sealed partial class LogStreamService(
         _cts = new CancellationTokenSource();
 
         // Watch the log directory (not a specific file) so day-rollover creates new watcher events
-        var dir = Path.GetDirectoryName(opts.Value.LogPath) ?? ".";
+        var dir = Path.GetDirectoryName(options.Value.LogPath) ?? ".";
         if (Directory.Exists(dir))
         {
             var resolved = ResolveLogPath();

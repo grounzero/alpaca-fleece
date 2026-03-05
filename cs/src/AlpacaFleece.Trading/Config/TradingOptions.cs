@@ -258,7 +258,7 @@ public sealed class ExecutionOptions
 public sealed class FiltersOptions
 {
     /// <summary>
-    /// Gets or sets the maximum bid/ask spread as a percentage (default 0.1 = 0.1%).
+    /// Gets or sets the maximum bid/ask spread as a fraction of bid price (default 0.1 = 10%).
     /// </summary>
     public decimal MaxBidAskSpreadPercent { get; set; } = 0.1m;
 

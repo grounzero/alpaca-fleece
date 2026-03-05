@@ -3,7 +3,7 @@ using AlpacaFleece.Infrastructure.Symbols;
 namespace AlpacaFleece.Trading.Exits;
 
 /// <summary>
-/// Exit manager: checks positions for stop loss, trailing stop, profit target.
+/// Exit manager: checks positions periodically for stop loss, trailing stop, profit target.
 /// Uses a 3-rule priority system with ATR-based dynamic levels (mutual exclusion with fixed-%):
 ///
 ///   Rule 1: ATR stop loss     — entry - (ATR x AtrStopLossMultiplier)
@@ -13,9 +13,6 @@ namespace AlpacaFleece.Trading.Exits;
 /// ATR mutual exclusion: when valid ATR levels exist, fixed-percentage rules are skipped.
 /// Publishes ExitSignalEvent to unbounded event bus (never dropped).
 /// PendingExit flag is set AFTER successful publish to avoid phantom locks on bus failures.
-/// </summary>
-/// <summary>
-/// Initialises a new instance of the <see cref="ExitManager"/> class.
 /// </summary>
 /// <param name="positionTracker">The position tracker for accessing open positions.</param>
 /// <param name="brokerService">The broker service for executing exit trades.</param>

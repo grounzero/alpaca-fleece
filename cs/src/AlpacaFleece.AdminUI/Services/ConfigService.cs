@@ -9,7 +9,7 @@ namespace AlpacaFleece.AdminUI.Services;
 /// Atomic write pattern: write to temp file then rename. Maintains up to 5 backups.
 /// </summary>
 public sealed class ConfigService(
-    IOptions<AdminOptions> opts,
+    IOptions<AdminOptions> options,
     ILogger<ConfigService> logger)
 {
     private static readonly JsonSerializerOptions JsonOpts = new()
@@ -20,7 +20,7 @@ public sealed class ConfigService(
 
     public async ValueTask<ConfigDraft> ReadDraftAsync(CancellationToken ct = default)
     {
-        var path = opts.Value.BotSettingsPath;
+        var path = options.Value.BotSettingsPath;
         if (!File.Exists(path)) return new ConfigDraft();
 
         try

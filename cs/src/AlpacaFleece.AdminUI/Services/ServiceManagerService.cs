@@ -9,11 +9,11 @@ namespace AlpacaFleece.AdminUI.Services;
 /// Gracefully degrades when the socket is unavailable (e.g., dev environment).
 /// </summary>
 public sealed class ServiceManagerService(
-    IOptions<AdminOptions> opts,
+    IOptions<AdminOptions> options,
     ILogger<ServiceManagerService> logger)
 {
     private const string DockerApiVersion = "v1.47";
-    private readonly string _containerName = opts.Value.BotContainerName;
+    private readonly string _containerName = options.Value.BotContainerName;
 
     private HttpClient CreateDockerClient()
     {

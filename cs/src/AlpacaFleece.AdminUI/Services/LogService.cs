@@ -8,7 +8,7 @@ namespace AlpacaFleece.AdminUI.Services;
 /// Gracefully returns an empty list if the file does not exist.
 /// </summary>
 public sealed partial class LogService(
-    IOptions<AdminOptions> opts,
+    IOptions<AdminOptions> options,
     ILogger<LogService> logger)
 {
     private static readonly Regex LineRegex = LogLineRegex();
@@ -24,7 +24,7 @@ public sealed partial class LogService(
     /// </summary>
     private string ResolveLogPath()
     {
-        var configured = opts.Value.LogPath;
+        var configured = options.Value.LogPath;
         if (File.Exists(configured)) return configured;
 
         var dir  = Path.GetDirectoryName(configured) ?? ".";
