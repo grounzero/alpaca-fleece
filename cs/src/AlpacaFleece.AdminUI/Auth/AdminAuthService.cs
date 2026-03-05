@@ -1,6 +1,3 @@
-using Microsoft.Extensions.Configuration;
-using Microsoft.AspNetCore.Hosting;
-
 namespace AlpacaFleece.AdminUI.Auth;
 
 /// <summary>

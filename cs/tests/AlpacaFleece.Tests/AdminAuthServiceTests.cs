@@ -2,7 +2,6 @@ using AlpacaFleece.AdminUI.Auth;
 using AlpacaFleece.AdminUI.Config;
 using Microsoft.AspNetCore.Hosting;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Options;
 
 namespace AlpacaFleece.Tests;
 
@@ -12,7 +11,7 @@ namespace AlpacaFleece.Tests;
 /// </summary>
 public sealed class AdminAuthServiceTests
 {
-    private static readonly string ValidBcryptHash = "$2a$11$slYQmyNdGzin7olVMsCmCOYz6TtxMQJqhN8/LewY5YQwUzrnvKSqm";
+    private static readonly string ValidBcryptHash = "$2a$12$VocEPvIu.6NUsnjLxPvnUe8iY9z6gVKKYrvwYJImH6AQ.jH4opYh.";
     private const string ValidPassword = "test-password";
     private const string InvalidPassword = "wrong-password";
 

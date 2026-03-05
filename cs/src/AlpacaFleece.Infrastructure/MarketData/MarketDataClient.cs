@@ -1,5 +1,4 @@
 using Alpaca.Markets;
-using AlpacaFleece.Core.Interfaces;
 using AlpacaFleece.Infrastructure.Broker;
 
 namespace AlpacaFleece.Infrastructure.MarketData;

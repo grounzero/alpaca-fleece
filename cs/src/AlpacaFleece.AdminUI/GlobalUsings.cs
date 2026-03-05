@@ -1,9 +1,6 @@
 global using Microsoft.AspNetCore.Authentication;
 global using Microsoft.AspNetCore.Authentication.Cookies;
 global using Microsoft.AspNetCore.Authorization;
-global using Microsoft.AspNetCore.Components;
-global using Microsoft.AspNetCore.Components.Authorization;
-global using Microsoft.AspNetCore.Components.Web;
 global using Microsoft.EntityFrameworkCore;
 global using Microsoft.Extensions.Options;
 global using Microsoft.JSInterop;
@@ -15,4 +12,3 @@ global using AlpacaFleece.AdminUI.Hubs;
 global using AlpacaFleece.AdminUI.Models;
 global using AlpacaFleece.AdminUI.Services;
 global using AlpacaFleece.AdminUI.Services.DataGrid;
-global using AlpacaFleece.AdminUI.Components.DataGrid;

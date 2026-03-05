@@ -152,7 +152,7 @@ public sealed class RiskLimits
     /// <summary>
     /// Minimum signal confidence threshold (0-1). Signals below this are soft-skipped (FILTER tier).
     /// </summary>
-    public decimal MinSignalConfidence { get; set; } = 0.5m;
+    public decimal MinSignalConfidence { get; set; } = 0.2m;
 }
 
 /// <summary>
