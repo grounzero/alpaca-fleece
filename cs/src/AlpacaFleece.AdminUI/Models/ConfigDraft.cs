@@ -32,7 +32,7 @@ public sealed class ConfigDraft
     public decimal MaxPositionSizePct { get; set; } = 0.02m;
     public decimal MaxRiskPerTradePct { get; set; } = 0.005m;
     public decimal StopLossPct { get; set; } = 0.03m;
-    public decimal MinSignalConfidence { get; set; } = 0.5m;
+    public decimal MinSignalConfidence { get; set; } = 0.2m;
 
     // Exit
     public decimal AtrStopLossMultiplier { get; set; } = 2.0m;
