@@ -1,0 +1,78 @@
+@* Signal filters: daily trend, volume filter. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.EnableDailyTrendFilter"
+                       Color="Color.Primary"
+                       Label="Enable Daily Trend Filter"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="SignalFilters.EnableDailyTrendFilter" />
+        </div>
+    </MudItem>
+    @if (Draft.EnableDailyTrendFilter)
+    {
+        <MudItem xs="12" md="6">
+            <SliderWithZones Min="10" Max="200" Step="5"
+                             @bind-Value="@DailySmaPeriodDecimal"
+                             @bind-Value:after="MarkDirty"
+                             Label="Daily SMA Period"
+                             GreenUpTo="@([50m])"
+                             AmberUpTo="@([100m])" />
+        </MudItem>
+    }
+
+    <MudItem xs="12">
+        <MudDivider />
+    </MudItem>
+
+    <MudItem xs="12">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.EnableVolumeFilter"
+                       Color="Color.Primary"
+                       Label="Enable Volume Filter"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="SignalFilters.EnableVolumeFilter" />
+        </div>
+    </MudItem>
+    @if (Draft.EnableVolumeFilter)
+    {
+        <MudItem xs="12" md="6">
+            <SliderWithZones Min="5" Max="100" Step="5"
+                             @bind-Value="@VolumeLookbackDecimal"
+                             @bind-Value:after="MarkDirty"
+                             Label="Volume Lookback Period"
+                             GreenUpTo="@([30m])"
+                             AmberUpTo="@([60m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <SliderWithZones Min="1.0m" Max="5.0m" Step="0.25m"
+                             @bind-Value="Draft.VolumeMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Volume Multiplier"
+                             Format="F2"
+                             GreenUpTo="@([2.0m])"
+                             AmberUpTo="@([3.5m])" />
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private decimal DailySmaPeriodDecimal
+    {
+        get => Draft.DailySmaPeriod;
+        set { Draft.DailySmaPeriod = (int)value; }
+    }
+
+    private decimal VolumeLookbackDecimal
+    {
+        get => Draft.VolumeLookbackPeriod;
+        set { Draft.VolumeLookbackPeriod = (int)value; }
+    }
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

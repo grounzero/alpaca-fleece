@@ -26,6 +26,7 @@
     <ProjectReference Include="..\..\src\AlpacaFleece.Infrastructure\AlpacaFleece.Infrastructure.csproj" />
     <ProjectReference Include="..\..\src\AlpacaFleece.Trading\AlpacaFleece.Trading.csproj" />
     <ProjectReference Include="..\..\src\AlpacaFleece.Worker\AlpacaFleece.Worker.csproj" />
+    <ProjectReference Include="..\..\src\AlpacaFleece.AdminUI\AlpacaFleece.AdminUI.csproj" />
   </ItemGroup>
 
 </Project>

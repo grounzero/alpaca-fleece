@@ -5,6 +5,9 @@ set -euo pipefail
 # Purpose: Apply recommended NuGet package upgrades for the AlpacaFleece C# projects,
 # then restore, build, and run tests. Review output before committing.
 
+# chmod +x upgrade-nuget-packages.sh
+# ./upgrade-nuget-packages.sh
+
 BRANCH_NAME="chore/nuget-updates-$(date +%Y%m%d%H%M%S)"
 
 echo "Creating git branch: ${BRANCH_NAME}"

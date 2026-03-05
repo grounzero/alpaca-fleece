@@ -1,0 +1,11 @@
+{
+  "Status": "Healthy",
+  "CheckedAt": "2026-03-05T17:30:52.7786364+00:00",
+  "Description": "AlpacaFleece health status",
+  "Data": {
+    "database": "Healthy",
+    "broker": "Healthy",
+    "circuitBreaker": "OK",
+    "eventBus": "Healthy"
+  }
+}

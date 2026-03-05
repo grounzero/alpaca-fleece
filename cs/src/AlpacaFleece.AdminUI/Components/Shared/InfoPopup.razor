@@ -1,0 +1,54 @@
+@inject IJSRuntime JS
+
+@* Shows a description for a config field. Desktop: tooltip. Mobile: dialog. *@
+
+@if (_description is not null)
+{
+    if (_isMobile)
+    {
+        <MudIconButton Icon="@Icons.Material.Outlined.Info"
+                       Size="Size.Small"
+                       Color="Color.Info"
+                       OnClick="ShowDialog" />
+    }
+    else
+    {
+        <MudTooltip Text="@_description" Placement="Placement.Right" Style="max-width:400px;">
+            <MudIconButton Icon="@Icons.Material.Outlined.Info"
+                           Size="Size.Small"
+                           Color="Color.Info" />
+        </MudTooltip>
+    }
+}
+
+@code {
+    [Inject] private IDialogService DialogService { get; set; } = null!;
+
+    [Parameter, EditorRequired] public string FieldKey { get; set; } = "";
+
+    private string? _description;
+    private bool _isMobile;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            _description = ConfigDescriptions.All.TryGetValue(FieldKey, out var d) ? d : null;
+            try { _isMobile = await JS.InvokeAsync<bool>("deviceInterop.isMobile"); }
+            catch { _isMobile = false; }
+            StateHasChanged();
+        }
+    }
+
+    private async Task ShowDialog()
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Title, FieldKey.Split('.').LastOrDefault() ?? FieldKey },
+            { x => x.Message, _description ?? "" },
+            { x => x.ConfirmText, "Close" },
+            { x => x.ConfirmColor, Color.Primary }
+        };
+        await DialogService.ShowAsync<ConfirmDialog>("Info", parameters);
+    }
+}

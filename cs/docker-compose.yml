@@ -1,0 +1,59 @@
+services:
+
+  # ── Trading bot ───────────────────────────────────────────
+  bot:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: alpaca-fleece-bot
+    volumes:
+      - ./data:/app/data        # SQLite database + health.json + metrics.json
+      - ./logs:/app/logs        # Serilog rolling log files
+      - ./config:/app/config    # appsettings.json (writable by admin UI)
+    env_file: .env
+    environment:
+      # Map ALPACA_* from .env to the Broker__ config keys .NET expects
+      - Broker__ApiKey=${ALPACA_API_KEY}
+      - Broker__SecretKey=${ALPACA_SECRET_KEY}
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "pgrep", "-f", "AlpacaFleece.Worker"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  # ── Admin dashboard ───────────────────────────────────────
+  admin:
+    build:
+      context: .
+      dockerfile: AdminUI.Dockerfile
+    container_name: alpaca-fleece-admin
+    ports:
+      # Bind to localhost only — use SSH tunnel or VPN for remote access
+      - "127.0.0.1:5001:8080"
+    volumes:
+      - ./data:/app/data:ro     # Read-only access to SQLite + metrics + health
+      - ./logs:/app/logs:ro     # Read-only access to log files for log viewer
+      - ./config:/app/config    # Read/write appsettings.json
+      - /var/run/docker.sock:/var/run/docker.sock  # Manage bot container
+    # env_file passes ADMIN_PASSWORD_HASH into the container as a plain env var.
+    # Docker Compose unescapes $$ → $ so the bcrypt hash arrives intact.
+    # AdminAuthService reads ADMIN_PASSWORD_HASH directly from IConfiguration.
+    env_file: .env
+    environment:
+      - Admin__BotContainerName=alpaca-fleece-bot
+      - Admin__DatabasePath=/app/data/trading.db
+      - Admin__LogPath=/app/logs/alpaca-fleece.log
+      - Admin__BotSettingsPath=/app/config/appsettings.json
+      - Admin__MetricsPath=/app/data/metrics.json
+      - Admin__HealthPath=/app/data/health.json
+    depends_on:
+      - bot
+    restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s

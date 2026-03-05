@@ -1,0 +1,128 @@
+/* AlpacaFleece Admin — Global Styles */
+
+/* ─── Typography ─────────────────────────────────────────── */
+body {
+    font-family: 'Inter', 'Roboto', sans-serif;
+    -webkit-font-smoothing: antialiased;
+}
+
+.fw-600 { font-weight: 600; }
+
+/* ─── Animations ──────────────────────────────────────────── */
+@keyframes spin {
+    from { transform: rotate(0deg); }
+    to { transform: rotate(360deg); }
+}
+
+.spin-animation {
+    animation: spin 1s linear infinite;
+}
+
+/* ─── P&L colours ────────────────────────────────────────── */
+.pnl-positive { color: #00BFA5 !important; }
+.pnl-negative { color: #EF5350 !important; }
+.pnl-zero     { color: rgba(255,255,255,0.54) !important; }
+
+/* ─── Status badges ──────────────────────────────────────── */
+.badge-healthy   { background-color: rgba(0,191,165,0.15); color: #00BFA5; }
+.badge-warning   { background-color: rgba(255,167,38,0.15); color: #FFA726; }
+.badge-danger    { background-color: rgba(239,83,80,0.15);  color: #EF5350; }
+.badge-neutral   { background-color: rgba(255,255,255,0.08); color: rgba(255,255,255,0.54); }
+
+/* ─── Drawdown level colours ─────────────────────────────── */
+.level-normal    { color: #00BFA5; }
+.level-warning   { color: #FFA726; }
+.level-halt      { color: #EF5350; }
+.level-emergency { color: #B71C1C; }
+
+/* ─── Dashboard stat cards ───────────────────────────────── */
+.stat-card {
+    border-radius: 8px;
+    padding: 16px 20px;
+    background: var(--mud-palette-surface);
+    border: 1px solid rgba(255,255,255,0.06);
+    transition: border-color 0.2s;
+}
+.stat-card:hover { border-color: rgba(0,191,165,0.3); }
+.stat-value {
+    font-size: 1.75rem;
+    font-weight: 600;
+    line-height: 1.2;
+}
+.stat-label {
+    font-size: 0.75rem;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.54);
+    margin-top: 2px;
+}
+
+/* ─── Slider zone colours ────────────────────────────────── */
+/* Applied via inline style on the slider track */
+.zone-green  { --zone-color: #00BFA5; }
+.zone-amber  { --zone-color: #FFA726; }
+.zone-red    { --zone-color: #EF5350; }
+
+/* ─── Section accordion headers ─────────────────────────── */
+.section-dirty .mud-expand-panel-header {
+    border-left: 3px solid #FFA726;
+}
+
+/* ─── JSON view ──────────────────────────────────────────── */
+.json-view {
+    font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+}
+.json-changed {
+    border-left: 3px solid #FFA726;
+    padding-left: 8px;
+    background: rgba(255,167,38,0.06);
+}
+
+/* ─── Log viewer ─────────────────────────────────────────── */
+.log-line {
+    font-family: 'JetBrains Mono', 'Fira Code', monospace;
+    font-size: 0.75rem;
+    line-height: 1.5;
+    padding: 1px 8px;
+    border-radius: 2px;
+}
+.log-debug   { color: rgba(255,255,255,0.4); }
+.log-info    { color: rgba(255,255,255,0.75); }
+.log-warning { color: #FFA726; background: rgba(255,167,38,0.05); }
+.log-error   { color: #EF5350; background: rgba(239,83,80,0.07); }
+.log-fatal   { color: #B71C1C; background: rgba(183,28,28,0.12); }
+
+/* ─── MudBlazor overrides ────────────────────────────────── */
+/* Tighter chip size */
+.mud-chip.mud-chip-size-small {
+    height: 22px;
+    font-size: 0.7rem;
+}
+
+/* Nav section labels */
+.mud-nav-menu .nav-section-label {
+    font-size: 0.65rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    padding: 8px 16px 2px;
+    color: rgba(255,255,255,0.35);
+}
+
+/* Data grid compact */
+.mud-table-cell {
+    font-size: 0.8125rem !important;
+}
+
+/* ─── Mobile ─────────────────────────────────────────────── */
+@media (max-width: 600px) {
+    .stat-value { font-size: 1.375rem; }
+    .hide-mobile { display: none !important; }
+}
+
+@media (min-width: 600px) {
+    .hide-desktop { display: none !important; }
+}

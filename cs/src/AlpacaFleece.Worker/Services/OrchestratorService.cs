@@ -7,6 +7,9 @@ namespace AlpacaFleece.Worker.Services;
 /// Phase 3: Trading Logic (services)
 /// Phase 4: Runtime (signal handlers, task monitoring)
 /// </summary>
+/// <param name="logger">The logger instance.</param>
+/// <param name="serviceProvider">The service provider for resolving dependencies.</param>
+/// <param name="stateRepository">The state repository for managing trading state.</param>
 public sealed class OrchestratorService(
     ILogger<OrchestratorService> logger,
     IServiceProvider serviceProvider,

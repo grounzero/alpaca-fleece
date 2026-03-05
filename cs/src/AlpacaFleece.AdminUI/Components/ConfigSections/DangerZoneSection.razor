@@ -1,0 +1,63 @@
+@* Danger zone: kill switch, dry run, paper/live indicators. *@
+
+<MudGrid Spacing="3">
+    <MudItem xs="12" sm="6">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.KillSwitch"
+                       Color="Color.Error"
+                       Label="Kill Switch"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="Broker.KillSwitch" />
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            When active, no new orders are submitted.
+        </MudText>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.DryRun"
+                       Color="Color.Warning"
+                       Label="Dry Run"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="Broker.DryRun" />
+        </div>
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">
+            Orders are logged but not submitted to the broker.
+        </MudText>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Trading Mode</MudText>
+        <div class="d-flex align-center gap-2 mt-1">
+            @if (Draft.IsPaperTrading)
+            {
+                <MudChip T="string" Color="Color.Info" Size="Size.Small">PAPER</MudChip>
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">(read-only — change IsPaperTrading directly in JSON)</MudText>
+            }
+            else
+            {
+                <MudChip T="string" Color="Color.Warning" Size="Size.Small" Variant="Variant.Filled">LIVE</MudChip>
+            }
+        </div>
+    </MudItem>
+    <MudItem xs="12" sm="6">
+        <MudText Typo="Typo.caption" Class="mud-text-secondary">Allow Live Trading Gate</MudText>
+        <div class="d-flex align-center gap-2 mt-1">
+            @if (Draft.AllowLiveTrading)
+            {
+                <MudChip T="string" Color="Color.Error" Size="Size.Small" Variant="Variant.Filled">ENABLED</MudChip>
+            }
+            else
+            {
+                <MudChip T="string" Color="Color.Default" Size="Size.Small">Disabled</MudChip>
+            }
+        </div>
+    </MudItem>
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

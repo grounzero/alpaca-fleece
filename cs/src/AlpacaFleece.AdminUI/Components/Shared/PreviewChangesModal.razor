@@ -1,0 +1,72 @@
+@* Shows a diff table of changes before saving config. Risk-increase rows highlighted amber. *@
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Preview Changes</MudText>
+    </TitleContent>
+    <DialogContent>
+        @if (Changes.Count == 0)
+        {
+            <MudText Class="mud-text-secondary">No changes detected.</MudText>
+        }
+        else
+        {
+            <MudTable Items="Changes" Dense="true" Hover="true">
+                <HeaderContent>
+                    <MudTh>Field</MudTh>
+                    <MudTh>Old</MudTh>
+                    <MudTh>New</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd Class="@(context.IsRiskIncrease ? "mud-warning-text" : "")">
+                        @context.Field
+                        @if (context.IsRiskIncrease)
+                        {
+                            <MudIcon Icon="@Icons.Material.Filled.Warning"
+                                     Size="Size.Small"
+                                     Class="ml-1 mud-warning-text" />
+                        }
+                    </MudTd>
+                    <MudTd>
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">@context.OldValue</MudText>
+                    </MudTd>
+                    <MudTd>
+                        <strong>@context.NewValue</strong>
+                    </MudTd>
+                </RowTemplate>
+            </MudTable>
+            @if (Changes.Any(c => c.IsRiskIncrease))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">
+                    Some changes increase risk exposure. Review carefully.
+                </MudAlert>
+            }
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="CancelClicked">Cancel</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" OnClick="ConfirmClicked"
+                   Disabled="@(Changes.Count == 0)">
+            Save Changes
+        </MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = null!;
+    [Parameter] public IReadOnlyList<ConfigChange> Changes { get; set; } = [];
+    [Parameter] public EventCallback OnConfirm { get; set; }
+    [Parameter] public EventCallback OnCancel { get; set; }
+
+    private async Task ConfirmClicked()
+    {
+        MudDialog.Close(DialogResult.Ok(true));
+        if (OnConfirm.HasDelegate) await OnConfirm.InvokeAsync();
+    }
+
+    private async Task CancelClicked()
+    {
+        MudDialog.Cancel();
+        if (OnCancel.HasDelegate) await OnCancel.InvokeAsync();
+    }
+}

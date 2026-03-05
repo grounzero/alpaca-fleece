@@ -1,0 +1,190 @@
+@page "/orders"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject AdminDbService DbService
+@inject ISnackbar Snackbar
+
+<PageTitle>Orders — AlpacaFleece Admin</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Orders</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Order intents and fill history.
+</MudText>
+
+@* ── Filters ── *@
+<MudPaper Class="pa-3 mb-4" Elevation="1">
+    <MudGrid Spacing="2" Class="align-center">
+        <MudItem xs="12" sm="4">
+            <MudTextField @bind-Value="_filterSymbol"
+                          Label="Symbol"
+                          Immediate
+                          Adornment="Adornment.End"
+                          AdornmentIcon="@Icons.Material.Filled.Search"
+                          OnKeyDown="@OnFilterKeyDown" />
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudSelect @bind-Value="_filterStatus" Label="Status" Dense>
+                <MudSelectItem Value="@("All")">All</MudSelectItem>
+                <MudSelectItem Value="@("pending")">Pending</MudSelectItem>
+                <MudSelectItem Value="@("submitted")">Submitted</MudSelectItem>
+                <MudSelectItem Value="@("accepted")">Accepted</MudSelectItem>
+                <MudSelectItem Value="@("partially_filled")">Partially Filled</MudSelectItem>
+                <MudSelectItem Value="@("filled")">Filled</MudSelectItem>
+                <MudSelectItem Value="@("canceled")">Cancelled</MudSelectItem>
+                <MudSelectItem Value="@("rejected")">Rejected</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="12" sm="4">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary"
+                       OnClick="@ApplyFilters">
+                Apply
+            </MudButton>
+            <MudButton Variant="Variant.Outlined" Class="ml-2"
+                       OnClick="@ClearFilters">
+                Clear
+            </MudButton>
+        </MudItem>
+    </MudGrid>
+</MudPaper>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+
+<MudDataGrid @ref="_grid"
+             T="OrderIntentEntity"
+             ServerData="@LoadServerData"
+             Dense="true"
+             Hover="true"
+             Striped="true"
+             Elevation="2">
+    <Columns>
+        <PropertyColumn Property="x => x.Symbol" Title="Symbol" />
+        <TemplateColumn Title="Side">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@(context.Item.Side == "buy" ? Color.Success : Color.Error)"
+                         Variant="Variant.Outlined">
+                    @context.Item.Side.ToUpperInvariant()
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <PropertyColumn Property="x => x.Quantity" Title="Qty" Format="G" />
+        <TemplateColumn Title="Limit Price">
+            <CellTemplate>
+                @if (context.Item.LimitPrice > 0)
+                { <span>@context.Item.LimitPrice.ToString("C")</span> }
+                else
+                { <span class="mud-text-secondary">Market</span> }
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Status">
+            <CellTemplate>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@StatusColor(context.Item.Status)"
+                         Variant="Variant.Filled">
+                    @context.Item.Status
+                </MudChip>
+            </CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Created">
+            <CellTemplate>@context.Item.CreatedAt.LocalDateTime.ToString("g")</CellTemplate>
+        </TemplateColumn>
+        <TemplateColumn Title="Updated">
+            <CellTemplate>
+                @if (context.Item.UpdatedAt.HasValue)
+                { @context.Item.UpdatedAt.Value.LocalDateTime.ToString("g") }
+                else
+                { <span class="mud-text-secondary">—</span> }
+            </CellTemplate>
+        </TemplateColumn>
+    </Columns>
+    <ChildRowContent>
+        <MudTr>
+            <td colspan="7">
+                <MudPaper Class="pa-3 ml-4" Elevation="0">
+                    <MudGrid Spacing="2">
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Alpaca Order ID</MudText>
+                            <MudText Typo="Typo.body2">@(context.Item.AlpacaOrderId ?? "—")</MudText>
+                        </MudItem>
+                        <MudItem xs="12" sm="6">
+                            <MudText Typo="Typo.caption" Class="mud-text-secondary">Client Order ID</MudText>
+                            <MudText Typo="Typo.body2" Style="font-family:monospace;font-size:0.75rem">
+                                @context.Item.ClientOrderId
+                            </MudText>
+                        </MudItem>
+                        @if (context.Item.AtrSeed.HasValue)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">ATR Seed</MudText>
+                                <MudText Typo="Typo.body2">@context.Item.AtrSeed.Value.ToString("F4")</MudText>
+                            </MudItem>
+                        }
+                        @if (context.Item.FilledAt.HasValue)
+                        {
+                            <MudItem xs="12" sm="6">
+                                <MudText Typo="Typo.caption" Class="mud-text-secondary">Filled At</MudText>
+                                <MudText Typo="Typo.body2">@context.Item.FilledAt.Value.LocalDateTime.ToString("g")</MudText>
+                            </MudItem>
+                        }
+                    </MudGrid>
+                </MudPaper>
+            </td>
+        </MudTr>
+    </ChildRowContent>
+</MudDataGrid>
+
+@code {
+    private MudDataGrid<OrderIntentEntity>? _grid;
+    private string _filterSymbol = "";
+    private string _filterStatus = "All";
+    private string? _error;
+
+    private async Task<GridData<OrderIntentEntity>> LoadServerData(GridState<OrderIntentEntity> state, CancellationToken ct)
+    {
+        _error = null;
+        try
+        {
+            var page = state.Page + 1;
+            var (rows, total) = await DbService.GetOrderIntentsAsync(
+                _filterSymbol, _filterStatus, null, null, page, state.PageSize);
+            return new GridData<OrderIntentEntity> { Items = rows, TotalItems = total };
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load orders: {ex.Message}";
+            return new GridData<OrderIntentEntity> { Items = [], TotalItems = 0 };
+        }
+    }
+
+    private async Task ApplyFilters()
+    {
+        if (_grid is not null)
+            await _grid.ReloadServerData();
+    }
+
+    private async Task ClearFilters()
+    {
+        _filterSymbol = "";
+        _filterStatus = "All";
+        if (_grid is not null) await _grid.ReloadServerData();
+    }
+
+    private async Task OnFilterKeyDown(KeyboardEventArgs e)
+    {
+        if (e.Key == "Enter" && _grid is not null)
+            await _grid.ReloadServerData();
+    }
+
+    private static Color StatusColor(string status) => status switch
+    {
+        "filled"         => Color.Success,
+        "accepted"       => Color.Info,
+        "submitted"      => Color.Info,
+        "partially_filled" => Color.Warning,
+        "canceled" or "rejected" or "expired" => Color.Error,
+        _                => Color.Default
+    };
+}

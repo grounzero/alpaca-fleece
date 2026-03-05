@@ -1,0 +1,118 @@
+@* Drawdown monitor configuration. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.DrawdownEnabled"
+                       Color="Color.Primary"
+                       Label="Enable Drawdown Monitor"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="Drawdown.Enabled" />
+        </div>
+    </MudItem>
+
+    @if (Draft.DrawdownEnabled)
+    {
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">WARNING THRESHOLD</MudText>
+                <InfoPopup FieldKey="Drawdown.WarningThresholdPct" />
+            </div>
+            <SliderWithZones Min="0.005m" Max="0.10m" Step="0.005m"
+                             @bind-Value="Draft.WarningThresholdPct"
+                             @bind-Value:after="OnWarningChanged"
+                             Label="Warning %"
+                             Format="P1"
+                             GreenUpTo="@([0.02m])"
+                             AmberUpTo="@([0.04m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HALT THRESHOLD</MudText>
+                <InfoPopup FieldKey="Drawdown.HaltThresholdPct" />
+            </div>
+            <SliderWithZones Min="0.01m" Max="0.20m" Step="0.005m"
+                             @bind-Value="Draft.HaltThresholdPct"
+                             @bind-Value:after="OnHaltChanged"
+                             Label="Halt %"
+                             Format="P1"
+                             GreenUpTo="@([0.04m])"
+                             AmberUpTo="@([0.07m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">EMERGENCY THRESHOLD</MudText>
+                <InfoPopup FieldKey="Drawdown.EmergencyThresholdPct" />
+            </div>
+            <SliderWithZones Min="0.02m" Max="0.30m" Step="0.01m"
+                             @bind-Value="Draft.EmergencyThresholdPct"
+                             @bind-Value:after="MarkDirty"
+                             Label="Emergency %"
+                             Format="P1"
+                             GreenUpTo="@([0.08m])"
+                             AmberUpTo="@([0.15m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">WARNING POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="Drawdown.WarningPositionMultiplier" />
+            </div>
+            <SliderWithZones Min="0.1m" Max="1.0m" Step="0.05m"
+                             @bind-Value="Draft.WarningPositionMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Warning Multiplier"
+                             Format="P0" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOOKBACK DAYS</MudText>
+                <InfoPopup FieldKey="Drawdown.LookbackDays" />
+            </div>
+            <SliderWithZones Min="5" Max="60" Step="5"
+                             @bind-Value="@LookbackDecimal"
+                             @bind-Value:after="MarkDirty"
+                             Label="Lookback Days"
+                             GreenUpTo="@([20m])"
+                             AmberUpTo="@([40m])" />
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <div class="d-flex align-center gap-2">
+                <MudSwitch T="bool"
+                           @bind-Value="Draft.EnableAutoRecovery"
+                           Color="Color.Primary"
+                           Label="Enable Auto Recovery"
+                           @bind-Value:after="MarkDirty" />
+                <InfoPopup FieldKey="Drawdown.EnableAutoRecovery" />
+            </div>
+        </MudItem>
+    }
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private decimal LookbackDecimal
+    {
+        get => Draft.LookbackDays;
+        set { Draft.LookbackDays = (int)value; }
+    }
+
+    private void OnWarningChanged()
+    {
+        if (Draft.WarningThresholdPct >= Draft.HaltThresholdPct)
+            Draft.HaltThresholdPct = Draft.WarningThresholdPct + 0.01m;
+        MarkDirty();
+    }
+
+    private void OnHaltChanged()
+    {
+        if (Draft.HaltThresholdPct <= Draft.WarningThresholdPct)
+            Draft.WarningThresholdPct = Draft.HaltThresholdPct - 0.01m;
+        if (Draft.HaltThresholdPct >= Draft.EmergencyThresholdPct)
+            Draft.EmergencyThresholdPct = Draft.HaltThresholdPct + 0.01m;
+        MarkDirty();
+    }
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}

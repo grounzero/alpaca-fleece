@@ -1,0 +1,268 @@
+@page "/logs"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@implements IAsyncDisposable
+@inject LogService LogSvc
+@inject LogStreamService StreamSvc
+@inject ISnackbar Snackbar
+
+<PageTitle>Logs — AlpacaFleece Admin</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Logs</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Live log stream with filtering.
+</MudText>
+
+@* ── Controls ── *@
+<MudPaper Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3" Elevation="1">
+    <MudSelect T="string" SelectedValues="_levelFilters" SelectedValuesChanged="OnLevelFiltersChanged"
+               Label="Levels" Style="max-width:180px"
+               MultiSelection="true" SelectAll="true" SelectAllText="All">
+        <MudSelectItem T="string" Value="@("DBG")">Debug</MudSelectItem>
+        <MudSelectItem T="string" Value="@("INF")">Info</MudSelectItem>
+        <MudSelectItem T="string" Value="@("WRN")">Warning</MudSelectItem>
+        <MudSelectItem T="string" Value="@("ERR")">Error</MudSelectItem>
+        <MudSelectItem T="string" Value="@("FTL")">Fatal</MudSelectItem>
+    </MudSelect>
+
+    <MudTextField @bind-Value="_searchText"
+                  Label="Search"
+                  Immediate
+                  Style="max-width:240px"
+                  Adornment="Adornment.End"
+                  AdornmentIcon="@Icons.Material.Filled.Search" />
+
+    <MudButton StartIcon="@(_paused ? Icons.Material.Filled.PlayArrow : Icons.Material.Filled.Pause)"
+               Color="@(_paused ? Color.Success : Color.Warning)"
+               Variant="Variant.Outlined"
+               Size="Size.Small"
+               OnClick="@TogglePause">
+        @(_paused ? "Resume" : "Pause")
+    </MudButton>
+
+    <MudButton StartIcon="@Icons.Material.Filled.ClearAll"
+               Color="Color.Default"
+               Variant="Variant.Outlined"
+               Size="Size.Small"
+               OnClick="@ClearLog">
+        Clear
+    </MudButton>
+
+    <MudButton StartIcon="@Icons.Material.Filled.Refresh"
+               Color="Color.Default"
+               Variant="Variant.Outlined"
+               Size="Size.Small"
+               OnClick="@RefreshLogsAsync">
+        Refresh
+    </MudButton>
+
+    <MudSpacer />
+
+    @if (_streaming)
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Live</MudChip>
+    }
+    else
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">History only</MudChip>
+    }
+    <MudText Typo="Typo.caption" Class="mud-text-secondary">
+        @_displayedLines.Count lines
+        @if (_paused && _bufferedLines.Count > 0)
+        {
+            <span class="mud-warning-text ml-1">(@_bufferedLines.Count buffered)</span>
+        }
+    </MudText>
+</MudPaper>
+
+@* ── Log output ── *@
+<MudPaper Elevation="2"
+          Style="font-family:monospace;background:#0d0d1a;max-height:600px;overflow-y:auto"
+          id="log-container">
+    @if (_loading)
+    {
+        <MudProgressLinear Indeterminate Color="Color.Primary" />
+    }
+    else if (_displayedLines.Count == 0)
+    {
+        <MudText Class="mud-text-secondary pa-3">No log lines to display.</MudText>
+    }
+    else
+    {
+        <MudVirtualize Items="@_displayedLines" Context="line" OverscanCount="10">
+            <div class="@LevelClass(line.Level) log-line pa-1"
+                 style="font-size:0.72rem;line-height:1.4;border-bottom:1px solid rgba(255,255,255,0.03)">
+                <span style="color:rgba(255,255,255,0.4);margin-right:8px">
+                    @line.Timestamp.LocalDateTime.ToString("HH:mm:ss.fff")
+                </span>
+                <MudChip T="string" Size="Size.Small"
+                         Color="@LevelColor(line.Level)"
+                         Variant="Variant.Filled"
+                         Class="mr-1"
+                         Style="font-size:0.65rem;height:18px;min-width:36px;padding:0 4px">
+                    @line.Level
+                </MudChip>
+                <span>@line.Message</span>
+                @if (!string.IsNullOrEmpty(line.Exception))
+                {
+                    <div style="color:#ef9a9a;white-space:pre-wrap;margin-top:2px;padding-left:80px">
+                        @line.Exception
+                    </div>
+                }
+            </div>
+        </MudVirtualize>
+    }
+</MudPaper>
+
+@code {
+    private const int MaxLines    = 200;
+    private const int MaxBuffered = 1000;
+
+    private List<LogLine> _displayedLines = [];
+    private List<LogLine> _bufferedLines  = [];
+    private List<LogLine> _allLines       = [];
+
+    private HashSet<string> _levelFilters = new(new[] { "DBG", "INF", "WRN", "ERR", "FTL" });
+    private string _searchText = "";
+    private bool   _paused;
+    private bool   _loading = true;
+    private bool   _streaming;
+    private CancellationTokenSource? _filterDebounce;
+
+    protected override async Task OnInitializedAsync()
+    {
+        // Load historical lines first
+        try
+        {
+            var recent = await LogSvc.GetRecentLinesAsync(200);
+            _allLines = recent.ToList();
+            ApplyFilters();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to load log history: {ex.Message}", Severity.Warning);
+        }
+        finally
+        {
+            _loading = false;
+        }
+
+        // Subscribe to live stream via direct service event.
+        // This is the correct Blazor Server pattern — no HubConnection needed
+        // because the component and service run in the same ASP.NET Core process.
+        StreamSvc.NewLine += OnNewLine;
+        _streaming = true;
+    }
+
+    private void OnNewLine(LogLine line)
+    {
+        // Called on the background service thread — marshal to Blazor circuit
+        InvokeAsync(() =>
+        {
+            if (_paused)
+            {
+                if (_bufferedLines.Count < MaxBuffered)
+                    _bufferedLines.Add(line);
+            }
+            else
+            {
+                _allLines.Add(line);
+                if (_allLines.Count > MaxLines) _allLines.RemoveAt(0);
+                ApplyFilters();
+            }
+            StateHasChanged();
+        });
+    }
+
+    private void TogglePause()
+    {
+        _paused = !_paused;
+        if (!_paused && _bufferedLines.Count > 0)
+        {
+            _allLines.AddRange(_bufferedLines);
+            _bufferedLines.Clear();
+            if (_allLines.Count > MaxLines)
+                _allLines = _allLines.TakeLast(MaxLines).ToList();
+            ApplyFilters();
+        }
+    }
+
+    private void ClearLog()
+    {
+        _allLines.Clear();
+        _bufferedLines.Clear();
+        _displayedLines.Clear();
+    }
+
+    private async Task RefreshLogsAsync()
+    {
+        try
+        {
+            var recent = await LogSvc.GetRecentLinesAsync(200);
+            _allLines = recent.ToList();
+            ApplyFilters();
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Failed to refresh logs: {ex.Message}", Severity.Warning);
+        }
+    }
+
+    private void ApplyFilters()
+    {
+        var filtered = _allLines.AsEnumerable();
+
+        if (_levelFilters?.Count > 0)
+            filtered = filtered.Where(l => _levelFilters.Contains(l.Level));
+
+        if (!string.IsNullOrWhiteSpace(_searchText))
+            filtered = filtered.Where(l => l.Message.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
+
+        _displayedLines = filtered.ToList();
+    }
+
+    private async Task OnLevelFiltersChanged(IEnumerable<string> newValues)
+    {
+        _levelFilters = new(newValues ?? []);
+
+        // Debounce filter application to avoid lag during dropdown interaction
+        _filterDebounce?.Cancel();
+        _filterDebounce = new CancellationTokenSource();
+
+        try
+        {
+            await Task.Delay(150, _filterDebounce.Token);
+            ApplyFilters();
+            StateHasChanged();
+        }
+        catch (OperationCanceledException)
+        {
+            // Debounce was cancelled by a new selection
+        }
+    }
+
+    private static string LevelClass(string level) => level switch
+    {
+        "DBG" => "log-line-dbg",
+        "INF" => "log-line-inf",
+        "WRN" => "log-line-wrn",
+        "ERR" or "FTL" => "log-line-err",
+        _ => ""
+    };
+
+    private static Color LevelColor(string level) => level switch
+    {
+        "DBG" => Color.Default,
+        "INF" => Color.Info,
+        "WRN" => Color.Warning,
+        "ERR" or "FTL" => Color.Error,
+        _ => Color.Default
+    };
+
+    public ValueTask DisposeAsync()
+    {
+        StreamSvc.NewLine -= OnNewLine;
+        return ValueTask.CompletedTask;
+    }
+}

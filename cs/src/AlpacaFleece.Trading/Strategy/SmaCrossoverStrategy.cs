@@ -35,7 +35,15 @@ public sealed class SmaCrossoverStrategy(
     private readonly Dictionary<string, (decimal, decimal)> _previousSmaPair2 = new();
     private readonly Dictionary<string, (decimal, decimal)> _previousSmaPair3 = new();
 
+    /// <summary>
+    /// Gets the number of bars required for the strategy to be ready (51 bars).
+    /// </summary>
     public int RequiredHistory => RequiredBars;
+
+    /// <summary>
+    /// Gets a value indicating whether the strategy is ready to emit signals.
+    /// True when all tracked symbols have accumulated enough bars (RequiredHistory).
+    /// </summary>
     public bool IsReady => _barHistories.Count > 0 && _barHistories.Values.All(h => h.Count >= RequiredBars);
 
     /// <summary>

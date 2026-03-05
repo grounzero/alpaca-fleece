@@ -1,0 +1,325 @@
+@page "/config"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject ConfigService ConfigSvc
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+@inject HighlightInterop Highlight
+@inject LocalStorageService LocalStorage
+@inject ClipboardService Clipboard
+
+<PageTitle>Config — AlpacaFleece Admin</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">
+    Configuration
+    @if (_draft?.IsDirty == true)
+    {
+        <MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Filled" Class="ml-2">UNSAVED</MudChip>
+    }
+</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Edit bot configuration. Changes require a bot restart to take effect.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="400px" />
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+}
+else if (_draft is not null)
+{
+    <CascadingValue Value="_draft">
+        <MudTabs @bind-ActivePanelIndex="_activeTab" Elevation="2" Rounded ApplyEffectsToContainer>
+            @* ── Visual Tab ── *@
+            <MudTabPanel Text="Visual">
+                <MudPaper Class="pa-4" Elevation="0">
+                    <MudExpansionPanels MultiExpansion="true">
+                        <MudExpansionPanel Text="Danger Zone" @bind-Expanded="_dangerExpanded">
+                            <DangerZoneSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Credentials" @bind-Expanded="_credExpanded">
+                            <CredentialsSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Symbols" @bind-Expanded="_symbolsExpanded">
+                            <SymbolsSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Risk Limits" @bind-Expanded="_riskExpanded">
+                            <RiskLimitsSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Drawdown Monitor" @bind-Expanded="_drawdownExpanded">
+                            <DrawdownSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Exit Rules" @bind-Expanded="_exitExpanded">
+                            <ExitRulesSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Signal Filters" @bind-Expanded="_filtersExpanded">
+                            <SignalFiltersSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Execution" @bind-Expanded="_execExpanded">
+                            <ExecutionSection />
+                        </MudExpansionPanel>
+                        <MudExpansionPanel Text="Correlation Limits" @bind-Expanded="_corrExpanded">
+                            <CorrelationSection />
+                        </MudExpansionPanel>
+                    </MudExpansionPanels>
+                </MudPaper>
+            </MudTabPanel>
+
+            @* ── JSON Tab ── *@
+            <MudTabPanel Text="JSON">
+                <MudPaper Class="pa-3" Elevation="0">
+                    <div class="d-flex gap-2 mb-2">
+                        <MudButton StartIcon="@Icons.Material.Filled.Refresh"
+                                   Size="Size.Small"
+                                   OnClick="@LoadRawJsonAsync">
+                            Reload
+                        </MudButton>
+                        <MudButton StartIcon="@Icons.Material.Filled.ContentCopy"
+                                   Size="Size.Small"
+                                   OnClick="@CopyJsonAsync">
+                            Copy
+                        </MudButton>
+                    </div>
+                    <pre id="json-preview"
+                         class="language-json"
+                         style="max-height:500px;overflow:auto;font-size:0.75rem;border-radius:4px">@_rawJson</pre>
+                </MudPaper>
+            </MudTabPanel>
+
+            @* ── Backups Tab ── *@
+            <MudTabPanel Text="Backups">
+                <MudPaper Class="pa-3" Elevation="0">
+                    @if (_backups.Count == 0)
+                    {
+                        <MudText Class="mud-text-secondary">No backups found.</MudText>
+                    }
+                    else
+                    {
+                        <MudList T="string" Dense>
+                            @foreach (var b in _backups)
+                            {
+                                <MudListItem T="string">
+                                    <div class="d-flex justify-space-between align-center">
+                                        <MudText Typo="Typo.body2" Style="font-family:monospace;font-size:0.75rem">
+                                            @Path.GetFileName(b)
+                                        </MudText>
+                                        <MudButton Size="Size.Small"
+                                                   Color="Color.Warning"
+                                                   Variant="Variant.Outlined"
+                                                   OnClick="@(() => RestoreBackupAsync(b))">
+                                            Restore
+                                        </MudButton>
+                                    </div>
+                                </MudListItem>
+                            }
+                        </MudList>
+                    }
+                </MudPaper>
+            </MudTabPanel>
+        </MudTabs>
+
+        @* ── Action bar ── *@
+        <MudPaper Class="pa-3 mt-4 d-flex gap-3 align-center" Elevation="2">
+            <MudButton Variant="Variant.Filled"
+                       Color="Color.Primary"
+                       StartIcon="@Icons.Material.Filled.Save"
+                       Disabled="@(!_draft.IsDirty || _saving)"
+                       OnClick="@SaveAsync">
+                @if (_saving) { <MudProgressCircular Size="Size.Small" Indeterminate Class="mr-1" /> }
+                Save Changes
+            </MudButton>
+            <MudButton Variant="Variant.Outlined"
+                       OnClick="@DiscardAsync"
+                       Disabled="_saving">
+                Discard
+            </MudButton>
+            @if (_validationErrors.Count > 0)
+            {
+                <MudText Typo="Typo.caption" Class="mud-error-text">
+                    @string.Join(" | ", _validationErrors)
+                </MudText>
+            }
+        </MudPaper>
+    </CascadingValue>
+}
+
+@code {
+    private ConfigDraft? _draft;
+    private string? _rawJson;
+    private bool _loading = true;
+    private bool _saving;
+    private string? _error;
+    private int _activeTab;
+    private List<string> _backups = [];
+    private List<string> _validationErrors = [];
+
+    // Expansion state
+    private bool _dangerExpanded, _credExpanded, _symbolsExpanded = true;
+    private bool _riskExpanded, _drawdownExpanded, _exitExpanded;
+    private bool _filtersExpanded, _execExpanded, _corrExpanded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _loading = true;
+        try
+        {
+            _draft = await ConfigSvc.ReadDraftAsync();
+            _backups = (await ConfigSvc.GetBackupsAsync()).ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load config: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_activeTab == 1 && !string.IsNullOrEmpty(_rawJson))
+        {
+            try { await Highlight.HighlightElementAsync("json-preview"); }
+            catch { /* highlight.js optional */ }
+        }
+    }
+
+    private async Task LoadRawJsonAsync()
+    {
+        try { _rawJson = await ConfigSvc.GetRawJsonAsync(); }
+        catch (Exception ex) { Snackbar.Add($"Failed to load JSON: {ex.Message}", Severity.Error); }
+    }
+
+    private async Task CopyJsonAsync()
+    {
+        if (!string.IsNullOrEmpty(_rawJson))
+        {
+            await Clipboard.CopyAsync(_rawJson);
+            Snackbar.Add("JSON copied to clipboard.", Severity.Success);
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        if (_draft is null) return;
+
+        _validationErrors = ConfigSvc.ValidateDraft(_draft).ToList();
+        if (_validationErrors.Any(e => !e.StartsWith("Warning")))
+        {
+            Snackbar.Add("Please fix validation errors before saving.", Severity.Warning);
+            return;
+        }
+
+        // Build diff for preview modal
+        var original = await ConfigSvc.ReadDraftAsync();
+        var changes = BuildChanges(original, _draft);
+
+        var parameters = new DialogParameters<PreviewChangesModal>
+        {
+            { x => x.Changes, changes }
+        };
+        var dlg = await DialogService.ShowAsync<PreviewChangesModal>("Preview Changes", parameters,
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true });
+        var result = await dlg.Result;
+        if (result?.Canceled ?? true) return;
+
+        _saving = true;
+        try
+        {
+            await ConfigSvc.WriteAsync(_draft);
+            _draft.IsDirty = false;
+            _backups = (await ConfigSvc.GetBackupsAsync()).ToList();
+            Snackbar.Add("Configuration saved. Restart the bot for changes to take effect.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Save failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _saving = false;
+        }
+    }
+
+    private async Task DiscardAsync()
+    {
+        _loading = true;
+        try
+        {
+            _draft = await ConfigSvc.ReadDraftAsync();
+            _validationErrors.Clear();
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Reload failed: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RestoreBackupAsync(string path)
+    {
+        var parameters = new DialogParameters<ConfirmDialog>
+        {
+            { x => x.Title, "Restore Backup" },
+            { x => x.Message, $"Restore {Path.GetFileName(path)}? This will overwrite the current config." },
+            { x => x.ConfirmText, "Restore" },
+            { x => x.ConfirmColor, Color.Warning }
+        };
+        var dlg = await DialogService.ShowAsync<ConfirmDialog>("Restore Backup", parameters);
+        var result = await dlg.Result;
+        if (result?.Canceled ?? true) return;
+
+        try
+        {
+            await ConfigSvc.RestoreBackupAsync(path);
+            _draft = await ConfigSvc.ReadDraftAsync();
+            Snackbar.Add("Backup restored.", Severity.Success);
+        }
+        catch (Exception ex)
+        {
+            Snackbar.Add($"Restore failed: {ex.Message}", Severity.Error);
+        }
+    }
+
+    private static List<ConfigChange> BuildChanges(ConfigDraft original, ConfigDraft updated)
+    {
+        var changes = new List<ConfigChange>();
+
+        void Add(string field, string oldVal, string newVal, bool riskUp = false)
+        {
+            if (oldVal != newVal) changes.Add(new ConfigChange(field, oldVal, newVal, riskUp));
+        }
+
+        Add("KillSwitch", original.KillSwitch.ToString(), updated.KillSwitch.ToString());
+        Add("DryRun", original.DryRun.ToString(), updated.DryRun.ToString());
+        Add("MaxRiskPerTradePct", original.MaxRiskPerTradePct.ToString("P2"), updated.MaxRiskPerTradePct.ToString("P2"),
+            updated.MaxRiskPerTradePct > original.MaxRiskPerTradePct);
+        Add("MaxDailyLoss", original.MaxDailyLoss.ToString("C"), updated.MaxDailyLoss.ToString("C"),
+            updated.MaxDailyLoss > original.MaxDailyLoss);
+        Add("StopLossPct", original.StopLossPct.ToString("P1"), updated.StopLossPct.ToString("P1"),
+            updated.StopLossPct > original.StopLossPct);
+        Add("AtrStopLossMultiplier", original.AtrStopLossMultiplier.ToString("F1"), updated.AtrStopLossMultiplier.ToString("F1"));
+        Add("AtrProfitTargetMultiplier", original.AtrProfitTargetMultiplier.ToString("F2"), updated.AtrProfitTargetMultiplier.ToString("F2"));
+        Add("DrawdownEnabled", original.DrawdownEnabled.ToString(), updated.DrawdownEnabled.ToString());
+        Add("WarningThresholdPct", original.WarningThresholdPct.ToString("P1"), updated.WarningThresholdPct.ToString("P1"),
+            updated.WarningThresholdPct > original.WarningThresholdPct);
+        Add("HaltThresholdPct", original.HaltThresholdPct.ToString("P1"), updated.HaltThresholdPct.ToString("P1"),
+            updated.HaltThresholdPct > original.HaltThresholdPct);
+        Add("EmergencyThresholdPct", original.EmergencyThresholdPct.ToString("P1"), updated.EmergencyThresholdPct.ToString("P1"),
+            updated.EmergencyThresholdPct > original.EmergencyThresholdPct);
+        Add("MaxTradesPerDay", original.MaxTradesPerDay.ToString(), updated.MaxTradesPerDay.ToString(),
+            updated.MaxTradesPerDay > original.MaxTradesPerDay);
+        Add("AllowFractionalOrders", original.AllowFractionalOrders.ToString(), updated.AllowFractionalOrders.ToString());
+        Add("EntryOrderType", original.EntryOrderType, updated.EntryOrderType);
+
+        return changes;
+    }
+}

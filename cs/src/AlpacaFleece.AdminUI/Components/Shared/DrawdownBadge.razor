@@ -1,0 +1,22 @@
+@* Displays a coloured chip for the current drawdown level. *@
+
+<MudChip T="string"
+         Size="Size.Small"
+         Color="@LevelColor"
+         Variant="Variant.Filled"
+         Class="@(Level is "Emergency" or "Halt" ? "fw-700" : "")">
+    @Level
+</MudChip>
+
+@code {
+    [Parameter, EditorRequired] public string Level { get; set; } = "Normal";
+
+    private Color LevelColor => Level switch
+    {
+        "Normal"    => Color.Success,
+        "Warning"   => Color.Warning,
+        "Halt"      => Color.Error,
+        "Emergency" => Color.Error,
+        _           => Color.Default
+    };
+}

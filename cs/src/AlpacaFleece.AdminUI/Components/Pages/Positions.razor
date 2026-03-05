@@ -1,0 +1,83 @@
+@page "/positions"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@inject AdminDbService DbService
+@inject ISnackbar Snackbar
+
+<PageTitle>Positions — AlpacaFleece Admin</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Positions</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-6">
+    Open positions tracked by the bot.
+</MudText>
+
+@if (_loading)
+{
+    <MudProgressLinear Indeterminate Color="Color.Primary" Class="mb-4" />
+}
+else if (_error is not null)
+{
+    <MudAlert Severity="Severity.Error">@_error</MudAlert>
+}
+else if (_positions.Count == 0)
+{
+    <MudAlert Severity="Severity.Info">No open positions.</MudAlert>
+}
+else
+{
+    <MudDataGrid T="PositionTrackingEntity"
+                 Items="@_positions"
+                 Dense="true"
+                 Hover="true"
+                 Striped="true"
+                 Elevation="2">
+        <Columns>
+            <PropertyColumn Property="x => x.Symbol" Title="Symbol" />
+            <PropertyColumn Property="x => x.CurrentQuantity" Title="Quantity" Format="G" />
+            <TemplateColumn Title="Entry Price">
+                <CellTemplate>@context.Item.EntryPrice.ToString("C")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="ATR">
+                <CellTemplate>@context.Item.AtrValue.ToString("F4")</CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Trailing Stop">
+                <CellTemplate>
+                    @if (context.Item.TrailingStopPrice > 0)
+                    {
+                        <span>@context.Item.TrailingStopPrice.ToString("C")</span>
+                    }
+                    else
+                    {
+                        <span class="mud-text-secondary">—</span>
+                    }
+                </CellTemplate>
+            </TemplateColumn>
+            <TemplateColumn Title="Last Updated">
+                <CellTemplate>@context.Item.LastUpdateAt.LocalDateTime.ToString("g")</CellTemplate>
+            </TemplateColumn>
+        </Columns>
+    </MudDataGrid>
+}
+
+@code {
+    private List<PositionTrackingEntity> _positions = [];
+    private bool _loading = true;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            var result = await DbService.GetOpenPositionsAsync();
+            _positions = result.ToList();
+        }
+        catch (Exception ex)
+        {
+            _error = $"Failed to load positions: {ex.Message}";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

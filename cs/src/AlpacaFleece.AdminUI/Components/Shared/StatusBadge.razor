@@ -1,0 +1,18 @@
+@* Displays a coloured MudChip for a container/service status string. *@
+
+<MudTooltip Text="@Tooltip" Disabled="@string.IsNullOrEmpty(Tooltip)">
+    <MudChip T="string" Size="Size.Small" Color="@ChipColor" Variant="Variant.Filled">@Status</MudChip>
+</MudTooltip>
+
+@code {
+    [Parameter, EditorRequired] public string Status { get; set; } = "";
+    [Parameter] public string? Tooltip { get; set; }
+
+    private Color ChipColor => Status?.ToLowerInvariant() switch
+    {
+        "running" => Color.Success,
+        "degraded" or "warning" => Color.Warning,
+        "stopped" or "exited" or "error" => Color.Error,
+        _ => Color.Default
+    };
+}

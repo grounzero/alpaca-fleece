@@ -4,8 +4,13 @@ namespace AlpacaFleece.Trading.Positions;
 /// Position tracker: in-memory + SQLite persistence.
 /// Tracks qty, entry price, ATR, trailing stop per symbol.
 /// </summary>
+/// <param name="stateRepository">The state repository for persistence.</param>
+/// <param name="logger">The logger instance.</param>
 public class PositionTracker(IStateRepository stateRepository, ILogger<PositionTracker> logger) : IPositionTracker
 {
+    /// <summary>
+    /// Protected no-arg constructor for NSubstitute proxy creation in testing.
+    /// </summary>
     // Protected no-arg constructor for NSubstitute proxy creation
     protected PositionTracker() : this(null!, null!) { }
 

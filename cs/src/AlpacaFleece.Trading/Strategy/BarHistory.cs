@@ -8,7 +8,14 @@ public sealed class BarHistory(int maxSize)
 {
     private readonly List<(decimal, decimal, decimal, decimal, long)> _bars = new(maxSize);
 
+    /// <summary>
+    /// Gets the current number of bars stored in history.
+    /// </summary>
     public int Count => _bars.Count;
+
+    /// <summary>
+    /// Gets a value indicating whether the history buffer is full (contains maxSize bars).
+    /// </summary>
     public bool IsFull => _bars.Count >= maxSize;
 
     /// <summary>

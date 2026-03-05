@@ -1,0 +1,535 @@
+@page "/database"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@using Microsoft.EntityFrameworkCore.Metadata
+@using Microsoft.AspNetCore.WebUtilities
+@inject IDbContextFactory<TradingDbContext> DbFactory
+@inject EfGridDataService EfGridService
+@inject ISnackbar Snackbar
+@inject NavigationManager Nav
+
+<PageTitle>Database — AlpacaFleece Admin</PageTitle>
+
+<MudText Typo="Typo.h5" Class="mb-1">Database</MudText>
+<MudText Typo="Typo.body2" Color="Color.Secondary" Class="mb-4">
+    Browse all database tables with advanced filtering, sorting, and column management.
+</MudText>
+
+
+<MudGrid Spacing="3">
+    @* ── Table list panel ── *@
+    <MudItem xs="12" md="3">
+        <MudPaper Elevation="2" Class="pa-2">
+            <MudText Typo="Typo.subtitle2" Class="pa-2">Tables</MudText>
+            @if (_tableLoading)
+            {
+                <MudProgressLinear Indeterminate />
+            }
+            else
+            {
+                <div>
+                    @foreach (var t in _tables)
+                    {
+                        var isSelected = _selected?.Name == t.Name;
+                        <div style="@($"cursor: pointer; padding: 8px; border-bottom: 1px solid #eee; background-color: {(isSelected ? "#e3f2fd" : "transparent")};")"
+                             @onclick="@(async () => await SelectTableAsync(t))">
+                            <div class="d-flex justify-space-between align-center">
+                                <MudText Typo="Typo.body2">@t.DisplayName</MudText>
+                                <MudChip T="string" Size="Size.Small" Color="Color.Default" Variant="Variant.Outlined">
+                                    @t.RowCount
+                                </MudChip>
+                            </div>
+                        </div>
+                    }
+                </div>
+            }
+        </MudPaper>
+    </MudItem>
+
+    @* ── Data panel ── *@
+    <MudItem xs="12" md="9">
+        @if (_selected is null)
+        {
+            <MudAlert Severity="Severity.Info">Select a table on the left to browse its data.</MudAlert>
+        }
+        else
+        {
+            @if (!_columnsGenerated)
+            {
+                <MudProgressCircular Indeterminate="true" />
+            }
+            else
+            {
+                @switch (_selected.Name)
+                {
+                    case "OrderIntents":
+                        <DbTableGrid TItem="OrderIntentEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_orderIntentsCols"
+                            ServerData="@LoadOrderIntents"
+                            RowDetail="@OrderIntentDetail" />
+                        break;
+                    case "Trades":
+                        <DbTableGrid TItem="TradeEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_tradesCols"
+                            ServerData="@LoadTrades"
+                            RowDetail="@TradeDetail" />
+                        break;
+                    case "EquityCurve":
+                        <DbTableGrid TItem="EquityCurveEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_equityCurveCols"
+                            ServerData="@LoadEquityCurve" />
+                        break;
+                    case "BotState":
+                        <DbTableGrid TItem="BotStateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_botStateCols"
+                            ServerData="@LoadBotState" />
+                        break;
+                    case "Bars":
+                        <DbTableGrid TItem="BarEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_barsCols"
+                            ServerData="@LoadBars" />
+                        break;
+                    case "PositionSnapshots":
+                        <DbTableGrid TItem="PositionSnapshotEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_positionSnapshotsCols"
+                            ServerData="@LoadPositionSnapshots" />
+                        break;
+                    case "SignalGates":
+                        <DbTableGrid TItem="SignalGateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_signalGatesCols"
+                            ServerData="@LoadSignalGates" />
+                        break;
+                    case "Fills":
+                        <DbTableGrid TItem="FillEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_fillsCols"
+                            ServerData="@LoadFills" />
+                        break;
+                    case "PositionTracking":
+                        <DbTableGrid TItem="PositionTrackingEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_positionTrackingCols"
+                            ServerData="@LoadPositionTracking" />
+                        break;
+                    case "ExitAttempts":
+                        <DbTableGrid TItem="ExitAttemptEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_exitAttemptsCols"
+                            ServerData="@LoadExitAttempts" />
+                        break;
+                    case "ReconciliationReports":
+                        <DbTableGrid TItem="ReconciliationReportEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_reconciliationReportsCols"
+                            ServerData="@LoadReconciliationReports" />
+                        break;
+                    case "SchemaMeta":
+                        <DbTableGrid TItem="SchemaMetaEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_schemaMetaCols"
+                            ServerData="@LoadSchemaMeta" />
+                        break;
+                    case "CircuitBreakerState":
+                        <DbTableGrid TItem="CircuitBreakerStateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_circuitBreakerStateCols"
+                            ServerData="@LoadCircuitBreakerState" />
+                        break;
+                    case "DrawdownState":
+                        <DbTableGrid TItem="DrawdownStateEntity"
+                            TableKey="@_selected.Name"
+                            Title="@_selected.DisplayName"
+                            Columns="@_drawdownStateCols"
+                            ServerData="@LoadDrawdownState" />
+                        break;
+                }
+            }
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private List<TableInfo> _tables = [];
+    private TableInfo? _selected;
+    private bool _tableLoading = true;
+    private IModel? _dbModel;
+
+    // Column definitions for each table (lazily initialized)
+    private IReadOnlyList<DbColumnDef<TradeEntity>>? _tradesCols;
+    private IReadOnlyList<DbColumnDef<OrderIntentEntity>>? _orderIntentsCols;
+    private IReadOnlyList<DbColumnDef<EquityCurveEntity>>? _equityCurveCols;
+    private IReadOnlyList<DbColumnDef<BotStateEntity>>? _botStateCols;
+    private IReadOnlyList<DbColumnDef<BarEntity>>? _barsCols;
+    private IReadOnlyList<DbColumnDef<PositionSnapshotEntity>>? _positionSnapshotsCols;
+    private IReadOnlyList<DbColumnDef<SignalGateEntity>>? _signalGatesCols;
+    private IReadOnlyList<DbColumnDef<FillEntity>>? _fillsCols;
+    private IReadOnlyList<DbColumnDef<PositionTrackingEntity>>? _positionTrackingCols;
+    private IReadOnlyList<DbColumnDef<ExitAttemptEntity>>? _exitAttemptsCols;
+    private IReadOnlyList<DbColumnDef<ReconciliationReportEntity>>? _reconciliationReportsCols;
+    private IReadOnlyList<DbColumnDef<SchemaMetaEntity>>? _schemaMetaCols;
+    private IReadOnlyList<DbColumnDef<CircuitBreakerStateEntity>>? _circuitBreakerStateCols;
+    private IReadOnlyList<DbColumnDef<DrawdownStateEntity>>? _drawdownStateCols;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            Console.WriteLine("[DatabaseBrowser] OnInitializedAsync started");
+
+            await using var db = await DbFactory.CreateDbContextAsync();
+            Console.WriteLine("[DatabaseBrowser] DbContext created");
+
+            _dbModel = db.Model; // Cache model for column generation
+            Console.WriteLine("[DatabaseBrowser] DbModel cached");
+
+            // Load table list
+            _tables = new List<TableInfo>
+            {
+                new("OrderIntents",          "Order Intents",          await db.OrderIntents.CountAsync()),
+                new("Trades",                "Trades",                 await db.Trades.CountAsync()),
+                new("EquityCurve",           "Equity Curve",           await db.EquityCurve.CountAsync()),
+                new("BotState",              "Bot State",              await db.BotState.CountAsync()),
+                new("Bars",                  "Bars",                   await db.Bars.CountAsync()),
+                new("PositionSnapshots",     "Position Snapshots",     await db.PositionSnapshots.CountAsync()),
+                new("SignalGates",           "Signal Gates",           await db.SignalGates.CountAsync()),
+                new("Fills",                 "Fills",                  await db.Fills.CountAsync()),
+                new("PositionTracking",      "Position Tracking",      await db.PositionTracking.CountAsync()),
+                new("ExitAttempts",          "Exit Attempts",          await db.ExitAttempts.CountAsync()),
+                new("ReconciliationReports", "Reconciliation Reports", await db.ReconciliationReports.CountAsync()),
+                new("SchemaMeta",            "Schema Meta",            await db.SchemaMeta.CountAsync()),
+                new("CircuitBreakerState",   "Circuit Breaker",        await db.CircuitBreakerState.CountAsync()),
+                new("DrawdownState",         "Drawdown State",         await db.DrawdownState.CountAsync()),
+            };
+            Console.WriteLine("[DatabaseBrowser] Tables loaded successfully");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DatabaseBrowser] EXCEPTION in OnInitializedAsync: {ex}");
+            Snackbar.Add($"Failed to load table list: {ex.Message}", Severity.Error);
+        }
+        finally
+        {
+            _tableLoading = false;
+            Console.WriteLine("[DatabaseBrowser] OnInitializedAsync completed");
+        }
+
+    }
+
+    private bool _columnsGenerated = false;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        Console.WriteLine($"[DatabaseBrowser] OnAfterRenderAsync called, firstRender={firstRender}, _selected={_selected?.Name ?? "null"}, _columnsGenerated={_columnsGenerated}");
+
+        // Generate columns for selected table on first render after selection
+        if (_selected is not null && !_columnsGenerated)
+        {
+            try
+            {
+                Console.WriteLine($"[DatabaseBrowser] Generating columns for {_selected.Name}");
+                await GenerateColumnsForTableAsync(_selected);
+                _columnsGenerated = true;
+                Console.WriteLine($"[DatabaseBrowser] Columns generated, calling StateHasChanged");
+                StateHasChanged();
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"[DatabaseBrowser] Error generating columns: {ex}");
+                Snackbar.Add($"Error generating columns: {ex.Message}", Severity.Error);
+            }
+        }
+    }
+
+    private async Task GenerateColumnsForTableAsync(TableInfo t)
+    {
+        if (_dbModel is null) return;
+
+        // Check if columns are already generated
+        switch (t.Name)
+        {
+            case "Trades" when _tradesCols is not null:
+            case "OrderIntents" when _orderIntentsCols is not null:
+            case "EquityCurve" when _equityCurveCols is not null:
+            case "BotState" when _botStateCols is not null:
+            case "Bars" when _barsCols is not null:
+            case "PositionSnapshots" when _positionSnapshotsCols is not null:
+            case "SignalGates" when _signalGatesCols is not null:
+            case "Fills" when _fillsCols is not null:
+            case "PositionTracking" when _positionTrackingCols is not null:
+            case "ExitAttempts" when _exitAttemptsCols is not null:
+            case "ReconciliationReports" when _reconciliationReportsCols is not null:
+            case "SchemaMeta" when _schemaMetaCols is not null:
+            case "CircuitBreakerState" when _circuitBreakerStateCols is not null:
+            case "DrawdownState" when _drawdownStateCols is not null:
+                return; // Already generated
+
+            default:
+                break;
+        }
+
+        // Generate columns synchronously
+        switch (t.Name)
+        {
+            case "Trades":
+                _tradesCols ??= EfColumnFactory.Generate<TradeEntity>(_dbModel);
+                break;
+            case "OrderIntents":
+                _orderIntentsCols ??= EfColumnFactory.Generate<OrderIntentEntity>(_dbModel);
+                break;
+            case "EquityCurve":
+                _equityCurveCols ??= EfColumnFactory.Generate<EquityCurveEntity>(_dbModel);
+                break;
+            case "BotState":
+                _botStateCols ??= EfColumnFactory.Generate<BotStateEntity>(_dbModel);
+                break;
+            case "Bars":
+                _barsCols ??= EfColumnFactory.Generate<BarEntity>(_dbModel);
+                break;
+            case "PositionSnapshots":
+                _positionSnapshotsCols ??= EfColumnFactory.Generate<PositionSnapshotEntity>(_dbModel);
+                break;
+            case "SignalGates":
+                _signalGatesCols ??= EfColumnFactory.Generate<SignalGateEntity>(_dbModel);
+                break;
+            case "Fills":
+                _fillsCols ??= EfColumnFactory.Generate<FillEntity>(_dbModel);
+                break;
+            case "PositionTracking":
+                _positionTrackingCols ??= EfColumnFactory.Generate<PositionTrackingEntity>(_dbModel);
+                break;
+            case "ExitAttempts":
+                _exitAttemptsCols ??= EfColumnFactory.Generate<ExitAttemptEntity>(_dbModel);
+                break;
+            case "ReconciliationReports":
+                _reconciliationReportsCols ??= EfColumnFactory.Generate<ReconciliationReportEntity>(_dbModel);
+                break;
+            case "SchemaMeta":
+                _schemaMetaCols ??= EfColumnFactory.Generate<SchemaMetaEntity>(_dbModel);
+                break;
+            case "CircuitBreakerState":
+                _circuitBreakerStateCols ??= EfColumnFactory.Generate<CircuitBreakerStateEntity>(_dbModel);
+                break;
+            case "DrawdownState":
+                _drawdownStateCols ??= EfColumnFactory.Generate<DrawdownStateEntity>(_dbModel);
+                break;
+        }
+
+        await Task.CompletedTask;
+    }
+
+    private async Task SelectTableAsync(TableInfo? t)
+    {
+        Console.WriteLine($"[DatabaseBrowser] SelectTableAsync called with: {t?.Name ?? "null"}");
+
+        if (t is null)
+        {
+            _selected = null;
+            _columnsGenerated = false;
+            StateHasChanged();
+            return;
+        }
+
+        Console.WriteLine($"[DatabaseBrowser] Selecting table: {t.Name}");
+
+        try
+        {
+            // Just set the selection; columns will be generated in OnAfterRenderAsync
+            _selected = t;
+            _columnsGenerated = false; // Reset flag so OnAfterRenderAsync generates columns
+            Console.WriteLine($"[DatabaseBrowser] Table selected: {t.Name}, _selected is now: {_selected.Name}");
+            StateHasChanged();
+            Console.WriteLine($"[DatabaseBrowser] StateHasChanged() called");
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine($"[DatabaseBrowser] ERROR selecting {t.Name}: {ex}");
+            Snackbar.Add($"Error selecting {t.DisplayName}: {ex.Message}", Severity.Error);
+            _selected = null;
+            _columnsGenerated = false;
+        }
+    }
+
+    // ── Server data callbacks (one per table) ──
+
+    private async Task<GridData<TradeEntity>> LoadTrades(GridState<TradeEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.Trades.AsNoTracking(), state,
+            searchableProps: ["Symbol", "Side", "ClientOrderId"]);
+    }
+
+    private async Task<GridData<OrderIntentEntity>> LoadOrderIntents(GridState<OrderIntentEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.OrderIntents.AsNoTracking(), state,
+            searchableProps: ["Symbol", "Side", "ClientOrderId", "Status"]);
+    }
+
+    private async Task<GridData<EquityCurveEntity>> LoadEquityCurve(GridState<EquityCurveEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.EquityCurve.AsNoTracking(), state);
+    }
+
+    private async Task<GridData<BotStateEntity>> LoadBotState(GridState<BotStateEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.BotState.AsNoTracking(), state,
+            searchableProps: ["Key", "Value"]);
+    }
+
+    private async Task<GridData<BarEntity>> LoadBars(GridState<BarEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.Bars.AsNoTracking(), state,
+            searchableProps: ["Symbol", "Timeframe"]);
+    }
+
+    private async Task<GridData<PositionSnapshotEntity>> LoadPositionSnapshots(GridState<PositionSnapshotEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.PositionSnapshots.AsNoTracking(), state,
+            searchableProps: ["Symbol"]);
+    }
+
+    private async Task<GridData<SignalGateEntity>> LoadSignalGates(GridState<SignalGateEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.SignalGates.AsNoTracking(), state,
+            searchableProps: ["GateName"]);
+    }
+
+    private async Task<GridData<FillEntity>> LoadFills(GridState<FillEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.Fills.AsNoTracking(), state,
+            searchableProps: ["AlpacaOrderId", "ClientOrderId"]);
+    }
+
+    private async Task<GridData<PositionTrackingEntity>> LoadPositionTracking(GridState<PositionTrackingEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.PositionTracking.AsNoTracking(), state,
+            searchableProps: ["Symbol"]);
+    }
+
+    private async Task<GridData<ExitAttemptEntity>> LoadExitAttempts(GridState<ExitAttemptEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.ExitAttempts.AsNoTracking(), state,
+            searchableProps: ["Symbol"]);
+    }
+
+    private async Task<GridData<ReconciliationReportEntity>> LoadReconciliationReports(GridState<ReconciliationReportEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.ReconciliationReports.AsNoTracking(), state,
+            searchableProps: ["Status"]);
+    }
+
+    private async Task<GridData<SchemaMetaEntity>> LoadSchemaMeta(GridState<SchemaMetaEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.SchemaMeta.AsNoTracking(), state,
+            searchableProps: ["Description"]);
+    }
+
+    private async Task<GridData<CircuitBreakerStateEntity>> LoadCircuitBreakerState(GridState<CircuitBreakerStateEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.CircuitBreakerState.AsNoTracking(), state);
+    }
+
+    private async Task<GridData<DrawdownStateEntity>> LoadDrawdownState(GridState<DrawdownStateEntity> state, CancellationToken ct)
+    {
+        await using var db = await DbFactory.CreateDbContextAsync();
+        return await EfGridService.QueryAsync(
+            db.DrawdownState.AsNoTracking(), state,
+            searchableProps: ["Level"]);
+    }
+
+    // ── Row detail fragments ──
+
+    private readonly RenderFragment<TradeEntity> TradeDetail = trade =>
+        @<div>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Alpaca Order ID</MudText>
+                    <MudText Typo="Typo.body2">@(trade.AlpacaOrderId ?? "—")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Client Order ID</MudText>
+                    <MudText Typo="Typo.body2" Style="font-family:monospace;font-size:0.85rem">@trade.ClientOrderId</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Initial Quantity</MudText>
+                    <MudText Typo="Typo.body2">@trade.InitialQuantity.ToString("G")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Average Entry Price</MudText>
+                    <MudText Typo="Typo.body2">@trade.AverageEntryPrice.ToString("C")</MudText>
+                </MudItem>
+            </MudGrid>
+        </div>;
+
+    private readonly RenderFragment<OrderIntentEntity> OrderIntentDetail = order =>
+        @<div>
+            <MudGrid Spacing="2">
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Alpaca Order ID</MudText>
+                    <MudText Typo="Typo.body2">@(order.AlpacaOrderId ?? "—")</MudText>
+                </MudItem>
+                <MudItem xs="12" sm="6">
+                    <MudText Typo="Typo.caption" Class="mud-text-secondary">Client Order ID</MudText>
+                    <MudText Typo="Typo.body2" Style="font-family:monospace;font-size:0.85rem">@order.ClientOrderId</MudText>
+                </MudItem>
+                @if (order.AtrSeed.HasValue)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">ATR Seed</MudText>
+                        <MudText Typo="Typo.body2">@order.AtrSeed.Value.ToString("F4")</MudText>
+                    </MudItem>
+                }
+                @if (order.FilledAt.HasValue)
+                {
+                    <MudItem xs="12" sm="6">
+                        <MudText Typo="Typo.caption" Class="mud-text-secondary">Filled At</MudText>
+                        <MudText Typo="Typo.body2">@order.FilledAt.Value.LocalDateTime.ToString("g")</MudText>
+                    </MudItem>
+                }
+            </MudGrid>
+        </div>;
+}

@@ -3,27 +3,89 @@ namespace AlpacaFleece.Trading.Risk;
 /// <summary>
 /// Static symbol-to-sector and symbol-to-asset-class lookup tables.
 /// Used by CorrelationService for concentration limit checks.
-///
 /// Sector names follow GICS (Global Industry Classification Standard).
 /// Symbols not in the mapping fall back to UnknownSector / AssetClass.Equity.
 /// </summary>
 public static class SectorMapping
 {
+    /// <summary>
+    /// Sector classification for unknown or unclassified symbols.
+    /// </summary>
     public const string UnknownSector = "Unknown";
+
+    /// <summary>
+    /// Technology sector classification (GICS 45).
+    /// </summary>
     public const string Technology = "Technology";
+
+    /// <summary>
+    /// Communication Services sector classification (GICS 50).
+    /// </summary>
     public const string CommunicationServices = "CommunicationServices";
+
+    /// <summary>
+    /// Consumer Discretionary sector classification (GICS 25).
+    /// </summary>
     public const string ConsumerDiscretionary = "ConsumerDiscretionary";
+
+    /// <summary>
+    /// Consumer Staples sector classification (GICS 30).
+    /// </summary>
     public const string ConsumerStaples = "ConsumerStaples";
+
+    /// <summary>
+    /// Healthcare sector classification (GICS 35).
+    /// </summary>
     public const string Healthcare = "Healthcare";
+
+    /// <summary>
+    /// Financials sector classification (GICS 40).
+    /// </summary>
     public const string Financials = "Financials";
+
+    /// <summary>
+    /// Energy sector classification (GICS 10).
+    /// </summary>
     public const string Energy = "Energy";
+
+    /// <summary>
+    /// Industrials sector classification (GICS 20).
+    /// </summary>
     public const string Industrials = "Industrials";
+
+    /// <summary>
+    /// Materials sector classification (GICS 15).
+    /// </summary>
     public const string Materials = "Materials";
+
+    /// <summary>
+    /// Utilities sector classification (GICS 55).
+    /// </summary>
     public const string Utilities = "Utilities";
+
+    /// <summary>
+    /// Real Estate sector classification (GICS 60).
+    /// </summary>
     public const string RealEstate = "RealEstate";
+
+    /// <summary>
+    /// Asset class classification for equities.
+    /// </summary>
     public const string Equities = "Equities";
+
+    /// <summary>
+    /// Asset class classification for bonds.
+    /// </summary>
     public const string Bonds = "Bonds";
+
+    /// <summary>
+    /// Asset class classification for commodities.
+    /// </summary>
     public const string Commodities = "Commodities";
+
+    /// <summary>
+    /// Asset class classification for cryptocurrencies.
+    /// </summary>
     public const string Crypto = "Crypto";
 
     /// <summary>Symbol → GICS sector string.</summary>

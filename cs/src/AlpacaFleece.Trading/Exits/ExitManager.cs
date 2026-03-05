@@ -3,21 +3,25 @@ using AlpacaFleece.Infrastructure.Symbols;
 namespace AlpacaFleece.Trading.Exits;
 
 /// <summary>
-/// Exit manager: checks positions every 30s for stop loss, trailing stop, profit target.
+/// Exit manager: checks positions periodically for stop loss, trailing stop, profit target.
 /// Uses a 3-rule priority system with ATR-based dynamic levels (mutual exclusion with fixed-%):
 ///
-///   Rule 1: ATR stop loss     — entry - (ATR × AtrStopLossMultiplier)
-///   Rule 2: ATR profit target — entry + (ATR × AtrProfitTargetMultiplier)
-///   Rule 4: Trailing stop     — TrailingStopPrice (always active)
+///   Rule 1: ATR stop loss     — entry - (ATR x AtrStopLossMultiplier)
+///   Rule 2: ATR profit target — entry + (ATR x AtrProfitTargetMultiplier)
+///   Rule 3: Trailing stop     — TrailingStopPrice (always active)
 ///
-/// ATR mutual exclusion (atr_computed): when valid ATR levels exist, fixed-percentage rules
-/// (3 and 5) are skipped entirely. The early ATR-validity guard ensures we never reach the
-/// fixed-% checks when ATR is valid, so fixed-% rules are effectively disabled in production
-/// (ATR is required to open a position).
-///
+/// ATR mutual exclusion: when valid ATR levels exist, fixed-percentage rules are skipped.
 /// Publishes ExitSignalEvent to unbounded event bus (never dropped).
 /// PendingExit flag is set AFTER successful publish to avoid phantom locks on bus failures.
 /// </summary>
+/// <param name="positionTracker">The position tracker for accessing open positions.</param>
+/// <param name="brokerService">The broker service for executing exit trades.</param>
+/// <param name="marketDataClient">The market data client for fetching prices.</param>
+/// <param name="eventBus">The event bus for publishing exit signals.</param>
+/// <param name="stateRepository">The state repository for storing exit attempt records.</param>
+/// <param name="logger">The logger instance.</param>
+/// <param name="options">The trading options configuration.</param>
+/// <param name="symbolClassifier">Optional symbol classifier for crypto/equity detection.</param>
 public class ExitManager(
     IPositionTracker positionTracker,
     IBrokerService brokerService,
@@ -28,7 +32,9 @@ public class ExitManager(
     IOptions<TradingOptions> options,
     ISymbolClassifier? symbolClassifier = null)
 {
-    // Protected no-arg constructor for NSubstitute proxy creation
+    /// <summary>
+    /// Protected no-arg constructor for NSubstitute proxy creation in testing.
+    /// </summary>
     protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions()), null!) { }
 
     private readonly ExitOptions _options = options.Value.Exit;

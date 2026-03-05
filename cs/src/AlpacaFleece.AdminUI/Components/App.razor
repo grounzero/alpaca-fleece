@@ -1,0 +1,34 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" />
+    <link href="_content/MudBlazor/MudBlazor.min.css" rel="stylesheet" />
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/styles/github-dark.min.css" />
+    <link rel="stylesheet" href="css/app.css" />
+    <HeadOutlet @rendermode="InteractiveServer" />
+</head>
+<body>
+    <Routes @rendermode="InteractiveServer" />
+    <script src="_framework/blazor.web.js"></script>
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="js/clipboard-interop.js"></script>
+    <script src="js/localstorage-interop.js"></script>
+    <script src="js/device-interop.js"></script>
+    <script src="js/highlight-interop.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/11.10.0/highlight.min.js"></script>
+    <script>
+        Blazor.start({
+            reconnectionHandler: {
+                onConnectionDown: () => console.log('Connection lost'),
+                onConnectionUp: () => console.log('Connection restored'),
+                getMaxReconnectAttempts: () => 10,
+                getReconnectDelay: () => 1000
+            }
+        });
+    </script>
+</body>
+</html>

@@ -1,0 +1,50 @@
+@* Slider with colour-coded zones (green/amber/red). *@
+
+<div class="@WrapperClass d-flex align-center gap-2">
+    <MudSlider T="decimal"
+               Min="Min" Max="Max" Step="Step"
+               Value="Value"
+               ValueChanged="OnValueChanged"
+               Color="@SliderColor"
+               Class="flex-grow-1">
+        @Value.ToString(Format)
+    </MudSlider>
+    <MudText Typo="Typo.caption" Class="mud-text-secondary" Style="min-width:50px;text-align:right">
+        @Value.ToString(Format)
+    </MudText>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public decimal Min { get; set; }
+    [Parameter, EditorRequired] public decimal Max { get; set; }
+    [Parameter] public decimal Step { get; set; } = 1;
+    [Parameter, EditorRequired] public decimal Value { get; set; }
+    [Parameter] public EventCallback<decimal> ValueChanged { get; set; }
+    [Parameter] public string Label { get; set; } = "";
+    [Parameter] public string Format { get; set; } = "G";
+    [Parameter] public decimal[] GreenUpTo { get; set; } = [];
+    [Parameter] public decimal[] AmberUpTo { get; set; } = [];
+    [Parameter] public decimal DefaultValue { get; set; }
+
+    private async Task OnValueChanged(decimal newValue)
+    {
+        Value = newValue;
+        await ValueChanged.InvokeAsync(newValue);
+    }
+
+    private Color SliderColor => GetZone() switch
+    {
+        "green" => Color.Success,
+        "amber" => Color.Warning,
+        _       => Color.Error
+    };
+
+    private string WrapperClass => $"zone-{GetZone()}";
+
+    private string GetZone()
+    {
+        foreach (var g in GreenUpTo) if (Value <= g) return "green";
+        foreach (var a in AmberUpTo) if (Value <= a) return "amber";
+        return (GreenUpTo.Length == 0 && AmberUpTo.Length == 0) ? "green" : "red";
+    }
+}

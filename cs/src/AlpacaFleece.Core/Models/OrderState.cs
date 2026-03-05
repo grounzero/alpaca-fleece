@@ -5,18 +5,48 @@ namespace AlpacaFleece.Core.Models;
 /// Maps Alpaca statuses: pending_new, accepted, pending_cancel, canceled, expired,
 /// filled, partially_filled, pending_replace, replaced, rejected, suspended.
 /// </summary>
+/// <example>
+/// <code>
+/// var status = OrderState.Filled;
+/// if (status == OrderState.Filled)
+/// {
+///     Console.WriteLine("Order completed");
+/// }
+/// </code>
+/// </example>
 public enum OrderState
 {
+    /// <summary>Order has been submitted to the broker (Alpaca: pending_new).</summary>
     PendingNew = 0,
+
+    /// <summary>Order has been accepted by the broker (Alpaca: accepted).</summary>
     Accepted = 1,
+
+    /// <summary>Cancel request has been submitted (Alpaca: pending_cancel).</summary>
     PendingCancel = 2,
+
+    /// <summary>Order has been cancelled (Alpaca: canceled) — terminal state.</summary>
     Canceled = 3,
+
+    /// <summary>Order expired without fill (Alpaca: expired) — terminal state.</summary>
     Expired = 4,
+
+    /// <summary>Order has been fully filled (Alpaca: filled) — terminal state.</summary>
     Filled = 5,
+
+    /// <summary>Order has been partially filled (Alpaca: partially_filled) — non-terminal state.</summary>
     PartiallyFilled = 6,
+
+    /// <summary>Replace request has been submitted (Alpaca: pending_replace).</summary>
     PendingReplace = 7,
+
+    /// <summary>Order has been replaced (Alpaca: replaced) — terminal state.</summary>
     Replaced = 8,
+
+    /// <summary>Order has been rejected by the broker (Alpaca: rejected) — terminal state.</summary>
     Rejected = 9,
+
+    /// <summary>Order has been suspended (Alpaca: suspended) — non-terminal state.</summary>
     Suspended = 10,
 }
 
