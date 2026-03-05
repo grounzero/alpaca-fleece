@@ -115,6 +115,14 @@ try
                 ".nuget/packages");
 
             var relativePath = requestPath.Substring("MudBlazor/".Length);
+
+            // Prevent path traversal: reject any paths containing ".." segments
+            if (relativePath.Contains("..") || relativePath.StartsWith("/"))
+            {
+                context.Response.StatusCode = 400;
+                return;
+            }
+
             var mudblazorDir = Path.Combine(nugetPackagesPath, "mudblazor");
 
             if (Directory.Exists(mudblazorDir))
@@ -125,24 +133,21 @@ try
 
                 if (!string.IsNullOrEmpty(versionDirs))
                 {
-                    var filePath = Path.Combine(versionDirs, "staticwebassets", relativePath);
-                    if (File.Exists(filePath))
+                    var baseDir = Path.Combine(versionDirs, "staticwebassets");
+                    var filePath = Path.Combine(baseDir, relativePath);
+
+                    // Verify the resolved path stays within the base directory
+                    var fullPath = Path.GetFullPath(filePath);
+                    var fullBaseDir = Path.GetFullPath(baseDir);
+
+                    if (fullPath.StartsWith(fullBaseDir, StringComparison.OrdinalIgnoreCase) && File.Exists(fullPath))
                     {
-                        context.Response.ContentType = GetContentType(filePath);
-                        await context.Response.SendFileAsync(filePath);
+                        context.Response.ContentType = GetContentType(fullPath);
+                        await context.Response.SendFileAsync(fullPath);
                         return;
                     }
                 }
             }
-        }
-
-        // Handle Blazor framework bootstrap
-        if (context.Request.Path.Value == "/_framework/blazor.web.js")
-        {
-            context.Response.ContentType = "application/javascript";
-            context.Response.StatusCode = 200;
-            await context.Response.WriteAsync("/* Blazor Server stub */");
-            return;
         }
 
         await next();
