@@ -15,8 +15,9 @@
 
 @* ── Controls ── *@
 <MudPaper Class="pa-3 mb-3 d-flex flex-wrap align-center gap-3" Elevation="1">
-    <MudSelect T="string" @bind-SelectedValues="_levelFilters" Label="Levels" Style="max-width:180px"
-               MultiSelection="true" @bind-SelectedValues:after="ApplyFilters"
+    <MudSelect T="string" @bind-SelectedValues="_levelFilters"
+               Label="Levels" Style="max-width:180px"
+               MultiSelection="true"
                SelectAll="true" SelectAllText="All">
         <MudSelectItem T="string" Value="@("DBG")">Debug</MudSelectItem>
         <MudSelectItem T="string" Value="@("INF")">Info</MudSelectItem>
@@ -29,7 +30,6 @@
                   Label="Search"
                   Immediate
                   Style="max-width:240px"
-                  @bind-Value:after="ApplyFilters"
                   Adornment="Adornment.End"
                   AdornmentIcon="@Icons.Material.Filled.Search" />
 
@@ -115,14 +115,21 @@
     private List<LogLine> _bufferedLines  = [];
     private List<LogLine> _allLines       = [];
 
-    private IReadOnlyCollection<string> _levelFilters = new HashSet<string> { "DBG", "INF", "WRN", "ERR", "FTL" };
-    private string _searchText  = "";
+    private IReadOnlyCollection<string> _levelFilters = new[] { "DBG", "INF", "WRN", "ERR", "FTL" };
+    private string _searchText = "";
     private bool   _paused;
     private bool   _loading   = true;
     private bool   _streaming;
 
+    // Track previous filter state to detect changes
+    private IReadOnlyCollection<string>? _previousLevelFilters;
+    private string? _previousSearchText;
+
     protected override async Task OnInitializedAsync()
     {
+        _previousLevelFilters = _levelFilters.ToList();
+        _previousSearchText = _searchText;
+
         // Load historical lines first
         try
         {
@@ -144,6 +151,23 @@
         // because the component and service run in the same ASP.NET Core process.
         StreamSvc.NewLine += OnNewLine;
         _streaming = true;
+    }
+
+    protected override void OnAfterRender(bool firstRender)
+    {
+        if (firstRender) return;
+
+        // Detect if filters have changed and reapply if needed
+        var levelFiltersChanged = _previousLevelFilters is null ||
+            !_previousLevelFilters.SequenceEqual(_levelFilters);
+        var searchTextChanged = _previousSearchText != _searchText;
+
+        if (levelFiltersChanged || searchTextChanged)
+        {
+            ApplyFilters();
+            _previousLevelFilters = _levelFilters.ToList();
+            _previousSearchText = _searchText;
+        }
     }
 
     private void OnNewLine(LogLine line)
@@ -189,9 +213,8 @@
     private void ApplyFilters()
     {
         var filtered = _allLines.AsEnumerable();
-        var levelSet = _levelFilters?.ToHashSet() ?? new HashSet<string>();
-        if (levelSet.Any())
-            filtered = filtered.Where(l => levelSet.Contains(l.Level));
+        if (_levelFilters?.Count > 0)
+            filtered = filtered.Where(l => _levelFilters.Contains(l.Level));
         if (!string.IsNullOrWhiteSpace(_searchText))
             filtered = filtered.Where(l => l.Message.Contains(_searchText, StringComparison.OrdinalIgnoreCase));
         _displayedLines = filtered.ToList();

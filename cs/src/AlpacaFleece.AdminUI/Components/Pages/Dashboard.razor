@@ -189,7 +189,7 @@ else if (_vm is not null)
     private DashboardViewModel? _vm;
     private bool _loading;
     private string? _error;
-    private System.Timers.Timer? _timer;
+    private CancellationTokenSource? _timerCts;
 
     private List<ChartSeries<double>> _equitySeries = [];
     private string[] _equityLabels = [];
@@ -210,15 +210,40 @@ else if (_vm is not null)
     {
         await RefreshAsync();
 
-        var interval = AdminOpts.Value.DashboardRefreshSeconds * 1000;
-        _timer = new System.Timers.Timer(interval);
-        _timer.Elapsed += async (_, _) =>
+        // Start background refresh loop (replaces System.Timers.Timer to avoid async void issues)
+        var interval = AdminOpts.Value.DashboardRefreshSeconds;
+        _timerCts = new CancellationTokenSource();
+        _ = RefreshLoopAsync(interval, _timerCts.Token);
+    }
+
+    /// <summary>
+    /// Background task that refreshes dashboard data at fixed intervals.
+    /// </summary>
+    private async Task RefreshLoopAsync(int intervalSeconds, CancellationToken ct)
+    {
+        try
         {
-            await RefreshAsync();
-            await InvokeAsync(StateHasChanged);
-        };
-        _timer.AutoReset = true;
-        _timer.Start();
+            while (!ct.IsCancellationRequested)
+            {
+                await Task.Delay(TimeSpan.FromSeconds(intervalSeconds), ct);
+                if (ct.IsCancellationRequested) break;
+
+                try
+                {
+                    await RefreshAsync();
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (Exception ex)
+                {
+                    // Log or handle refresh errors without crashing the loop
+                    Snackbar.Add($"Dashboard refresh failed: {ex.Message}", Severity.Warning);
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when component disposes
+        }
     }
 
     private async Task RefreshAsync()
@@ -291,11 +316,8 @@ else if (_vm is not null)
 
     public async ValueTask DisposeAsync()
     {
-        if (_timer is not null)
-        {
-            _timer.Stop();
-            _timer.Dispose();
-        }
+        _timerCts?.Cancel();
+        _timerCts?.Dispose();
         await ValueTask.CompletedTask;
     }
 }

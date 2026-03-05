@@ -248,8 +248,8 @@ public sealed class AdminAuthServiceTests
     private static IWebHostEnvironment CreateMockEnvironment(bool isDevelopment)
     {
         var mock = Substitute.For<IWebHostEnvironment>();
+        // IsDevelopment() is an extension method that checks EnvironmentName == "Development"
         mock.EnvironmentName.Returns(isDevelopment ? "Development" : "Production");
-        mock.IsDevelopment().Returns(isDevelopment);
         return mock;
     }
 }

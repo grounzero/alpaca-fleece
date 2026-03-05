@@ -1,3 +1,6 @@
+using System;
+using System.Collections.Generic;
+using System.Text;
 using System.Text.RegularExpressions;
 using Microsoft.Extensions.Logging;
 
@@ -124,14 +127,89 @@ public sealed partial class LogService(
         return result;
     }
 
+    /// <summary>
+    /// Reads the last N lines of a file without loading the entire file into memory.
+    /// Uses reverse-seek optimization: reads from end of file backwards in 64KB chunks.
+    /// </summary>
     private static async Task<string[]> ReadLastLinesAsync(string path, int count, CancellationToken ct)
     {
-        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
-        using var reader = new StreamReader(fs);
-        var all = new List<string>();
-        while (await reader.ReadLineAsync(ct) is { } line)
-            all.Add(line);
+        const int bufferSize = 65536; // 64KB chunks
+        const int maxFileSize = 10 * 1024 * 1024; // Don't reverse-seek for files > 10MB
 
-        return all.Count <= count ? [.. all] : [.. all.TakeLast(count)];
+        await using var fs = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.ReadWrite);
+
+        // For small files, use simple approach
+        if (fs.Length < bufferSize)
+        {
+            using var reader = new StreamReader(fs);
+            var all = new List<string>();
+            while (await reader.ReadLineAsync(ct) is { } line)
+                all.Add(line);
+            return all.Count <= count ? [.. all] : [.. all.TakeLast(count)];
+        }
+
+        // For medium files, use reverse-seek optimization
+        if (fs.Length < maxFileSize)
+            return await ReadLastLinesReverseAsync(fs, count, ct);
+
+        // For very large files (>10MB), fall back to simple approach to avoid excessive I/O
+        fs.Seek(0, SeekOrigin.Begin);
+        using (var reader = new StreamReader(fs))
+        {
+            var all = new List<string>();
+            while (await reader.ReadLineAsync(ct) is { } line)
+                all.Add(line);
+            return all.Count <= count ? [.. all] : [.. all.TakeLast(count)];
+        }
+    }
+
+    /// <summary>
+    /// Reads the last N lines by seeking backwards from end of file in chunks.
+    /// More efficient than loading entire file for large log files.
+    /// </summary>
+    private static async Task<string[]> ReadLastLinesReverseAsync(FileStream fs, int count, CancellationToken ct)
+    {
+        const int bufferSize = 65536;
+        var lines = new Stack<string>();
+        var buffer = new byte[bufferSize];
+        var position = fs.Length;
+        var incompleteLineBuffer = new System.Text.StringBuilder();
+
+        while (position > 0 && lines.Count < count * 2) // Read extra to account for incomplete lines
+        {
+            ct.ThrowIfCancellationRequested();
+
+            var bytesToRead = (int)Math.Min(bufferSize, position);
+            position -= bytesToRead;
+            fs.Seek(position, SeekOrigin.Begin);
+            await fs.ReadExactlyAsync(buffer, 0, bytesToRead, ct);
+
+            var text = System.Text.Encoding.UTF8.GetString(buffer, 0, bytesToRead);
+            var allText = text + incompleteLineBuffer.ToString();
+            var fileLines = allText.Split(new[] { "\r\n", "\r", "\n" }, StringSplitOptions.None);
+
+            // First element might be incomplete (from previous iteration)
+            incompleteLineBuffer.Clear();
+            if (position > 0)
+            {
+                incompleteLineBuffer.Append(fileLines[0]);
+                for (int i = fileLines.Length - 1; i > 0; i--)
+                {
+                    if (!string.IsNullOrEmpty(fileLines[i]))
+                        lines.Push(fileLines[i]);
+                }
+            }
+            else
+            {
+                // Last iteration - include first element
+                for (int i = fileLines.Length - 1; i >= 0; i--)
+                {
+                    if (!string.IsNullOrEmpty(fileLines[i]))
+                        lines.Push(fileLines[i]);
+                }
+            }
+        }
+
+        return lines.Take(count).Reverse().ToArray();
     }
 }

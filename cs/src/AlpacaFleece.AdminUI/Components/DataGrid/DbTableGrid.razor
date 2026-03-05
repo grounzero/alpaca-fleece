@@ -212,6 +212,7 @@
 
     /// <summary>
     /// Server data proxy callback.
+    /// Applies quick search filter to server results.
     /// </summary>
     private async Task<GridData<TItem>> ServerDataProxy(GridState<TItem> state, CancellationToken ct)
     {
@@ -219,6 +220,17 @@
         {
             _hasActiveFilters = (state.FilterDefinitions?.Count ?? 0) > 0 || !string.IsNullOrWhiteSpace(_quickSearch);
             var result = await ServerData(state, ct);
+
+            // Apply quick search filter to results if present
+            if (!string.IsNullOrWhiteSpace(_quickSearch))
+            {
+                var searchLower = _quickSearch.ToLowerInvariant();
+                var filtered = result.Items
+                    .Where(item => item.ToString()?.Contains(searchLower, StringComparison.OrdinalIgnoreCase) ?? false)
+                    .ToList();
+                result = new GridData<TItem> { Items = filtered, TotalItems = filtered.Count };
+            }
+
             _totalCount = result.TotalItems;
 
             // Persist state
