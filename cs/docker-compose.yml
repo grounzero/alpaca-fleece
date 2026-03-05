@@ -30,8 +30,8 @@ services:
       dockerfile: AdminUI.Dockerfile
     container_name: alpaca-fleece-admin
     ports:
-      # Bind to localhost only — use SSH tunnel or VPN for remote access
-      - "127.0.0.1:5001:8080"
+      # Bind to all interfaces — accessible from any host on the network
+      - "0.0.0.0:5001:8080"
     volumes:
       - ./data:/app/data:ro     # Read-only access to SQLite + metrics + health
       - ./logs:/app/logs:ro     # Read-only access to log files for log viewer
