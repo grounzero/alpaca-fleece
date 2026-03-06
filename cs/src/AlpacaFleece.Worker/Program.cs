@@ -194,16 +194,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     .Build();
 
 // Configure recurring Hangfire jobs
-using (var scope = hostBuilder.Services.CreateScope())
-{
-  var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-  var healthCheckService = scope.ServiceProvider.GetRequiredService<HealthCheckService>();
-  var logger = scope.ServiceProvider.GetRequiredService<ILogger<HangfireBackgroundJobs>>();
-  var hangfireJobs = new HangfireBackgroundJobs(
-      scope.ServiceProvider,
-      logger,
-      healthCheckService);
-  hangfireJobs.ConfigureRecurringJobs(recurringJobManager);
-}
+var recurringJobManager = hostBuilder.Services.GetRequiredService<IRecurringJobManager>();
+HangfireBackgroundJobs.ConfigureRecurringJobs(recurringJobManager);
 
 await hostBuilder.RunAsync();

@@ -201,7 +201,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task StopAsync_FinalSnapshot_ReadsDailyPnl()
+    public async Task StopAsync_FinalSnapshot_PersistsDailyPnl()
     {
         // Arrange
         await fixture.StateRepository.SetStateAsync("daily_realized_pnl", "1234.56", CancellationToken.None);
@@ -212,8 +212,17 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         // Act
         await _housekeeping.StopAsync(CancellationToken.None);
 
-        // Assert: should have read daily_realized_pnl from state
+        // Assert: verify the equity snapshot was persisted with the correct daily PnL
         await _brokerMock.Received(1).GetAccountAsync(Arg.Any<CancellationToken>());
+        
+        // Verify the equity snapshot in the database contains the daily PnL from state
+        // Use Id for ordering (auto-incrementing) to work around SQLite DateTimeOffset limitation
+        var latestSnapshot = await fixture.DbContext.EquityCurve
+            .OrderByDescending(e => e.Id)
+            .FirstOrDefaultAsync();
+        
+        Assert.NotNull(latestSnapshot);
+        Assert.Equal(1234.56m, latestSnapshot.DailyPnl);
     }
 
     [Fact]

@@ -3,6 +3,7 @@ namespace AlpacaFleece.Worker.Jobs;
 /// <summary>
 /// Hangfire background job configuration and job definitions.
 /// Provides recurring jobs for equity snapshots, daily resets, circuit breaker resets.
+/// Jobs are registered using DI-friendly AddOrUpdate&lt;T&gt; overloads.
 /// </summary>
 public class HangfireBackgroundJobs(
     IServiceProvider serviceProvider, 
@@ -10,30 +11,34 @@ public class HangfireBackgroundJobs(
     HealthCheckService? healthCheckService = null)
 {
     /// <summary>
-    /// Configures recurring Hangfire jobs.
+    /// Configures recurring Hangfire jobs using DI-friendly registration.
+    /// Call this method from Program.cs during application startup.
     /// </summary>
-    public void ConfigureRecurringJobs(IRecurringJobManager recurringJobManager)
+    public static void ConfigureRecurringJobs(IRecurringJobManager recurringJobManager)
     {
-        // Equity snapshots every 60 seconds
-        recurringJobManager.AddOrUpdate(
+        var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+
+        // Equity snapshots every 60 seconds (UTC is fine for fixed intervals)
+        recurringJobManager.AddOrUpdate<HangfireBackgroundJobs>(
             "equity-snapshots",
-            () => EquitySnapshotJobAsync(),
+            j => j.EquitySnapshotJobAsync(),
             Cron.MinuteInterval(1),
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
         // Daily reset at 09:30 ET, weekdays only
-        recurringJobManager.AddOrUpdate(
+        // Use ET timezone so Hangfire handles DST automatically (09:30 ET = 13:30 UTC in summer, 14:30 UTC in winter)
+        recurringJobManager.AddOrUpdate<HangfireBackgroundJobs>(
             "daily-reset",
-            () => DailyResetJobAsync(),
-            "30 14 * * 1-5", // 09:30 ET = 14:30 UTC
-            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+            j => j.DailyResetJobAsync(),
+            "30 9 * * 1-5", // 09:30 local ET time
+            new RecurringJobOptions { TimeZone = etZone });
 
         // Circuit breaker reset at 09:30 ET, weekdays only
-        recurringJobManager.AddOrUpdate(
+        recurringJobManager.AddOrUpdate<HangfireBackgroundJobs>(
             "circuit-breaker-reset",
-            () => CircuitBreakerResetJobAsync(),
-            "30 14 * * 1-5",
-            new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
+            j => j.CircuitBreakerResetJobAsync(),
+            "30 9 * * 1-5", // 09:30 local ET time
+            new RecurringJobOptions { TimeZone = etZone });
     }
 
     /// <summary>
