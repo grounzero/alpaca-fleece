@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace AlpacaFleece.Worker.Jobs;
 
 /// <summary>
@@ -87,13 +85,13 @@ public class HangfireBackgroundJobs(
                     var dataDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
                     Directory.CreateDirectory(dataDir);
                     var healthPath = Path.Combine(dataDir, "health.json");
-                    var healthJson = System.Text.Json.JsonSerializer.Serialize(new
+                    var healthJson = JsonSerializer.Serialize(new
                     {
                         Status = healthReport.Status.ToString(),
                         CheckedAt = snapshotTime,
                         Description = healthReport.Description,
                         Data = healthReport.Data
-                    }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                    }, new JsonSerializerOptions { WriteIndented = true });
                     await File.WriteAllTextAsync(healthPath, healthJson, ct);
                 }
                 catch (Exception ex)
