@@ -2,8 +2,6 @@
 // For now, using standard JSON formatting
 // using Serilog.Formatting.Compact;
 
-using AlpacaFleece.Infrastructure.Symbols;
-
 var hostBuilder = Host.CreateDefaultBuilder(args)
     // Configure scope validation based on environment:
     // enable in Development to catch DI lifetime issues early.
@@ -188,9 +186,20 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<AlertNotifier>();
         services.Configure<NotificationOptions>(context.Configuration.GetSection("Notifications"));
 
-        // Metrics
-        services.AddSingleton<BotMetrics>();
+        // Hangfire background jobs
+        services.AddHangfireServices();
+
+      // Metrics
+      services.AddSingleton<BotMetrics>();
     })
     .Build();
+
+// Configure recurring Hangfire jobs
+using (var scope = hostBuilder.Services.CreateScope())
+{
+  var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
+  var hangfireJobs = scope.ServiceProvider.GetRequiredService<HangfireBackgroundJobs>();
+  hangfireJobs.ConfigureRecurringJobs(recurringJobManager);
+}
 
 await hostBuilder.RunAsync();
