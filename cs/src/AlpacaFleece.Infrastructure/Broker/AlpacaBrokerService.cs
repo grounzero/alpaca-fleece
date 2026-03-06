@@ -300,8 +300,8 @@ public sealed class AlpacaBrokerService(
         // SDK v7.2.0 exposes integer-only quantity fields; fractional orders return null here.
         // When IntegerQuantity is null (fractional order), fall back to 0 — a future SDK upgrade
         // or manual JSON parsing would be needed to recover the exact fractional value.
-        Quantity: order.IntegerQuantity,
-        FilledQuantity: order.IntegerFilledQuantity,
+        Quantity: (decimal?)order.IntegerQuantity ?? 0m,
+        FilledQuantity: (decimal?)order.IntegerFilledQuantity ?? 0m,
         AverageFilledPrice: order.AverageFillPrice ?? 0m,
         Status: MapOrderStatus(order.OrderStatus),
         CreatedAt: order.CreatedAtUtc.HasValue
