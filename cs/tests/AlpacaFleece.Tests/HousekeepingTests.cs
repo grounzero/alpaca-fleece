@@ -67,10 +67,11 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         cts.CancelAfter(TimeSpan.FromSeconds(1));
 
         var runTask = _housekeeping.StartAsync(cts.Token);
-        await runTask;
+        var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(1)));
 
-        // Assert
-        Assert.True(true);
+        // Assert: StartAsync completes promptly and successfully
+        Assert.Same(runTask, completed);
+        Assert.True(runTask.IsCompletedSuccessfully);
     }
 
     [Fact]
