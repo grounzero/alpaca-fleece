@@ -171,7 +171,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // to write a data/health.json snapshot after each equity snapshot.
         services.AddSingleton<HealthCheckService>();
 
-        // Phase 6: Housekeeping Service (graceful shutdown only - recurring tasks handled by Hangfire)
+        // Phase 6: Housekeeping Service (graceful shutdown)
         services.AddHostedService(sp => new HousekeepingService(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),

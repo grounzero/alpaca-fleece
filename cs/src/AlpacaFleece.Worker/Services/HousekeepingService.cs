@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
@@ -51,7 +53,8 @@ public sealed class HousekeepingService(
             {
                 var account = await brokerService.GetAccountAsync(cancellationToken);
                 var dailyPnlStr = await stateRepository.GetStateAsync("daily_realized_pnl", cancellationToken);
-                var dailyPnl = decimal.TryParse(dailyPnlStr, out var parsed) ? parsed : 0m;
+                // Use InvariantCulture to ensure consistent parsing across locales
+                var dailyPnl = decimal.TryParse(dailyPnlStr, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m;
 
                 await stateRepository.InsertEquitySnapshotAsync(
                     DateTimeOffset.UtcNow,

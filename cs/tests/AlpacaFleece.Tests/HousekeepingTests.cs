@@ -1,7 +1,9 @@
+using System.Globalization;
+
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// Tests for HousekeepingService (graceful shutdown only).
+/// Tests for HousekeepingService (graceful shutdown).
 /// Note: Equity snapshots and daily resets are now handled by Hangfire background jobs.
 /// </summary>
 [Collection("Trading Database Collection")]
@@ -67,7 +69,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         cts.CancelAfter(TimeSpan.FromSeconds(1));
 
         var runTask = _housekeeping.StartAsync(cts.Token);
-        var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(1)));
+        var completed = await Task.WhenAny(runTask, Task.Delay(TimeSpan.FromSeconds(1), cts.Token));
 
         // Assert: StartAsync completes promptly and successfully
         Assert.Same(runTask, completed);
@@ -204,8 +206,12 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
     [Fact]
     public async Task StopAsync_FinalSnapshot_PersistsDailyPnl()
     {
-        // Arrange
-        await fixture.StateRepository.SetStateAsync("daily_realized_pnl", "1234.56", CancellationToken.None);
+        // Arrange - use InvariantCulture for culture-independent test
+        var dailyPnl = 1234.56m;
+        await fixture.StateRepository.SetStateAsync(
+            "daily_realized_pnl", 
+            dailyPnl.ToString(CultureInfo.InvariantCulture), 
+            CancellationToken.None);
         
         _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
             .Returns(new List<OrderInfo>());
@@ -223,7 +229,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
             .FirstOrDefaultAsync();
         
         Assert.NotNull(latestSnapshot);
-        Assert.Equal(1234.56m, latestSnapshot.DailyPnl);
+        Assert.Equal(dailyPnl, latestSnapshot.DailyPnl);
     }
 
     [Fact]

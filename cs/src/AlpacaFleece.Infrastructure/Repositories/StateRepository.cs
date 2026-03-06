@@ -176,7 +176,7 @@ public sealed class StateRepository(
                 Side = side,
                 Quantity = quantity,
                 LimitPrice = limitPrice,
-                Status = OrderState.PendingNew.ToString(),
+                Status = nameof(OrderState.PendingNew),
                 CreatedAt = createdAt,
                 AtrSeed = atrSeed
             });
@@ -448,13 +448,16 @@ public sealed class StateRepository(
             {
                 var entity = await dbContext.BotState
                     .FirstOrDefaultAsync(x => x.Key == "daily_realized_pnl", ct);
-                var pnl = decimal.TryParse(entity?.Value, out var v) ? v : 0m;
+                // Use InvariantCulture for both parsing and formatting
+                var pnl = decimal.TryParse(entity?.Value, NumberStyles.Number, CultureInfo.InvariantCulture, out var v) ? v : 0m;
+                var newPnl = pnl + pnlDelta;
+                
                 if (entity == null)
                     dbContext.BotState.Add(new BotStateEntity
-                        { Key = "daily_realized_pnl", Value = (pnl + pnlDelta).ToString(), UpdatedAt = DateTimeOffset.UtcNow });
+                        { Key = "daily_realized_pnl", Value = newPnl.ToString(CultureInfo.InvariantCulture), UpdatedAt = DateTimeOffset.UtcNow });
                 else
                 {
-                    entity.Value = (pnl + pnlDelta).ToString();
+                    entity.Value = newPnl.ToString(CultureInfo.InvariantCulture);
                     entity.UpdatedAt = DateTimeOffset.UtcNow;
                 }
                 await dbContext.SaveChangesAsync(ct);

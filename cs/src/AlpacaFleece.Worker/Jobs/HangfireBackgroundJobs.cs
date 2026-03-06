@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AlpacaFleece.Worker.Jobs;
 
 /// <summary>
@@ -60,8 +62,9 @@ public class HangfireBackgroundJobs(
             var snapshotTime = DateTimeOffset.UtcNow;
 
             // Read actual daily realized PnL from state (accumulated by EventDispatcherService on fills)
+            // Use InvariantCulture to ensure consistent parsing across locales
             var dailyPnlStr = await stateRepository.GetStateAsync("daily_realized_pnl", ct);
-            var dailyPnl = decimal.TryParse(dailyPnlStr, out var parsed) ? parsed : 0m;
+            var dailyPnl = decimal.TryParse(dailyPnlStr, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m;
 
             await stateRepository.InsertEquitySnapshotAsync(
                 snapshotTime,

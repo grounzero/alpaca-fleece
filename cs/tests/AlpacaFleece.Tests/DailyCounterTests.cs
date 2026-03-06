@@ -1,3 +1,5 @@
+using System.Globalization;
+
 namespace AlpacaFleece.Tests;
 
 /// <summary>
@@ -47,7 +49,8 @@ public sealed class DailyCounterTests(TradingFixture fixture) : IAsyncLifetime
         await fixture.StateRepository.AddDailyRealizedPnlAsync(-50m);
 
         var value = await fixture.StateRepository.GetStateAsync("daily_realized_pnl");
-        Assert.True(decimal.TryParse(value, out var pnl));
+        // Use InvariantCulture for culture-independent parsing
+        Assert.True(decimal.TryParse(value, NumberStyles.Number, CultureInfo.InvariantCulture, out var pnl));
         Assert.Equal(-150m, pnl);
     }
 
