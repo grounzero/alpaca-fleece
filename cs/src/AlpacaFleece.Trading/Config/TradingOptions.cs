@@ -151,6 +151,18 @@ public sealed class RiskLimits
 
     /// <summary>
     /// Minimum signal confidence threshold (0-1). Signals below this are soft-skipped (FILTER tier).
+    /// <para>
+    /// Confidence formula: (base + alignmentBoost) × regimeStrength
+    /// - Base: 0.8 for trend-aligned, 0.5 for trend-misaligned, 0.2 for ranging
+    /// - Alignment boost: +0.1 when slow SMA aligns with signal direction
+    /// - Regime strength: 0-1 based on trend strength (2% spread = 1.0)
+    /// </para>
+    /// <para>
+    /// Typical values:
+    /// - 0.20: Blocks ranging markets (0.10-0.15), allows most trends (0.375-0.81)
+    /// - 0.50: Requires strong trends or aligned setups
+    /// - 0.65: Conservative, only high-conviction trend-aligned signals
+    /// </para>
     /// </summary>
     public decimal MinSignalConfidence { get; set; } = 0.2m;
 }
