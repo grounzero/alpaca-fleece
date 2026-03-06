@@ -167,17 +167,15 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Phase 4: Runtime Reconciliation Service
         services.AddHostedService<RuntimeReconcilerService>();
 
-        // O-3: Register custom HealthCheckService singleton — injected into HousekeepingService
-        // to write a data/health.json snapshot after each equity snapshot.
+        // O-3: Register custom HealthCheckService singleton
         services.AddSingleton<HealthCheckService>();
 
-        // Phase 6: Housekeeping Service
+        // Phase 6: Housekeeping Service (graceful shutdown)
         services.AddHostedService(sp => new HousekeepingService(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
-            sp.GetRequiredService<ILogger<HousekeepingService>>(),
-            healthCheckService: sp.GetRequiredService<HealthCheckService>()));
+            sp.GetRequiredService<ILogger<HousekeepingService>>()));
 
         // Drawdown monitor service
         services.AddHostedService<DrawdownMonitorService>();
@@ -186,7 +184,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<AlertNotifier>();
         services.Configure<NotificationOptions>(context.Configuration.GetSection("Notifications"));
 
-        // Hangfire background jobs
+        // Hangfire background jobs (equity snapshots, daily resets, circuit breaker resets)
         services.AddHangfireServices();
 
       // Metrics
@@ -195,11 +193,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
     .Build();
 
 // Configure recurring Hangfire jobs
-using (var scope = hostBuilder.Services.CreateScope())
-{
-  var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-  var hangfireJobs = scope.ServiceProvider.GetRequiredService<HangfireBackgroundJobs>();
-  hangfireJobs.ConfigureRecurringJobs(recurringJobManager);
-}
+var recurringJobManager = hostBuilder.Services.GetRequiredService<IRecurringJobManager>();
+HangfireBackgroundJobs.ConfigureRecurringJobs(recurringJobManager);
 
 await hostBuilder.RunAsync();

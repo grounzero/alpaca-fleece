@@ -9,10 +9,6 @@
   </PropertyGroup>
 
   <ItemGroup>
-    <PackageReference Include="Serilog" Version="4.3.1" />
-  </ItemGroup>
-
-  <ItemGroup>
     <ProjectReference Include="..\AlpacaFleece.Core\AlpacaFleece.Core.csproj" />
     <ProjectReference Include="..\AlpacaFleece.Infrastructure\AlpacaFleece.Infrastructure.csproj" />
   </ItemGroup>
