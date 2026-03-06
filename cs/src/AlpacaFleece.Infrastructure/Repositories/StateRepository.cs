@@ -933,14 +933,12 @@ public sealed class StateRepository(
                     dbContext.BotState.Add(new BotStateEntity
                     {
                         Key = "daily_reset_date",
-                        Value = todayDateStr,
-                        UpdatedAt = DateTimeOffset.UtcNow
+                        Value = todayDateStr
                     });
                 }
                 else
                 {
                     currentState.Value = todayDateStr;
-                    currentState.UpdatedAt = DateTimeOffset.UtcNow;
                 }
 
                 await dbContext.SaveChangesAsync(ct);
@@ -959,6 +957,81 @@ public sealed class StateRepository(
         {
             logger.LogError(ex, "Failed to acquire daily reset for {date}", todayDateStr);
             throw new StateRepositoryException($"Failed to acquire daily reset for {todayDateStr}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Atomically resets daily state (circuit breaker, trade count, PnL) AND updates daily_reset_date
+    /// in a single transaction. Returns true if reset was performed, false if already reset today.
+    /// This prevents the critical bug where the date is updated but the reset fails, leaving state
+    /// unreset for the entire day.
+    /// </summary>
+    public async ValueTask<bool> TryResetDailyStateAsync(string todayDateStr, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            await using var tx = await dbContext.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct);
+
+            try
+            {
+                // Check if already reset today
+                var resetDateState = await dbContext.BotState
+                    .FirstOrDefaultAsync(x => x.Key == "daily_reset_date", ct);
+
+                if (resetDateState?.Value == todayDateStr)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogDebug("Daily reset already performed for {date}, skipping", todayDateStr);
+                    return false;
+                }
+
+                // Reset circuit breaker
+                var cbState = await dbContext.CircuitBreakerState
+                    .FirstOrDefaultAsync(x => x.Id == 1, ct);
+                if (cbState != null)
+                {
+                    cbState.Count = 0;
+                    cbState.LastResetAt = DateTimeOffset.UtcNow;
+                }
+
+                // Reset KV counters
+                await UpsertBotStateInContextAsync(dbContext, "daily_realized_pnl", "0", ct);
+                await UpsertBotStateInContextAsync(dbContext, "daily_trade_count", "0", ct);
+
+                // Update daily_reset_date ONLY after successful reset (atomic commit)
+                if (resetDateState == null)
+                {
+                    dbContext.BotState.Add(new BotStateEntity
+                    {
+                        Key = "daily_reset_date",
+                        Value = todayDateStr,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    });
+                }
+                else
+                {
+                    resetDateState.Value = todayDateStr;
+                    resetDateState.UpdatedAt = DateTimeOffset.UtcNow;
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+
+                logger.LogInformation("Daily state reset completed for {date}", todayDateStr);
+                return true;
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to reset daily state for {date}", todayDateStr);
+            throw new StateRepositoryException($"Failed to reset daily state for {todayDateStr}", ex);
         }
     }
 }
