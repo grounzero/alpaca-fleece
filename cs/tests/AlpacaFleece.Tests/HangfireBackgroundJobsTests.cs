@@ -50,8 +50,8 @@ public sealed class HangfireBackgroundJobsTests(TradingFixture fixture) : IAsync
                 FetchedAt: DateTimeOffset.UtcNow));
 
         // Setup health check mock (mock the actual Microsoft.Extensions.Diagnostics.HealthChecks types)
-        // Since we can't easily mock the sealed HealthCheckResult, we'll skip health check file testing
-        // and just verify the job runs without health check service
+        // In this test we don't fully mock HealthCheckService/HealthReport or assert on the health.json output;
+        // instead we just verify that the job runs correctly even when no health check service is registered.
 
         // Create temp directory for health.json tests  
         _tempHealthFilePath = Path.Combine(Path.GetTempPath(), $"hangfire_test_{Guid.NewGuid():N}");
