@@ -167,8 +167,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // Phase 4: Runtime Reconciliation Service
         services.AddHostedService<RuntimeReconcilerService>();
 
-        // O-3: Register custom HealthCheckService singleton — injected into HousekeepingService
-        // to write a data/health.json snapshot after each equity snapshot.
+        // O-3: Register custom HealthCheckService singleton
         services.AddSingleton<HealthCheckService>();
 
         // Phase 6: Housekeeping Service (graceful shutdown)

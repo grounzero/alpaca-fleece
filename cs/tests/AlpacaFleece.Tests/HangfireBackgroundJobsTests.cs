@@ -16,7 +16,6 @@ public sealed class HangfireBackgroundJobsTests(TradingFixture fixture) : IAsync
     private readonly IServiceProvider _serviceProviderMock = Substitute.For<IServiceProvider>();
     private readonly IServiceScope _scopeMock = Substitute.For<IServiceScope>();
     private HangfireBackgroundJobs _jobs = null!;
-    private string _tempHealthFilePath = null!;
 
     public async Task InitializeAsync()
     {
@@ -48,37 +47,13 @@ public sealed class HangfireBackgroundJobsTests(TradingFixture fixture) : IAsync
                 NextClose: DateTimeOffset.UtcNow.AddHours(6),
                 FetchedAt: DateTimeOffset.UtcNow));
 
-        // Setup health check mock (mock the actual Microsoft.Extensions.Diagnostics.HealthChecks types)
-        // In this test we don't fully mock HealthCheckService/HealthReport or assert on the health.json output;
-        // instead we just verify that the job runs correctly even when no health check service is registered.
-
-        // Create temp directory for health.json tests  
-        _tempHealthFilePath = Path.Combine(Path.GetTempPath(), $"hangfire_test_{Guid.NewGuid():N}");
-        Directory.CreateDirectory(_tempHealthFilePath);
-
         // Create jobs without health check service (it's optional)
-        _jobs = new HangfireBackgroundJobs(_serviceProviderMock, _logger, null);
+        _jobs = new HangfireBackgroundJobs(_serviceProviderMock, _logger);
 
         await Task.CompletedTask;
     }
 
-    public async Task DisposeAsync()
-    {
-        // Clean up temp directory
-        if (Directory.Exists(_tempHealthFilePath))
-        {
-            try
-            {
-                Directory.Delete(_tempHealthFilePath, recursive: true);
-            }
-            catch
-            {
-                // Best effort cleanup
-            }
-        }
-
-        await Task.CompletedTask;
-    }
+    public Task DisposeAsync() => Task.CompletedTask;
 
     #region EquitySnapshotJobAsync Tests
 

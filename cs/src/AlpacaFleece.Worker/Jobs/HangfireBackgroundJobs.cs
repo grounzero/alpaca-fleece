@@ -123,7 +123,8 @@ public class HangfireBackgroundJobs(
 
     /// <summary>
     /// Daily reset job: resets daily_trade_count and daily_pnl in bot_state.
-    /// Uses atomic TryAcquireDailyResetAsync to guarantee at-most-once execution.
+    /// Uses atomic TryResetDailyStateAsync to guarantee at-most-once execution
+    /// and prevent inconsistent state if reset fails.
     /// </summary>
     [DisableConcurrentExecution(timeoutInSeconds: 60)]
     public async Task DailyResetJobAsync(IJobCancellationToken cancellationToken)
@@ -138,21 +139,18 @@ public class HangfireBackgroundJobs(
             var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
             var todayStr = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, etZone).ToString("yyyy-MM-dd");
 
-            // Atomically check and acquire daily reset (prevents race conditions)
-            var acquired = await stateRepository.TryAcquireDailyResetAsync(todayStr, ct);
+            // Atomically reset state AND update date in single transaction
+            // This prevents the critical bug where date is updated but reset fails,
+            // leaving state unreset for the entire day
+            var wasReset = await stateRepository.TryResetDailyStateAsync(todayStr, ct);
             
-            if (!acquired)
+            if (!wasReset)
             {
                 logger.LogInformation("Daily reset already performed today ({date}), skipping", todayStr);
                 await RecordJobResultAsync(stateRepository,
                     "daily-reset", "SKIPPED", $"Already reset today: {todayStr}", ct);
                 return;
             }
-
-            logger.LogInformation("Daily reset job running for date {date}", todayStr);
-            
-            // Reset has been acquired atomically, now perform the actual reset
-            await stateRepository.ResetDailyStateAsync(ct);
 
             logger.LogInformation("Daily reset job completed for date {date}", todayStr);
             await RecordJobResultAsync(stateRepository,
