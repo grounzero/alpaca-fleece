@@ -7,9 +7,9 @@ services:
       dockerfile: Dockerfile
     container_name: alpaca-fleece-bot
     volumes:
-      - ./data:/app/data        # SQLite database + health.json + metrics.json
-      - ./logs:/app/logs        # Serilog rolling log files
-      - ./config:/app/config    # appsettings.json (writable by admin UI)
+      - alpaca-fleece-data:/app/data  # SQLite database + health.json + metrics.json
+      - alpaca-fleece-logs:/app/logs  # Serilog rolling log files
+      - ./config:/app/config          # appsettings.json (writable by admin UI)
     env_file: .env
     environment:
       # Map ALPACA_* from .env to the Broker__ config keys .NET expects
@@ -33,9 +33,9 @@ services:
       # Bind to all interfaces — accessible from any host on the network
       - "0.0.0.0:5001:8080"
     volumes:
-      - ./data:/app/data:ro     # Read-only access to SQLite + metrics + health
-      - ./logs:/app/logs:ro     # Read-only access to log files for log viewer
-      - ./config:/app/config    # Read/write appsettings.json
+      - alpaca-fleece-data:/app/data:ro  # Read-only access to SQLite + metrics + health
+      - alpaca-fleece-logs:/app/logs:ro  # Read-only access to log files for log viewer
+      - ./config:/app/config             # Read/write appsettings.json
       - /var/run/docker.sock:/var/run/docker.sock  # Manage bot container
     # env_file passes ADMIN_PASSWORD_HASH into the container as a plain env var.
     # Docker Compose unescapes $$ → $ so the bcrypt hash arrives intact.
@@ -57,3 +57,10 @@ services:
       timeout: 5s
       retries: 3
       start_period: 15s
+
+# Named volumes for persistent data
+volumes:
+  alpaca-fleece-data:
+    external: true
+  alpaca-fleece-logs:
+    external: true
