@@ -72,7 +72,7 @@ public sealed class AlpacaBrokerService(
                 CashAvailable: account.TradableCash,
                 CashReserved: 0m,
                 PortfolioValue: account.Equity ?? account.TradableCash,
-                DayTradeCount: (decimal)account.DayTradeCount,
+                DayTradeCount: account.DayTradeCount,
                 IsTradable: !account.IsTradingBlocked,
                 IsAccountRestricted: account.IsAccountBlocked,
                 FetchedAt: now);
@@ -290,8 +290,7 @@ public sealed class AlpacaBrokerService(
     /// TODO: remove after upgrading Alpaca.Markets SDK to ≥ 8.x with decimal quantity fields.
     /// </summary>
     public static bool IsFractionalFault(OrderInfo info) =>
-        info.FilledQuantity == 0m &&
-        info.Status is OrderState.Filled or OrderState.PartiallyFilled;
+        info is { FilledQuantity: 0m, Status: OrderState.Filled or OrderState.PartiallyFilled };
 
     private static OrderInfo MapOrder(IOrder order) => new(
         AlpacaOrderId: order.OrderId.ToString(),
@@ -301,8 +300,8 @@ public sealed class AlpacaBrokerService(
         // SDK v7.2.0 exposes integer-only quantity fields; fractional orders return null here.
         // When IntegerQuantity is null (fractional order), fall back to 0 — a future SDK upgrade
         // or manual JSON parsing would be needed to recover the exact fractional value.
-        Quantity: (decimal?)order.IntegerQuantity ?? 0m,
-        FilledQuantity: (decimal?)order.IntegerFilledQuantity ?? 0m,
+        Quantity: order.IntegerQuantity,
+        FilledQuantity: order.IntegerFilledQuantity,
         AverageFilledPrice: order.AverageFillPrice ?? 0m,
         Status: MapOrderStatus(order.OrderStatus),
         CreatedAt: order.CreatedAtUtc.HasValue

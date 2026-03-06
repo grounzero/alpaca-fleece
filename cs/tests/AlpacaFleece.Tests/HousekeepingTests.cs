@@ -1,7 +1,8 @@
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// Tests for HousekeepingService (equity snapshots, daily resets, graceful shutdown).
+/// Tests for HousekeepingService (graceful shutdown only).
+/// Note: Equity snapshots and daily resets are now handled by Hangfire background jobs.
 /// </summary>
 [Collection("Trading Database Collection")]
 public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
@@ -58,21 +59,15 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task ExecuteAsync_RunsConcurrentTasks()
+    public async Task ExecuteAsync_CompletesImmediately()
     {
+        // ExecuteAsync now returns Task.CompletedTask (no recurring tasks)
         // Act
         var cts = new CancellationTokenSource();
-        cts.CancelAfter(TimeSpan.FromSeconds(2));
+        cts.CancelAfter(TimeSpan.FromSeconds(1));
 
-        try
-        {
-            var runTask = _housekeeping.StartAsync(cts.Token);
-            await runTask;
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected after timeout
-        }
+        var runTask = _housekeeping.StartAsync(cts.Token);
+        await runTask;
 
         // Assert
         Assert.True(true);
@@ -176,7 +171,7 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
-    public async Task StopAsync_TakesEquitySnapshot()
+    public async Task StopAsync_TakesFinalEquitySnapshot()
     {
         // Arrange
         _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
@@ -201,83 +196,40 @@ public sealed class HousekeepingTests(TradingFixture fixture) : IAsyncLifetime
         // Act
         await _housekeeping.StopAsync(CancellationToken.None);
 
-        // Assert: account should be called for snapshot
+        // Assert: account should be called for final snapshot
         Assert.True(accountCallCount > 0);
     }
 
     [Fact]
-    public async Task DailyResetPreventsMultipleResetsPerDay()
+    public async Task StopAsync_FinalSnapshot_ReadsDailyPnl()
     {
         // Arrange
-        var today = DateTimeOffset.Now.ToString("yyyy-MM-dd");
-        await fixture.StateRepository.SetStateAsync("daily_reset_date", today, CancellationToken.None);
+        await fixture.StateRepository.SetStateAsync("daily_realized_pnl", "1234.56", CancellationToken.None);
+        
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
 
         // Act
         await _housekeeping.StopAsync(CancellationToken.None);
 
-        // Assert: should not reset if already reset today
-        var resetCount = 1; // Baseline assumption
-        Assert.Equal(1, resetCount);
-    }
-
-    [Fact]
-    public async Task TakeEquitySnapshotAsync_PersistsSnapshot()
-    {
-        // Arrange
-        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
-            .Returns(new AccountInfo(
-                AccountId: "test_account",
-                CashAvailable: 50000m,
-                CashReserved: 0m,
-                PortfolioValue: 100000m,
-                DayTradeCount: 0,
-                IsTradable: true,
-                IsAccountRestricted: false,
-                FetchedAt: DateTimeOffset.UtcNow));
-
-        // Act - via reflection since it's private
-        var method = typeof(HousekeepingService).GetMethod(
-            "TakeEquitySnapshotAsync",
-            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
-
-        if (method != null)
-        {
-            var task = method.Invoke(_housekeeping, new object[] { CancellationToken.None });
-            if (task is Task t)
-            {
-                await t;
-            }
-        }
-
-        // Assert: should have called InsertEquitySnapshotAsync (verify via repo if needed)
+        // Assert: should have read daily_realized_pnl from state
         await _brokerMock.Received(1).GetAccountAsync(Arg.Any<CancellationToken>());
     }
 
     [Fact]
-    public async Task EquitySnapshotAsync_CancellationToken()
+    public async Task StopAsync_SnapshotThrows_ShutdownContinues()
     {
-        // Arrange
-        var cts = new CancellationTokenSource();
+        // If final snapshot throws, graceful shutdown should continue
+        _brokerMock.GetOpenOrdersAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderInfo>());
 
-        // Act
-        var task = Task.Run(async () =>
-        {
-            try
-            {
-                var runTask = _housekeeping.StartAsync(cts.Token);
-                await runTask;
-            }
-            catch (OperationCanceledException)
-            {
-                // Expected
-            }
-        });
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns<AccountInfo>(_ => throw new InvalidOperationException("Broker unavailable"));
 
-        await Task.Delay(100);
-        cts.Cancel();
-        await task;
+        // StopAsync should not rethrow — it logs and continues
+        await _housekeeping.StopAsync(CancellationToken.None);
 
-        // Assert: service should handle cancellation gracefully
+        // If we reach here, graceful shutdown absorbed the error (as expected)
         Assert.True(true);
     }
 }

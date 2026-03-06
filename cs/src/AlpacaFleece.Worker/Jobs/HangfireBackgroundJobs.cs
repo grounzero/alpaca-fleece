@@ -4,7 +4,10 @@ namespace AlpacaFleece.Worker.Jobs;
 /// Hangfire background job configuration and job definitions.
 /// Provides recurring jobs for equity snapshots, daily resets, circuit breaker resets.
 /// </summary>
-public class HangfireBackgroundJobs(IServiceProvider serviceProvider, ILogger<HangfireBackgroundJobs> logger)
+public class HangfireBackgroundJobs(
+    IServiceProvider serviceProvider, 
+    ILogger<HangfireBackgroundJobs> logger,
+    HealthCheckService? healthCheckService = null)
 {
     /// <summary>
     /// Configures recurring Hangfire jobs.
@@ -35,6 +38,7 @@ public class HangfireBackgroundJobs(IServiceProvider serviceProvider, ILogger<Ha
 
     /// <summary>
     /// Equity snapshot job: fetches account, persists to equity_curve table.
+    /// Includes actual daily realized PnL and health check reporting.
     /// </summary>
     public async Task EquitySnapshotJobAsync()
     {
@@ -47,22 +51,50 @@ public class HangfireBackgroundJobs(IServiceProvider serviceProvider, ILogger<Ha
             var account = await brokerService.GetAccountAsync();
             var snapshotTime = DateTimeOffset.UtcNow;
 
+            // Read actual daily realized PnL from state (accumulated by EventDispatcherService on fills)
+            var dailyPnlStr = await stateRepository.GetStateAsync("daily_realized_pnl", CancellationToken.None);
+            var dailyPnl = decimal.TryParse(dailyPnlStr, out var parsed) ? parsed : 0m;
+
             await stateRepository.InsertEquitySnapshotAsync(
                 snapshotTime,
                 account.PortfolioValue,
                 account.CashAvailable,
-                0m,
+                dailyPnl,
                 CancellationToken.None);
 
-            if (logger.IsEnabled(LogLevel.Debug))
+            logger.LogDebug(
+                "Equity snapshot taken: portfolio={portfolio} cash={cash} dailyPnl={dailyPnl} at {time}",
+                account.PortfolioValue, account.CashAvailable, dailyPnl, snapshotTime);
+
+            // Write health check result to data/health.json if available
+            if (healthCheckService != null)
             {
-                logger.LogDebug("Hangfire equity snapshot completed: portfolio={portfolio}",
-                    account.PortfolioValue);
+                try
+                {
+                    var healthReport = await healthCheckService.CheckHealthAsync(
+                        new HealthCheckContext(), CancellationToken.None);
+                    var dataDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
+                    Directory.CreateDirectory(dataDir);
+                    var healthPath = Path.Combine(dataDir, "health.json");
+                    var healthJson = System.Text.Json.JsonSerializer.Serialize(new
+                    {
+                        Status = healthReport.Status.ToString(),
+                        CheckedAt = snapshotTime,
+                        Description = healthReport.Description,
+                        Data = healthReport.Data
+                    }, new System.Text.Json.JsonSerializerOptions { WriteIndented = true });
+                    await File.WriteAllTextAsync(healthPath, healthJson, CancellationToken.None);
+                }
+                catch (Exception ex)
+                {
+                    logger.LogWarning(ex, "Failed to write health check result");
+                }
             }
 
             // Record result in reconciliation_reports
             await RecordJobResultAsync(stateRepository,
-                "equity-snapshot", "SUCCESS", "Snapshot taken");
+                "equity-snapshot", "SUCCESS", 
+                $"Snapshot taken: portfolio={account.PortfolioValue:F2}, dailyPnL={dailyPnl:F2}");
         }
         catch (Exception ex)
         {
@@ -77,6 +109,7 @@ public class HangfireBackgroundJobs(IServiceProvider serviceProvider, ILogger<Ha
 
     /// <summary>
     /// Daily reset job: resets daily_trade_count and daily_pnl in bot_state.
+    /// Includes duplicate prevention to avoid multiple resets on the same day.
     /// </summary>
     public async Task DailyResetJobAsync()
     {
@@ -85,14 +118,29 @@ public class HangfireBackgroundJobs(IServiceProvider serviceProvider, ILogger<Ha
         {
             var stateRepository = scope.ServiceProvider.GetRequiredService<IStateRepository>();
 
-            logger.LogInformation("Daily reset job running");
-            await stateRepository.ResetDailyStateAsync();
-            await stateRepository.SetStateAsync("daily_reset_date",
-                DateTimeOffset.UtcNow.ToString("yyyy-MM-dd"));
+            // Check if already reset today (prevent duplicate resets on manual trigger or retry)
+            var lastResetDate = await stateRepository.GetStateAsync(
+                "daily_reset_date", CancellationToken.None);
+            
+            // Use ET timezone for date comparison (same timezone as job schedule)
+            var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
+            var todayStr = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, etZone).ToString("yyyy-MM-dd");
 
-            logger.LogInformation("Daily reset job completed");
+            if (lastResetDate == todayStr)
+            {
+                logger.LogInformation("Daily reset already performed today ({date}), skipping", todayStr);
+                await RecordJobResultAsync(stateRepository,
+                    "daily-reset", "SKIPPED", $"Already reset today: {todayStr}");
+                return;
+            }
+
+            logger.LogInformation("Daily reset job running for date {date}", todayStr);
+            await stateRepository.ResetDailyStateAsync();
+            await stateRepository.SetStateAsync("daily_reset_date", todayStr);
+
+            logger.LogInformation("Daily reset job completed for date {date}", todayStr);
             await RecordJobResultAsync(stateRepository,
-                "daily-reset", "SUCCESS", "Daily state reset");
+                "daily-reset", "SUCCESS", $"Daily state reset for {todayStr}");
         }
         catch (Exception ex)
         {
@@ -121,6 +169,8 @@ public class HangfireBackgroundJobs(IServiceProvider serviceProvider, ILogger<Ha
             if (!clock.IsOpen)
             {
                 logger.LogWarning("Circuit breaker reset job: market not open, skipping");
+                await RecordJobResultAsync(stateRepository,
+                    "circuit-breaker-reset", "SKIPPED", "Market not open");
                 return;
             }
 

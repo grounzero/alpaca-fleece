@@ -171,13 +171,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         // to write a data/health.json snapshot after each equity snapshot.
         services.AddSingleton<HealthCheckService>();
 
-        // Phase 6: Housekeeping Service
+        // Phase 6: Housekeeping Service (graceful shutdown only - recurring tasks handled by Hangfire)
         services.AddHostedService(sp => new HousekeepingService(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),
             sp.GetRequiredService<IServiceScopeFactory>(),
-            sp.GetRequiredService<ILogger<HousekeepingService>>(),
-            healthCheckService: sp.GetRequiredService<HealthCheckService>()));
+            sp.GetRequiredService<ILogger<HousekeepingService>>()));
 
         // Drawdown monitor service
         services.AddHostedService<DrawdownMonitorService>();
@@ -186,7 +185,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<AlertNotifier>();
         services.Configure<NotificationOptions>(context.Configuration.GetSection("Notifications"));
 
-        // Hangfire background jobs
+        // Hangfire background jobs (equity snapshots, daily resets, circuit breaker resets)
         services.AddHangfireServices();
 
       // Metrics
@@ -198,7 +197,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
 using (var scope = hostBuilder.Services.CreateScope())
 {
   var recurringJobManager = scope.ServiceProvider.GetRequiredService<IRecurringJobManager>();
-  var hangfireJobs = scope.ServiceProvider.GetRequiredService<HangfireBackgroundJobs>();
+  var healthCheckService = scope.ServiceProvider.GetRequiredService<HealthCheckService>();
+  var logger = scope.ServiceProvider.GetRequiredService<ILogger<HangfireBackgroundJobs>>();
+  var hangfireJobs = new HangfireBackgroundJobs(
+      scope.ServiceProvider,
+      logger,
+      healthCheckService);
   hangfireJobs.ConfigureRecurringJobs(recurringJobManager);
 }
 
