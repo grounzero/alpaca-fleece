@@ -1,5 +1,3 @@
-using System.Globalization;
-
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>

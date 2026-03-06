@@ -263,14 +263,14 @@ public static class HangfireExtensions
 {
     /// <summary>
     /// Adds Hangfire services to the dependency injection container.
-    /// Requires Hangfire.InMemory or Hangfire.SqlServer NuGet package for storage.
+    /// Uses in-memory storage (suitable for development/testing, data is lost on restart).
+    /// For production, consider Hangfire.SqlServer or Hangfire.PostgreSql for persistence.
     /// </summary>
     public static IServiceCollection AddHangfireServices(
         this IServiceCollection services)
     {
-        // Add Hangfire with default configuration
-        // Note: Storage backend should be configured via NuGet package (Hangfire.InMemory, Hangfire.SqlServer, etc.)
-        services.AddHangfire(config => { });
+        // Add Hangfire with in-memory storage
+        services.AddHangfire(config => config.UseInMemoryStorage());
 
         services.AddHangfireServer(options =>
         {
