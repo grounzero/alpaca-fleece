@@ -12,7 +12,7 @@ public class HangfireBackgroundJobs(
 {
     /// <summary>
     /// Configures recurring Hangfire jobs using DI-friendly registration.
-    /// Call this method from Program.cs during application startup.
+    /// Call this method during application startup.
     /// </summary>
     public static void ConfigureRecurringJobs(IRecurringJobManager recurringJobManager)
     {
