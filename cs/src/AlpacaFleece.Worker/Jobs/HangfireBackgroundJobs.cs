@@ -122,8 +122,7 @@ public class HangfireBackgroundJobs(
 
     /// <summary>
     /// Daily reset job: resets daily_trade_count and daily_pnl in bot_state.
-    /// Includes duplicate prevention to avoid multiple resets on the same day.
-    /// Uses check-then-act within transaction for atomicity.
+    /// Uses atomic TryAcquireDailyResetAsync to guarantee at-most-once execution.
     /// </summary>
     [DisableConcurrentExecution(timeoutInSeconds: 60)]
     public async Task DailyResetJobAsync(IJobCancellationToken cancellationToken)
@@ -134,14 +133,14 @@ public class HangfireBackgroundJobs(
         {
             var stateRepository = scope.ServiceProvider.GetRequiredService<IStateRepository>();
 
-            // Check if already reset today (prevent duplicate resets on manual trigger or retry)
-            var lastResetDate = await stateRepository.GetStateAsync("daily_reset_date", ct);
-            
             // Use ET timezone for date comparison (same timezone as job schedule)
             var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
             var todayStr = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, etZone).ToString("yyyy-MM-dd");
 
-            if (lastResetDate == todayStr)
+            // Atomically check and acquire daily reset (prevents race conditions)
+            var acquired = await stateRepository.TryAcquireDailyResetAsync(todayStr, ct);
+            
+            if (!acquired)
             {
                 logger.LogInformation("Daily reset already performed today ({date}), skipping", todayStr);
                 await RecordJobResultAsync(stateRepository,
@@ -151,10 +150,8 @@ public class HangfireBackgroundJobs(
 
             logger.LogInformation("Daily reset job running for date {date}", todayStr);
             
-            // Note: DisableConcurrentExecution prevents race conditions.
-            // If needed, wrap ResetDailyStateAsync + SetStateAsync in a DB transaction.
+            // Reset has been acquired atomically, now perform the actual reset
             await stateRepository.ResetDailyStateAsync(ct);
-            await stateRepository.SetStateAsync("daily_reset_date", todayStr, ct);
 
             logger.LogInformation("Daily reset job completed for date {date}", todayStr);
             await RecordJobResultAsync(stateRepository,

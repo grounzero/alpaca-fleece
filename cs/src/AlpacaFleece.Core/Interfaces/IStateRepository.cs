@@ -29,6 +29,13 @@ public interface IStateRepository
         CancellationToken ct = default);
 
     /// <summary>
+    /// Atomically checks if daily reset is needed and marks it as done.
+    /// Returns true if reset should proceed, false if already reset today.
+    /// Uses Serializable isolation to prevent race conditions.
+    /// </summary>
+    ValueTask<bool> TryAcquireDailyResetAsync(string todayDateStr, CancellationToken ct = default);
+
+    /// <summary>
     /// Saves an order intent to persistence (for crash recovery).
     /// </summary>
     ValueTask SaveOrderIntentAsync(

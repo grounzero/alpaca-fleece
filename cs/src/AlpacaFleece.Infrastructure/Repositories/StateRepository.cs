@@ -896,4 +896,64 @@ public sealed class StateRepository(
             throw new StateRepositoryException("Failed to save drawdown state", ex);
         }
     }
+
+    /// <summary>
+    /// Atomically checks if daily reset is needed and marks it as done.
+    /// Returns true if reset should proceed, false if already reset today.
+    /// Uses Serializable isolation to prevent TOCTOU race conditions.
+    /// </summary>
+    public async ValueTask<bool> TryAcquireDailyResetAsync(string todayDateStr, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            await using var tx = await dbContext.Database.BeginTransactionAsync(
+                System.Data.IsolationLevel.Serializable, ct);
+
+            try
+            {
+                // Check current daily_reset_date
+                var currentState = await dbContext.BotState
+                    .FirstOrDefaultAsync(x => x.Key == "daily_reset_date", ct);
+
+                // If already reset today, reject
+                if (currentState?.Value == todayDateStr)
+                {
+                    await tx.RollbackAsync(ct);
+                    logger.LogDebug("Daily reset already performed for {date}, rejected", todayDateStr);
+                    return false;
+                }
+
+                // Accept: update the date atomically
+                if (currentState == null)
+                {
+                    dbContext.BotState.Add(new BotStateEntity
+                    {
+                        Key = "daily_reset_date",
+                        Value = todayDateStr
+                    });
+                }
+                else
+                {
+                    currentState.Value = todayDateStr;
+                }
+
+                await dbContext.SaveChangesAsync(ct);
+                await tx.CommitAsync(ct);
+
+                logger.LogDebug("Daily reset acquired for {date}", todayDateStr);
+                return true;
+            }
+            catch
+            {
+                await tx.RollbackAsync(ct);
+                throw;
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to acquire daily reset for {date}", todayDateStr);
+            throw new StateRepositoryException($"Failed to acquire daily reset for {todayDateStr}", ex);
+        }
+    }
 }
