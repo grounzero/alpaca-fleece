@@ -3,7 +3,6 @@ namespace AlpacaFleece.Worker.Services;
 /// <summary>
 /// Housekeeping service: provides graceful shutdown handling.
 /// Graceful shutdown: cancel orders → flatten positions → final snapshot.
-/// Note: Equity snapshots and daily resets are now handled by Hangfire background jobs.
 /// </summary>
 public sealed class HousekeepingService(
     IBrokerService brokerService,

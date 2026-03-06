@@ -38,7 +38,7 @@ public class HangfireBackgroundJobs(
 
     /// <summary>
     /// Equity snapshot job: fetches account, persists to equity_curve table.
-    /// Includes actual daily realized PnL and health check reporting.
+    /// Includes actual daily PnL and health check reporting.
     /// </summary>
     public async Task EquitySnapshotJobAsync()
     {
