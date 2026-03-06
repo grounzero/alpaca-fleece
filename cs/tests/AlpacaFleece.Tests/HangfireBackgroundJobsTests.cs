@@ -7,7 +7,6 @@ namespace AlpacaFleece.Tests;
 /// <summary>
 /// Tests for HangfireBackgroundJobs (equity snapshots, daily resets, circuit breaker resets).
 /// Covers success paths, skip logic, cancellation, and persistence verification.
-/// Covers success paths, skip logic, cancellation, and persistence verification.
 /// </summary>
 [Collection("Trading Database Collection")]
 public sealed class HangfireBackgroundJobsTests(TradingFixture fixture) : IAsyncLifetime
