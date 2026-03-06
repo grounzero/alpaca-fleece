@@ -184,9 +184,6 @@ public sealed class HangfireBackgroundJobsTests(TradingFixture fixture) : IAsync
     public async Task DailyResetJobAsync_SecondRun_SkipsAndRecords()
     {
         // Arrange
-        var etZone = TimeZoneInfo.FindSystemTimeZoneById("America/New_York");
-        var todayStr = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, etZone).ToString("yyyy-MM-dd");
-
         // Run first reset to set today's date
         var cancellationToken1 = Substitute.For<IJobCancellationToken>();
         cancellationToken1.ShutdownToken.Returns(CancellationToken.None);
