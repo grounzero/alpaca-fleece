@@ -933,12 +933,14 @@ public sealed class StateRepository(
                     dbContext.BotState.Add(new BotStateEntity
                     {
                         Key = "daily_reset_date",
-                        Value = todayDateStr
+                        Value = todayDateStr,
+                        UpdatedAt = DateTimeOffset.UtcNow
                     });
                 }
                 else
                 {
                     currentState.Value = todayDateStr;
+                    currentState.UpdatedAt = DateTimeOffset.UtcNow;
                 }
 
                 await dbContext.SaveChangesAsync(ct);
