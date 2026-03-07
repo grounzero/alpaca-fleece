@@ -26,14 +26,17 @@ public sealed class HousekeepingService(
         try
         {
             // Block new signals IMMEDIATELY before flattening positions (ExitManager may still dispatch briefly)
+            // Use a short 5s timeout; if DB is locked, don't let it block host shutdown indefinitely.
             try
             {
-                await stateRepository.SetStateAsync("trading_ready", "false", CancellationToken.None);
+                using var tradingReadyCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await stateRepository.SetStateAsync("trading_ready", "false", tradingReadyCts.Token);
                 logger.LogInformation("HousekeepingService: trading_ready set to false");
             }
             catch (Exception ex)
             {
                 logger.LogError(ex, "Failed to set trading_ready=false on shutdown");
+                // Continue with shutdown even if trading_ready fails — don't block host
             }
 
             // Per-phase timeouts. Each phase gets independent timeout so slow phase 1 doesn't starve phase 2.

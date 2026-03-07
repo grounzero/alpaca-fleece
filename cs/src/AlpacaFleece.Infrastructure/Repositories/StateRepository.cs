@@ -38,7 +38,7 @@ public sealed class StateRepository(
             // Use transaction with Serializable isolation to atomically check-then-update/insert.
             // Prevents TOCTOU race where two callers both read entity==null and both try to insert.
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
             try
             {
                 var entity = await dbContext.BotState
