@@ -361,8 +361,8 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         var atrValue = 2m;
         await _positionTracker.OpenPositionAsync("BTC/USD", 1m, entryPrice, atrValue);
 
-        // Explicitly clear any prior exit attempt records for this symbol (clean state)
-        // to ensure backoffSeconds = 0
+        // Assume a clean state for this symbol and mark it as already pending exit,
+        // so PendingExit alone (without any failure backoff) blocks re-exit.
         var position = _positionTracker.GetPosition("BTC/USD")!;
         position.PendingExit = true;
 
