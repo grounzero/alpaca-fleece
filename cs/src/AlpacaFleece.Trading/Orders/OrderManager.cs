@@ -416,9 +416,9 @@ public sealed class OrderManager(
         decimal limitPrice,
         CancellationToken ct)
     {
-        var intents = await stateRepository.GetAllOrderIntentsAsync(ct);
+        var intents = await stateRepository.GetNonTerminalOrderIntentsAsync(ct);
         var activeIntent = intents
-            .Where(i => i.Symbol == symbol &&
+            .Where(i => i.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase) &&
                         i.Side.Equals(side, StringComparison.OrdinalIgnoreCase) &&
                         ActiveOrderStates.Contains(i.Status))
             .OrderByDescending(i => i.CreatedAt)
@@ -440,28 +440,57 @@ public sealed class OrderManager(
             return (activeIntent.ClientOrderId, true);
         }
 
-        var nowUtc = DateTimeOffset.UtcNow;
-        var sequenceKey = nowUtc.ToUnixTimeMilliseconds().ToString();
-        var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
-            strategy: strategy,
-            symbol: symbol,
-            timeframe: sequenceKey,
-            signalTimestamp: nowUtc,
-            side: side.ToLowerInvariant());
+        const int maxCreateAttempts = 3;
+        for (var attempt = 1; attempt <= maxCreateAttempts; attempt++)
+        {
+            var nowUtc = DateTimeOffset.UtcNow;
+            var sequenceKey = nowUtc.ToUnixTimeMilliseconds().ToString();
+            var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
+                strategy: strategy,
+                symbol: symbol,
+                timeframe: sequenceKey,
+                signalTimestamp: nowUtc,
+                side: side.ToLowerInvariant());
 
-        _ = await stateRepository.SaveOrderIntentAsync(
-            clientOrderId,
-            symbol,
-            side,
-            quantity,
-            limitPrice,
-            nowUtc,
-            ct);
+            var saved = await stateRepository.SaveOrderIntentAsync(
+                clientOrderId,
+                symbol,
+                side,
+                quantity,
+                limitPrice,
+                nowUtc,
+                ct);
 
-        logger.LogInformation(
-            "Created new {strategy} intent {id} for {symbol}",
-            strategy, clientOrderId, symbol);
-        return (clientOrderId, true);
+            if (saved)
+            {
+                logger.LogInformation(
+                    "Created new {strategy} intent {id} for {symbol}",
+                    strategy, clientOrderId, symbol);
+                return (clientOrderId, true);
+            }
+
+            var existing = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
+            if (existing is { AlpacaOrderId: not null } && ActiveOrderStates.Contains(existing.Status))
+            {
+                logger.LogInformation(
+                    "{strategy} order already active for {symbol} (alpaca_id={alpacaId}), skipping",
+                    strategy, symbol, existing.AlpacaOrderId);
+                return (existing.ClientOrderId, false);
+            }
+
+            if (existing is { AlpacaOrderId: null } && ActiveOrderStates.Contains(existing.Status))
+            {
+                logger.LogInformation(
+                    "{strategy} intent {id} exists but not submitted yet for {symbol} (crash recovery, duplicate id)",
+                    strategy, existing.ClientOrderId, symbol);
+                return (existing.ClientOrderId, true);
+            }
+        }
+
+        logger.LogWarning(
+            "Could not create unique {strategy} intent for {symbol} after retries; skipping submit",
+            strategy, symbol);
+        return (string.Empty, false);
     }
 
     /// <summary>

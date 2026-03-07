@@ -655,6 +655,34 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SubmitExitAsync_ActiveIntentSymbolMatch_IsCaseInsensitive()
+    {
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
+            "active_case_id",
+            "AAPL",
+            "SELL",
+            10m,
+            0m,
+            DateTimeOffset.UtcNow);
+        await fixture.StateRepository.UpdateOrderIntentAsync(
+            "active_case_id",
+            "alpaca_active_case",
+            OrderState.Accepted,
+            DateTimeOffset.UtcNow);
+
+        await orderManager.SubmitExitAsync("aapl", "SELL", 10m, 0m);
+
+        await _brokerMock.DidNotReceive().SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SubmitExitAsync_ReopenSameDay_SubmitsNewExitAfterPriorTerminalExit()
     {
         var options = new TradingOptions();
@@ -790,5 +818,60 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             Arg.Any<decimal>(),
             Arg.Any<string>(),
             Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubmitExitAsync_SaveConflictWithTerminalIntent_RetriesWithNewId()
+    {
+        var stateRepository = Substitute.For<IStateRepository>();
+        var broker = Substitute.For<IBrokerService>();
+        var riskManager = Substitute.For<IRiskManager>();
+        var eventBus = Substitute.For<IEventBus>();
+        var options = new TradingOptions();
+
+        stateRepository.GetNonTerminalOrderIntentsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<OrderIntentDto>().AsReadOnly());
+        stateRepository.SaveOrderIntentAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+                Arg.Any<decimal>(), Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>(), Arg.Any<decimal?>())
+            .Returns(new ValueTask<bool>(false), new ValueTask<bool>(true));
+        stateRepository.GetOrderIntentAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(call => new OrderIntentDto(
+                ClientOrderId: call.ArgAt<string>(0),
+                AlpacaOrderId: "terminal_conflict",
+                Symbol: "AAPL",
+                Side: "SELL",
+                Quantity: 5m,
+                LimitPrice: 0m,
+                Status: OrderState.Filled,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: DateTimeOffset.UtcNow,
+                AtrSeed: null));
+
+        broker.SubmitOrderAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+                Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo(
+                AlpacaOrderId: "alpaca_new",
+                ClientOrderId: "ignored",
+                Symbol: "AAPL",
+                Side: "SELL",
+                Quantity: 5m,
+                FilledQuantity: 0m,
+                AverageFilledPrice: 0m,
+                Status: OrderState.Accepted,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: null));
+
+        var orderManager = new OrderManager(
+            broker, riskManager, stateRepository, eventBus, options, _logger);
+
+        await orderManager.SubmitExitAsync("AAPL", "SELL", 5m, 0m);
+
+        await broker.Received(1).SubmitOrderAsync(
+            "AAPL", "SELL", 5m, 0m, Arg.Any<string>(), Arg.Any<CancellationToken>());
+        await stateRepository.Received(2).SaveOrderIntentAsync(
+            Arg.Any<string>(), "AAPL", "SELL", 5m, 0m,
+            Arg.Any<DateTimeOffset>(), Arg.Any<CancellationToken>(), Arg.Any<decimal?>());
     }
 }
