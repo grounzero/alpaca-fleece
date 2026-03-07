@@ -405,6 +405,9 @@ window.tradingViewCharts = (() => {
             width: getContainerWidth(state.container),
             height: getContainerHeight(state)
         });
+
+        // Keep pane allocation in sync when the container resizes.
+        applyPaneHeights(state);
     }
 
     function scheduleSizeSync(state) {

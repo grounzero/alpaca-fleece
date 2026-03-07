@@ -73,6 +73,8 @@
     private bool _loadingBars;
     private string? _loadError;
     private CancellationTokenSource? _barsLoadCts;
+    private int _barsLoadRequestId;
+    private int _activeBarsLoadRequestId;
     private static readonly TimeSpan BarsLoadDebounceDelay = TimeSpan.FromMilliseconds(300);
 
     protected override async Task OnInitializedAsync()
@@ -118,12 +120,21 @@
             return;
         }
 
+        var requestId = Interlocked.Increment(ref _barsLoadRequestId);
+        Volatile.Write(ref _activeBarsLoadRequestId, requestId);
+
         _loadError = null;
         _loadingBars = true;
 
         try
         {
             var bars = await DbService.GetRecentBarsAsync(_barsSymbol, _barsTimeframe, 150, ct);
+
+            if (requestId != Volatile.Read(ref _activeBarsLoadRequestId))
+            {
+                return;
+            }
+
             _barsData = bars;
         }
         catch (OperationCanceledException)
@@ -132,12 +143,20 @@
         }
         catch (Exception ex)
         {
+            if (requestId != Volatile.Read(ref _activeBarsLoadRequestId))
+            {
+                return;
+            }
+
             _loadError = $"Failed to load bars: {ex.Message}";
             Snackbar.Add(_loadError, Severity.Error);
         }
         finally
         {
-            _loadingBars = false;
+            if (requestId == Volatile.Read(ref _activeBarsLoadRequestId))
+            {
+                _loadingBars = false;
+            }
         }
     }
 
