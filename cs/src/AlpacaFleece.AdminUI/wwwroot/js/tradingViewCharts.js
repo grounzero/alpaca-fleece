@@ -401,13 +401,14 @@ window.tradingViewCharts = (() => {
             return;
         }
 
+        const chartHeight = getContainerHeight(state);
         state.chart.applyOptions({
             width: getContainerWidth(state.container),
-            height: getContainerHeight(state)
+            height: chartHeight
         });
 
         // Keep pane allocation in sync when the container resizes.
-        applyPaneHeights(state);
+        applyPaneHeights(state, chartHeight);
     }
 
     function scheduleSizeSync(state) {
@@ -426,7 +427,7 @@ window.tradingViewCharts = (() => {
         setTimeout(() => applyContainerSize(state), 0);
     }
 
-    function applyPaneHeights(state) {
+    function applyPaneHeights(state, chartHeightOverride) {
         if (!state || !state.chart) {
             return;
         }
@@ -449,7 +450,9 @@ window.tradingViewCharts = (() => {
             return;
         }
 
-        const chartHeight = getContainerHeight(state);
+        const chartHeight = Number.isFinite(chartHeightOverride)
+            ? chartHeightOverride
+            : getContainerHeight(state);
         const targetVolumeHeight = Math.max(72, Math.min(140, Math.floor(chartHeight * 0.2)));
         volumePane.setHeight(targetVolumeHeight);
     }
@@ -542,7 +545,6 @@ window.tradingViewCharts = (() => {
         state.chart.applyOptions(buildChartOptions(effectiveOptions, state.themeColors, state.container));
         applyContainerSize(state);
         state.mainSeries.applyOptions(buildMainSeriesOptions(state.mainSeriesType, state.themeColors, effectiveOptions));
-        applyPaneHeights(state);
 
         return updateData(chartId, effectiveOptions);
     }

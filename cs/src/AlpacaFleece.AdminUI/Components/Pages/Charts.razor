@@ -113,15 +113,23 @@
         }
     }
 
-    private async Task LoadBarsChartAsync(CancellationToken ct = default)
+    private async Task LoadBarsChartAsync(CancellationToken ct = default, int? queuedRequestId = null)
     {
         if (string.IsNullOrEmpty(_barsSymbol) || string.IsNullOrEmpty(_barsTimeframe))
         {
             return;
         }
 
-        var requestId = Interlocked.Increment(ref _barsLoadRequestId);
-        Volatile.Write(ref _activeBarsLoadRequestId, requestId);
+        var requestId = queuedRequestId ?? Interlocked.Increment(ref _barsLoadRequestId);
+        if (queuedRequestId is null)
+        {
+            Volatile.Write(ref _activeBarsLoadRequestId, requestId);
+        }
+
+        if (requestId != Volatile.Read(ref _activeBarsLoadRequestId))
+        {
+            return;
+        }
 
         _loadError = null;
         _loadingBars = true;
@@ -162,6 +170,9 @@
 
     private async Task DebouncedLoadBarsChartAsync()
     {
+        var requestId = Interlocked.Increment(ref _barsLoadRequestId);
+        Volatile.Write(ref _activeBarsLoadRequestId, requestId);
+
         var cts = new CancellationTokenSource();
         var previous = _barsLoadCts;
         _barsLoadCts = cts;
@@ -171,7 +182,7 @@
         try
         {
             await Task.Delay(BarsLoadDebounceDelay, cts.Token);
-            await LoadBarsChartAsync(cts.Token);
+            await LoadBarsChartAsync(cts.Token, requestId);
         }
         catch (OperationCanceledException)
         {
