@@ -73,6 +73,8 @@
     private bool _loadingBars;
     private string? _loadError;
     private CancellationTokenSource? _barsLoadCts;
+    private int _barsLoadRequestId;
+    private int _activeBarsLoadRequestId;
     private static readonly TimeSpan BarsLoadDebounceDelay = TimeSpan.FromMilliseconds(300);
 
     protected override async Task OnInitializedAsync()
@@ -111,9 +113,20 @@
         }
     }
 
-    private async Task LoadBarsChartAsync(CancellationToken ct = default)
+    private async Task LoadBarsChartAsync(CancellationToken ct = default, int? queuedRequestId = null)
     {
         if (string.IsNullOrEmpty(_barsSymbol) || string.IsNullOrEmpty(_barsTimeframe))
+        {
+            return;
+        }
+
+        var requestId = queuedRequestId ?? Interlocked.Increment(ref _barsLoadRequestId);
+        if (queuedRequestId is null)
+        {
+            Volatile.Write(ref _activeBarsLoadRequestId, requestId);
+        }
+
+        if (requestId != Volatile.Read(ref _activeBarsLoadRequestId))
         {
             return;
         }
@@ -124,6 +137,12 @@
         try
         {
             var bars = await DbService.GetRecentBarsAsync(_barsSymbol, _barsTimeframe, 150, ct);
+
+            if (requestId != Volatile.Read(ref _activeBarsLoadRequestId))
+            {
+                return;
+            }
+
             _barsData = bars;
         }
         catch (OperationCanceledException)
@@ -132,17 +151,28 @@
         }
         catch (Exception ex)
         {
+            if (requestId != Volatile.Read(ref _activeBarsLoadRequestId))
+            {
+                return;
+            }
+
             _loadError = $"Failed to load bars: {ex.Message}";
             Snackbar.Add(_loadError, Severity.Error);
         }
         finally
         {
-            _loadingBars = false;
+            if (requestId == Volatile.Read(ref _activeBarsLoadRequestId))
+            {
+                _loadingBars = false;
+            }
         }
     }
 
     private async Task DebouncedLoadBarsChartAsync()
     {
+        var requestId = Interlocked.Increment(ref _barsLoadRequestId);
+        Volatile.Write(ref _activeBarsLoadRequestId, requestId);
+
         var cts = new CancellationTokenSource();
         var previous = _barsLoadCts;
         _barsLoadCts = cts;
@@ -152,7 +182,7 @@
         try
         {
             await Task.Delay(BarsLoadDebounceDelay, cts.Token);
-            await LoadBarsChartAsync(cts.Token);
+            await LoadBarsChartAsync(cts.Token, requestId);
         }
         catch (OperationCanceledException)
         {
