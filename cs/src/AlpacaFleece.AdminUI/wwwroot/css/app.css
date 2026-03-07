@@ -73,12 +73,6 @@ body {
     height: 100%;
 }
 
-.ohlc-chart-host > [id^="tvchart_container_"] {
-    flex: 1 1 auto;
-    min-height: 0 !important;
-    height: 100% !important;
-}
-
 .ohlc-state {
     flex: 1 1 auto;
     min-height: 0;
@@ -205,6 +199,17 @@ body {
     .ohlc-toolbar { grid-template-columns: 1fr; width: 100%; }
     .ohlc-page { gap: 4px; }
     .ohlc-chart-shell { padding: 2px; }
+}
+
+@media (max-width: 960px) {
+    .ohlc-page { gap: 4px; }
+    .ohlc-toolbar { grid-template-columns: 1fr 1fr auto; }
+    .ohlc-chart-shell { min-height: 0; padding: 2px; }
+}
+
+@media (max-width: 700px) {
+    .ohlc-topbar { align-items: stretch; }
+    .ohlc-toolbar { grid-template-columns: 1fr; width: 100%; }
 }
 
 @media (min-width: 600px) {

@@ -1,25 +1,3 @@
-/* Ensure full-height flex chain from layout -> main content -> container -> page body */
-::deep .mud-layout {
-    min-height: 100vh;
-    min-height: 100dvh;
-}
-
-::deep .mud-main-content {
-    min-height: 100vh;
-    min-height: 100dvh;
-    height: 100vh;
-    height: 100dvh;
-    display: flex;
-    flex-direction: column;
-}
-
-::deep .app-content-container {
-    flex: 1 1 auto;
-    min-height: 0;
-    display: flex;
-    flex-direction: column;
-}
-
 ::deep .app-content-container-charts {
     padding-top: 8px !important;
     padding-bottom: 8px !important;

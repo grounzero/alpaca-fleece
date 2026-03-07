@@ -1,7 +1,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div id="@_containerId" style="width:100%; height:@HeightPx; min-height:@MinHeightPx;"></div>
+<div id="@_containerId" style="width:100%; height:@HeightPx; min-height:@MinHeightPx; flex:1 1 auto;"></div>
 
 @code {
     [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
@@ -152,6 +152,8 @@
             ShowMarkers,
             ShowPriceLine,
             AutoFitContent,
+            ShowLeftPriceScale,
+            ShowRightPriceScale,
             IsDarkTheme,
             Data.Count,
             FillParentHeight,
