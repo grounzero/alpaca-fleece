@@ -18,7 +18,8 @@ public sealed class OrderManager(
     IEventBus eventBus,
     TradingOptions options,
     ILogger<OrderManager> logger,
-    DrawdownMonitor? drawdownMonitor = null) : IOrderManager
+    DrawdownMonitor? drawdownMonitor = null,
+    VolatilityRegimeDetector? volatilityRegimeDetector = null) : IOrderManager
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _submissionLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<OrderState> ActiveOrderStates =
@@ -52,11 +53,15 @@ public sealed class OrderManager(
 
             // Step 1b: Get drawdown position multiplier (Warning state reduces sizes)
             var positionMultiplier = drawdownMonitor?.GetPositionMultiplier() ?? 1.0m;
+            var autoSized = false;
+            var accountEquity = 0m;
 
             // Step 1c: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
             if (quantity == 0m)
             {
                 var account = await broker.GetAccountAsync(ct);
+                accountEquity = account.PortfolioValue;
+                autoSized = true;
                 quantity = PositionSizer.CalculateQuantity(
                     signal,
                     accountEquity: account.PortfolioValue,
@@ -69,7 +74,25 @@ public sealed class OrderManager(
                     signal.Symbol, quantity, account.PortfolioValue, isCrypto);
             }
 
-            // Step 1d: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
+            // Step 1d: Volatility regime sizing multiplier (entries only).
+            // Applied before drawdown scaling so drawdown remains the final safety override.
+            if (volatilityRegimeDetector is { Enabled: true } &&
+                signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+            {
+                var regime = await volatilityRegimeDetector.GetRegimeAsync(signal.Symbol, ct);
+                var preVol = quantity;
+                quantity = isCrypto
+                    ? Math.Max(0.0001m, Math.Round(quantity * regime.PositionMultiplier, 8))
+                    : Math.Max(1m, Math.Floor(quantity * regime.PositionMultiplier));
+
+                logger.LogInformation(
+                    "Volatility sizing for {symbol}: regime={regime} vol={vol:F6} bars={bars} " +
+                    "multiplier={mult:F2} qty={before}->{after}",
+                    signal.Symbol, regime.Regime, regime.RealisedVolatility, regime.BarsInRegime,
+                    regime.PositionMultiplier, preVol, quantity);
+            }
+
+            // Step 1e: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
             if (positionMultiplier < 1.0m)
             {
                 var originalQty = quantity;
@@ -84,7 +107,40 @@ public sealed class OrderManager(
                 }
             }
 
-            // Step 1e: Enforce whole-number quantities when AllowFractionalOrders is disabled.
+            // Step 1f: Re-apply position-size cap for auto-sized BUYs after adaptive multipliers.
+            // PositionSizer enforces this cap at baseline sizing, but volatility multipliers > 1.0
+            // can otherwise push final quantity above MaxPositionSizePct.
+            if (autoSized && signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+            {
+                var priceForCap = signal.Metadata.CurrentPrice > 0m ? signal.Metadata.CurrentPrice : limitPrice;
+                if (priceForCap > 0m)
+                {
+                    var maxNotional = accountEquity * options.RiskLimits.MaxPositionSizePct;
+                    var rawCapQty = maxNotional / priceForCap;
+                    var capQty = isCrypto
+                        ? Math.Floor(rawCapQty * 100_000_000m) / 100_000_000m
+                        : Math.Floor(rawCapQty);
+
+                    if (capQty <= 0m)
+                    {
+                        logger.LogWarning(
+                            "Auto-sized quantity rejected for {symbol}: cap quantity <= 0 (equity={equity:F2}, maxPct={pct:P2}, price={price:F4})",
+                            signal.Symbol, accountEquity, options.RiskLimits.MaxPositionSizePct, priceForCap);
+                        return string.Empty;
+                    }
+
+                    if (quantity > capQty)
+                    {
+                        var preCapQty = quantity;
+                        quantity = capQty;
+                        logger.LogInformation(
+                            "Auto-sized quantity capped for {symbol}: {before} -> {after} (maxNotional={maxNotional:F2}, price={price:F4})",
+                            signal.Symbol, preCapQty, quantity, maxNotional, priceForCap);
+                    }
+                }
+            }
+
+            // Step 1g: Enforce whole-number quantities when AllowFractionalOrders is disabled.
             // SDK v7.2.0 cannot read back fractional fills; keeping this gate prevents spurious
             // circuit-breaker trips caused by IsFractionalFault detecting a 0-qty filled order.
             if (!options.Execution.AllowFractionalOrders)

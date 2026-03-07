@@ -75,6 +75,57 @@ public sealed class ConfigDraft
     public decimal MaxSectorPct { get; set; } = 0.15m;
     public decimal MaxAssetClassPct { get; set; } = 0.30m;
 
+    // Volatility regime (global)
+    public bool VolatilityRegimeEnabled { get; set; } = false;
+    public int VolatilityLookbackBars { get; set; } = 30;
+    public int VolatilityTransitionConfirmationBars { get; set; } = 2;
+    public decimal VolatilityHysteresisBuffer { get; set; } = 0.0002m;
+    public decimal VolatilityLowMaxVolatility { get; set; } = 0.003m;
+    public decimal VolatilityNormalMaxVolatility { get; set; } = 0.007m;
+    public decimal VolatilityHighMaxVolatility { get; set; } = 0.015m;
+    public decimal VolatilityLowPositionMultiplier { get; set; } = 1.20m;
+    public decimal VolatilityNormalPositionMultiplier { get; set; } = 1.00m;
+    public decimal VolatilityHighPositionMultiplier { get; set; } = 0.60m;
+    public decimal VolatilityExtremePositionMultiplier { get; set; } = 0.30m;
+    public decimal VolatilityLowStopMultiplier { get; set; } = 0.80m;
+    public decimal VolatilityNormalStopMultiplier { get; set; } = 1.00m;
+    public decimal VolatilityHighStopMultiplier { get; set; } = 1.50m;
+    public decimal VolatilityExtremeStopMultiplier { get; set; } = 2.00m;
+
+    // Volatility regime (equity overrides)
+    public bool UseEquityVolatilityOverrides { get; set; } = false;
+    public int EquityVolatilityLookbackBars { get; set; } = 30;
+    public int EquityVolatilityTransitionConfirmationBars { get; set; } = 2;
+    public decimal EquityVolatilityHysteresisBuffer { get; set; } = 0.0002m;
+    public decimal EquityVolatilityLowMaxVolatility { get; set; } = 0.003m;
+    public decimal EquityVolatilityNormalMaxVolatility { get; set; } = 0.007m;
+    public decimal EquityVolatilityHighMaxVolatility { get; set; } = 0.015m;
+    public decimal EquityVolatilityLowPositionMultiplier { get; set; } = 1.20m;
+    public decimal EquityVolatilityNormalPositionMultiplier { get; set; } = 1.00m;
+    public decimal EquityVolatilityHighPositionMultiplier { get; set; } = 0.60m;
+    public decimal EquityVolatilityExtremePositionMultiplier { get; set; } = 0.30m;
+    public decimal EquityVolatilityLowStopMultiplier { get; set; } = 0.80m;
+    public decimal EquityVolatilityNormalStopMultiplier { get; set; } = 1.00m;
+    public decimal EquityVolatilityHighStopMultiplier { get; set; } = 1.50m;
+    public decimal EquityVolatilityExtremeStopMultiplier { get; set; } = 2.00m;
+
+    // Volatility regime (crypto overrides)
+    public bool UseCryptoVolatilityOverrides { get; set; } = false;
+    public int CryptoVolatilityLookbackBars { get; set; } = 30;
+    public int CryptoVolatilityTransitionConfirmationBars { get; set; } = 2;
+    public decimal CryptoVolatilityHysteresisBuffer { get; set; } = 0.0002m;
+    public decimal CryptoVolatilityLowMaxVolatility { get; set; } = 0.003m;
+    public decimal CryptoVolatilityNormalMaxVolatility { get; set; } = 0.007m;
+    public decimal CryptoVolatilityHighMaxVolatility { get; set; } = 0.015m;
+    public decimal CryptoVolatilityLowPositionMultiplier { get; set; } = 1.20m;
+    public decimal CryptoVolatilityNormalPositionMultiplier { get; set; } = 1.00m;
+    public decimal CryptoVolatilityHighPositionMultiplier { get; set; } = 0.60m;
+    public decimal CryptoVolatilityExtremePositionMultiplier { get; set; } = 0.30m;
+    public decimal CryptoVolatilityLowStopMultiplier { get; set; } = 0.80m;
+    public decimal CryptoVolatilityNormalStopMultiplier { get; set; } = 1.00m;
+    public decimal CryptoVolatilityHighStopMultiplier { get; set; } = 1.50m;
+    public decimal CryptoVolatilityExtremeStopMultiplier { get; set; } = 2.00m;
+
     public bool IsDirty { get; set; } = false;
 }
 

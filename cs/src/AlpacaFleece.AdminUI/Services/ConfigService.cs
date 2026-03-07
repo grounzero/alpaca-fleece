@@ -122,6 +122,63 @@ public sealed class ConfigService(
                     draft.MaxSectorPct = GetDecimal(corr, "MaxSectorPct", draft.MaxSectorPct);
                     draft.MaxAssetClassPct = GetDecimal(corr, "MaxAssetClassPct", draft.MaxAssetClassPct);
                 }
+
+                if (trading.TryGetProperty("VolatilityRegime", out var vr))
+                {
+                    draft.VolatilityRegimeEnabled = GetBool(vr, "Enabled");
+                    draft.VolatilityLookbackBars = GetInt(vr, "LookbackBars", draft.VolatilityLookbackBars);
+                    draft.VolatilityTransitionConfirmationBars = GetInt(vr, "TransitionConfirmationBars", draft.VolatilityTransitionConfirmationBars);
+                    draft.VolatilityHysteresisBuffer = GetDecimal(vr, "HysteresisBuffer", draft.VolatilityHysteresisBuffer);
+                    draft.VolatilityLowMaxVolatility = GetDecimal(vr, "LowMaxVolatility", draft.VolatilityLowMaxVolatility);
+                    draft.VolatilityNormalMaxVolatility = GetDecimal(vr, "NormalMaxVolatility", draft.VolatilityNormalMaxVolatility);
+                    draft.VolatilityHighMaxVolatility = GetDecimal(vr, "HighMaxVolatility", draft.VolatilityHighMaxVolatility);
+                    draft.VolatilityLowPositionMultiplier = GetDecimal(vr, "LowPositionMultiplier", draft.VolatilityLowPositionMultiplier);
+                    draft.VolatilityNormalPositionMultiplier = GetDecimal(vr, "NormalPositionMultiplier", draft.VolatilityNormalPositionMultiplier);
+                    draft.VolatilityHighPositionMultiplier = GetDecimal(vr, "HighPositionMultiplier", draft.VolatilityHighPositionMultiplier);
+                    draft.VolatilityExtremePositionMultiplier = GetDecimal(vr, "ExtremePositionMultiplier", draft.VolatilityExtremePositionMultiplier);
+                    draft.VolatilityLowStopMultiplier = GetDecimal(vr, "LowStopMultiplier", draft.VolatilityLowStopMultiplier);
+                    draft.VolatilityNormalStopMultiplier = GetDecimal(vr, "NormalStopMultiplier", draft.VolatilityNormalStopMultiplier);
+                    draft.VolatilityHighStopMultiplier = GetDecimal(vr, "HighStopMultiplier", draft.VolatilityHighStopMultiplier);
+                    draft.VolatilityExtremeStopMultiplier = GetDecimal(vr, "ExtremeStopMultiplier", draft.VolatilityExtremeStopMultiplier);
+
+                    if (vr.TryGetProperty("Equity", out var equity))
+                    {
+                        draft.UseEquityVolatilityOverrides = true;
+                        draft.EquityVolatilityLookbackBars = GetInt(equity, "LookbackBars", draft.EquityVolatilityLookbackBars);
+                        draft.EquityVolatilityTransitionConfirmationBars = GetInt(equity, "TransitionConfirmationBars", draft.EquityVolatilityTransitionConfirmationBars);
+                        draft.EquityVolatilityHysteresisBuffer = GetDecimal(equity, "HysteresisBuffer", draft.EquityVolatilityHysteresisBuffer);
+                        draft.EquityVolatilityLowMaxVolatility = GetDecimal(equity, "LowMaxVolatility", draft.EquityVolatilityLowMaxVolatility);
+                        draft.EquityVolatilityNormalMaxVolatility = GetDecimal(equity, "NormalMaxVolatility", draft.EquityVolatilityNormalMaxVolatility);
+                        draft.EquityVolatilityHighMaxVolatility = GetDecimal(equity, "HighMaxVolatility", draft.EquityVolatilityHighMaxVolatility);
+                        draft.EquityVolatilityLowPositionMultiplier = GetDecimal(equity, "LowPositionMultiplier", draft.EquityVolatilityLowPositionMultiplier);
+                        draft.EquityVolatilityNormalPositionMultiplier = GetDecimal(equity, "NormalPositionMultiplier", draft.EquityVolatilityNormalPositionMultiplier);
+                        draft.EquityVolatilityHighPositionMultiplier = GetDecimal(equity, "HighPositionMultiplier", draft.EquityVolatilityHighPositionMultiplier);
+                        draft.EquityVolatilityExtremePositionMultiplier = GetDecimal(equity, "ExtremePositionMultiplier", draft.EquityVolatilityExtremePositionMultiplier);
+                        draft.EquityVolatilityLowStopMultiplier = GetDecimal(equity, "LowStopMultiplier", draft.EquityVolatilityLowStopMultiplier);
+                        draft.EquityVolatilityNormalStopMultiplier = GetDecimal(equity, "NormalStopMultiplier", draft.EquityVolatilityNormalStopMultiplier);
+                        draft.EquityVolatilityHighStopMultiplier = GetDecimal(equity, "HighStopMultiplier", draft.EquityVolatilityHighStopMultiplier);
+                        draft.EquityVolatilityExtremeStopMultiplier = GetDecimal(equity, "ExtremeStopMultiplier", draft.EquityVolatilityExtremeStopMultiplier);
+                    }
+
+                    if (vr.TryGetProperty("Crypto", out var crypto))
+                    {
+                        draft.UseCryptoVolatilityOverrides = true;
+                        draft.CryptoVolatilityLookbackBars = GetInt(crypto, "LookbackBars", draft.CryptoVolatilityLookbackBars);
+                        draft.CryptoVolatilityTransitionConfirmationBars = GetInt(crypto, "TransitionConfirmationBars", draft.CryptoVolatilityTransitionConfirmationBars);
+                        draft.CryptoVolatilityHysteresisBuffer = GetDecimal(crypto, "HysteresisBuffer", draft.CryptoVolatilityHysteresisBuffer);
+                        draft.CryptoVolatilityLowMaxVolatility = GetDecimal(crypto, "LowMaxVolatility", draft.CryptoVolatilityLowMaxVolatility);
+                        draft.CryptoVolatilityNormalMaxVolatility = GetDecimal(crypto, "NormalMaxVolatility", draft.CryptoVolatilityNormalMaxVolatility);
+                        draft.CryptoVolatilityHighMaxVolatility = GetDecimal(crypto, "HighMaxVolatility", draft.CryptoVolatilityHighMaxVolatility);
+                        draft.CryptoVolatilityLowPositionMultiplier = GetDecimal(crypto, "LowPositionMultiplier", draft.CryptoVolatilityLowPositionMultiplier);
+                        draft.CryptoVolatilityNormalPositionMultiplier = GetDecimal(crypto, "NormalPositionMultiplier", draft.CryptoVolatilityNormalPositionMultiplier);
+                        draft.CryptoVolatilityHighPositionMultiplier = GetDecimal(crypto, "HighPositionMultiplier", draft.CryptoVolatilityHighPositionMultiplier);
+                        draft.CryptoVolatilityExtremePositionMultiplier = GetDecimal(crypto, "ExtremePositionMultiplier", draft.CryptoVolatilityExtremePositionMultiplier);
+                        draft.CryptoVolatilityLowStopMultiplier = GetDecimal(crypto, "LowStopMultiplier", draft.CryptoVolatilityLowStopMultiplier);
+                        draft.CryptoVolatilityNormalStopMultiplier = GetDecimal(crypto, "NormalStopMultiplier", draft.CryptoVolatilityNormalStopMultiplier);
+                        draft.CryptoVolatilityHighStopMultiplier = GetDecimal(crypto, "HighStopMultiplier", draft.CryptoVolatilityHighStopMultiplier);
+                        draft.CryptoVolatilityExtremeStopMultiplier = GetDecimal(crypto, "ExtremeStopMultiplier", draft.CryptoVolatilityExtremeStopMultiplier);
+                    }
+                }
             }
 
             draft.IsDirty = false;
@@ -187,6 +244,67 @@ public sealed class ConfigService(
             errors.Add("AtrProfitTargetMultiplier must exceed AtrStopLossMultiplier.");
         if (!draft.IsPaperTrading && draft.AllowLiveTrading)
             errors.Add("Warning: Live trading is enabled. Ensure this is intentional.");
+
+        if (draft.VolatilityRegimeEnabled)
+        {
+            ValidateVolatilityProfile(
+                errors,
+                "VolatilityRegime",
+                draft.VolatilityLookbackBars,
+                draft.VolatilityTransitionConfirmationBars,
+                draft.VolatilityLowMaxVolatility,
+                draft.VolatilityNormalMaxVolatility,
+                draft.VolatilityHighMaxVolatility,
+                draft.VolatilityLowPositionMultiplier,
+                draft.VolatilityNormalPositionMultiplier,
+                draft.VolatilityHighPositionMultiplier,
+                draft.VolatilityExtremePositionMultiplier,
+                draft.VolatilityLowStopMultiplier,
+                draft.VolatilityNormalStopMultiplier,
+                draft.VolatilityHighStopMultiplier,
+                draft.VolatilityExtremeStopMultiplier);
+        }
+
+        if (draft.UseEquityVolatilityOverrides)
+        {
+            ValidateVolatilityProfile(
+                errors,
+                "VolatilityRegime.Equity",
+                draft.EquityVolatilityLookbackBars,
+                draft.EquityVolatilityTransitionConfirmationBars,
+                draft.EquityVolatilityLowMaxVolatility,
+                draft.EquityVolatilityNormalMaxVolatility,
+                draft.EquityVolatilityHighMaxVolatility,
+                draft.EquityVolatilityLowPositionMultiplier,
+                draft.EquityVolatilityNormalPositionMultiplier,
+                draft.EquityVolatilityHighPositionMultiplier,
+                draft.EquityVolatilityExtremePositionMultiplier,
+                draft.EquityVolatilityLowStopMultiplier,
+                draft.EquityVolatilityNormalStopMultiplier,
+                draft.EquityVolatilityHighStopMultiplier,
+                draft.EquityVolatilityExtremeStopMultiplier);
+        }
+
+        if (draft.UseCryptoVolatilityOverrides)
+        {
+            ValidateVolatilityProfile(
+                errors,
+                "VolatilityRegime.Crypto",
+                draft.CryptoVolatilityLookbackBars,
+                draft.CryptoVolatilityTransitionConfirmationBars,
+                draft.CryptoVolatilityLowMaxVolatility,
+                draft.CryptoVolatilityNormalMaxVolatility,
+                draft.CryptoVolatilityHighMaxVolatility,
+                draft.CryptoVolatilityLowPositionMultiplier,
+                draft.CryptoVolatilityNormalPositionMultiplier,
+                draft.CryptoVolatilityHighPositionMultiplier,
+                draft.CryptoVolatilityExtremePositionMultiplier,
+                draft.CryptoVolatilityLowStopMultiplier,
+                draft.CryptoVolatilityNormalStopMultiplier,
+                draft.CryptoVolatilityHighStopMultiplier,
+                draft.CryptoVolatilityExtremeStopMultiplier);
+        }
+
         return errors;
     }
 
@@ -327,7 +445,8 @@ public sealed class ConfigService(
                     ["MaxSectorPct"] = d.MaxSectorPct,
                     ["MaxAssetClassPct"] = d.MaxAssetClassPct,
                     ["StaticCorrelations"] = new JsonObject()
-                }
+                },
+                ["VolatilityRegime"] = BuildVolatilityRegimeNode(d)
             }
         };
     }
@@ -356,5 +475,104 @@ public sealed class ConfigService(
         if (node?[section]?[key]?.GetValue<string>() is { } value && !string.IsNullOrEmpty(value))
             return value;
         return fallback;
+    }
+
+    private static JsonObject BuildVolatilityRegimeNode(ConfigDraft d)
+    {
+        var node = new JsonObject
+        {
+            ["Enabled"] = d.VolatilityRegimeEnabled,
+            ["LookbackBars"] = d.VolatilityLookbackBars,
+            ["TransitionConfirmationBars"] = d.VolatilityTransitionConfirmationBars,
+            ["HysteresisBuffer"] = d.VolatilityHysteresisBuffer,
+            ["LowMaxVolatility"] = d.VolatilityLowMaxVolatility,
+            ["NormalMaxVolatility"] = d.VolatilityNormalMaxVolatility,
+            ["HighMaxVolatility"] = d.VolatilityHighMaxVolatility,
+            ["LowPositionMultiplier"] = d.VolatilityLowPositionMultiplier,
+            ["NormalPositionMultiplier"] = d.VolatilityNormalPositionMultiplier,
+            ["HighPositionMultiplier"] = d.VolatilityHighPositionMultiplier,
+            ["ExtremePositionMultiplier"] = d.VolatilityExtremePositionMultiplier,
+            ["LowStopMultiplier"] = d.VolatilityLowStopMultiplier,
+            ["NormalStopMultiplier"] = d.VolatilityNormalStopMultiplier,
+            ["HighStopMultiplier"] = d.VolatilityHighStopMultiplier,
+            ["ExtremeStopMultiplier"] = d.VolatilityExtremeStopMultiplier
+        };
+
+        if (d.UseEquityVolatilityOverrides)
+        {
+            node["Equity"] = new JsonObject
+            {
+                ["LookbackBars"] = d.EquityVolatilityLookbackBars,
+                ["TransitionConfirmationBars"] = d.EquityVolatilityTransitionConfirmationBars,
+                ["HysteresisBuffer"] = d.EquityVolatilityHysteresisBuffer,
+                ["LowMaxVolatility"] = d.EquityVolatilityLowMaxVolatility,
+                ["NormalMaxVolatility"] = d.EquityVolatilityNormalMaxVolatility,
+                ["HighMaxVolatility"] = d.EquityVolatilityHighMaxVolatility,
+                ["LowPositionMultiplier"] = d.EquityVolatilityLowPositionMultiplier,
+                ["NormalPositionMultiplier"] = d.EquityVolatilityNormalPositionMultiplier,
+                ["HighPositionMultiplier"] = d.EquityVolatilityHighPositionMultiplier,
+                ["ExtremePositionMultiplier"] = d.EquityVolatilityExtremePositionMultiplier,
+                ["LowStopMultiplier"] = d.EquityVolatilityLowStopMultiplier,
+                ["NormalStopMultiplier"] = d.EquityVolatilityNormalStopMultiplier,
+                ["HighStopMultiplier"] = d.EquityVolatilityHighStopMultiplier,
+                ["ExtremeStopMultiplier"] = d.EquityVolatilityExtremeStopMultiplier
+            };
+        }
+
+        if (d.UseCryptoVolatilityOverrides)
+        {
+            node["Crypto"] = new JsonObject
+            {
+                ["LookbackBars"] = d.CryptoVolatilityLookbackBars,
+                ["TransitionConfirmationBars"] = d.CryptoVolatilityTransitionConfirmationBars,
+                ["HysteresisBuffer"] = d.CryptoVolatilityHysteresisBuffer,
+                ["LowMaxVolatility"] = d.CryptoVolatilityLowMaxVolatility,
+                ["NormalMaxVolatility"] = d.CryptoVolatilityNormalMaxVolatility,
+                ["HighMaxVolatility"] = d.CryptoVolatilityHighMaxVolatility,
+                ["LowPositionMultiplier"] = d.CryptoVolatilityLowPositionMultiplier,
+                ["NormalPositionMultiplier"] = d.CryptoVolatilityNormalPositionMultiplier,
+                ["HighPositionMultiplier"] = d.CryptoVolatilityHighPositionMultiplier,
+                ["ExtremePositionMultiplier"] = d.CryptoVolatilityExtremePositionMultiplier,
+                ["LowStopMultiplier"] = d.CryptoVolatilityLowStopMultiplier,
+                ["NormalStopMultiplier"] = d.CryptoVolatilityNormalStopMultiplier,
+                ["HighStopMultiplier"] = d.CryptoVolatilityHighStopMultiplier,
+                ["ExtremeStopMultiplier"] = d.CryptoVolatilityExtremeStopMultiplier
+            };
+        }
+
+        return node;
+    }
+
+    private static void ValidateVolatilityProfile(
+        List<string> errors,
+        string profileName,
+        int lookbackBars,
+        int transitionConfirmationBars,
+        decimal lowMaxVolatility,
+        decimal normalMaxVolatility,
+        decimal highMaxVolatility,
+        decimal lowPositionMultiplier,
+        decimal normalPositionMultiplier,
+        decimal highPositionMultiplier,
+        decimal extremePositionMultiplier,
+        decimal lowStopMultiplier,
+        decimal normalStopMultiplier,
+        decimal highStopMultiplier,
+        decimal extremeStopMultiplier)
+    {
+        if (lookbackBars < 5)
+            errors.Add($"{profileName}: LookbackBars must be >= 5.");
+        if (transitionConfirmationBars < 1)
+            errors.Add($"{profileName}: TransitionConfirmationBars must be >= 1.");
+        if (!(lowMaxVolatility < normalMaxVolatility && normalMaxVolatility < highMaxVolatility))
+            errors.Add($"{profileName}: volatility thresholds must satisfy Low < Normal < High.");
+
+        if (lowPositionMultiplier <= 0 || normalPositionMultiplier <= 0 ||
+            highPositionMultiplier <= 0 || extremePositionMultiplier <= 0)
+            errors.Add($"{profileName}: all position multipliers must be > 0.");
+
+        if (lowStopMultiplier <= 0 || normalStopMultiplier <= 0 ||
+            highStopMultiplier <= 0 || extremeStopMultiplier <= 0)
+            errors.Add($"{profileName}: all stop multipliers must be > 0.");
     }
 }

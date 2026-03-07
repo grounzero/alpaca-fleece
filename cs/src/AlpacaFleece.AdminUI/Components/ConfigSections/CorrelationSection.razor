@@ -42,6 +42,7 @@
         <MudItem xs="12" md="6">
             <div class="d-flex align-center gap-1 mb-1">
                 <MudText Typo="Typo.caption" Class="mud-text-secondary">MAX ASSET CLASS CONCENTRATION</MudText>
+                <InfoPopup FieldKey="Correlation.MaxAssetClassPct" />
             </div>
             <SliderWithZones Min="0.1m" Max="1.0m" Step="0.05m"
                              @bind-Value="Draft.MaxAssetClassPct"

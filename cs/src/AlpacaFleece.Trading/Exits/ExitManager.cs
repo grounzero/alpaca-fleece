@@ -22,6 +22,7 @@ namespace AlpacaFleece.Trading.Exits;
 /// <param name="logger">The logger instance.</param>
 /// <param name="options">The trading options configuration.</param>
 /// <param name="symbolClassifier">Optional symbol classifier for crypto/equity detection.</param>
+/// <param name="volatilityRegimeDetector">Optional volatility regime detector for ATR distance adaptation.</param>
 public class ExitManager(
     IPositionTracker positionTracker,
     IBrokerService brokerService,
@@ -30,12 +31,13 @@ public class ExitManager(
     IStateRepository stateRepository,
     ILogger<ExitManager> logger,
     IOptions<TradingOptions> options,
-    ISymbolClassifier? symbolClassifier = null)
+    ISymbolClassifier? symbolClassifier = null,
+    VolatilityRegimeDetector? volatilityRegimeDetector = null)
 {
     /// <summary>
     /// Protected no-arg constructor for NSubstitute proxy creation in testing.
     /// </summary>
-    protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions()), null!) { }
+    protected ExitManager() : this(null!, null!, null!, null!, null!, null!, Options.Create(new TradingOptions()), null!, null!) { }
 
     private readonly ExitOptions _options = options.Value.Exit;
     private readonly ISymbolClassifier _symbolClassifier = symbolClassifier ?? new SymbolClassifier(options.Value.Symbols.CryptoSymbols, options.Value.Symbols.EquitySymbols);
@@ -170,10 +172,20 @@ public class ExitManager(
                     continue;
                 }
 
+                var atrDistanceMultiplier = 1.0m;
+                if (volatilityRegimeDetector is { Enabled: true })
+                {
+                    var volRegime = await volatilityRegimeDetector.GetRegimeAsync(symbol, ct);
+                    atrDistanceMultiplier = volRegime.StopMultiplier;
+                    logger.LogDebug(
+                        "Volatility stops for {symbol}: regime={regime} vol={vol:F6} bars={bars} stopMult={mult:F2}",
+                        symbol, volRegime.Regime, volRegime.RealisedVolatility, volRegime.BarsInRegime, atrDistanceMultiplier);
+                }
+
                 // ATR levels are valid — compute once (atr_computed = true).
                 // Fixed-% fallbacks (Rules 3 & 5) are mutually excluded when ATR is valid.
-                var atrStop = posData.EntryPrice - (posData.AtrValue * _options.AtrStopLossMultiplier);
-                var atrTarget = posData.EntryPrice + (posData.AtrValue * _options.AtrProfitTargetMultiplier);
+                var atrStop = posData.EntryPrice - (posData.AtrValue * _options.AtrStopLossMultiplier * atrDistanceMultiplier);
+                var atrTarget = posData.EntryPrice + (posData.AtrValue * _options.AtrProfitTargetMultiplier * atrDistanceMultiplier);
 
                 // Rule 1: ATR-based stop loss (highest priority)
                 if (currentPrice <= atrStop)

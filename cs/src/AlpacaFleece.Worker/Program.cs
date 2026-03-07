@@ -121,6 +121,11 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             sp.GetRequiredService<PositionTracker>(),
             sp.GetRequiredService<ILogger<CorrelationService>>()));
 
+        services.AddSingleton(sp => new VolatilityRegimeDetector(
+            sp.GetRequiredService<IMarketDataClient>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<VolatilityRegimeDetector>>()));
+
         // Drawdown monitor (singleton — maintains in-memory level cache)
         services.AddSingleton(sp => new DrawdownMonitor(
             sp.GetRequiredService<IBrokerService>(),
@@ -145,7 +150,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             sp.GetRequiredService<IEventBus>(),
             tradingOptions,
             sp.GetRequiredService<ILogger<OrderManager>>(),
-            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>()));
+            drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
+            volatilityRegimeDetector: sp.GetRequiredService<VolatilityRegimeDetector>()));
 
         // Phase 5: Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();
