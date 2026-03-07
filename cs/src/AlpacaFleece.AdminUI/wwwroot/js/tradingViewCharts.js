@@ -57,6 +57,10 @@ window.tradingViewCharts = (() => {
         return Number.isFinite(number) ? number : fallback;
     }
 
+    function resolveHeight(value) {
+        return Math.max(toNumber(value, defaultChartHeight), 220);
+    }
+
     function toTime(value) {
         const time = Number(value);
         if (!Number.isFinite(time) || time <= 0) {
@@ -172,7 +176,7 @@ window.tradingViewCharts = (() => {
     function buildChartOptions(options, themeColors, container) {
         return {
             width: Math.max(container.clientWidth || 0, 240),
-            height: Math.max(Number(options.height) || defaultChartHeight, 220),
+            height: resolveHeight(options.height),
             layout: {
                 background: { color: themeColors.background },
                 textColor: themeColors.text,
@@ -227,8 +231,8 @@ window.tradingViewCharts = (() => {
                 priceLineVisible: options.showPriceLine !== false,
                 priceFormat: {
                     type: "price",
-                    precision: Number(options.pricePrecision) || 2,
-                    minMove: Number(options.priceMinMove) || 0.01
+                    precision: toNumber(options.pricePrecision, 2),
+                    minMove: toNumber(options.priceMinMove, 0.01)
                 }
             };
         }
@@ -255,7 +259,13 @@ window.tradingViewCharts = (() => {
         if (typeof paneIndex === "number") {
             try {
                 return chart.addSeries(definition, seriesOptions, paneIndex);
-            } catch {
+            } catch (error) {
+                const message = String(error && error.message ? error.message : error);
+                const unsupportedPaneError = /pane|argument|parameter|overload|expected/i.test(message);
+                if (!unsupportedPaneError) {
+                    throw error;
+                }
+
                 return chart.addSeries(definition, seriesOptions);
             }
         }
@@ -337,7 +347,22 @@ window.tradingViewCharts = (() => {
         return true;
     }
 
+    function normalizeSeriesType(value) {
+        return (value || "candlestick").toLowerCase();
+    }
+
+    function shouldRecreate(state, options) {
+        const requestedMainSeriesType = normalizeSeriesType(options.mainSeriesType);
+        const requestedShowVolume = options.showVolume !== false;
+        const requestedVolumeInSeparatePane = options.volumeInSeparatePane === true;
+
+        return requestedMainSeriesType !== state.mainSeriesType
+            || requestedShowVolume !== state.showVolume
+            || requestedVolumeInSeparatePane !== state.volumeInSeparatePane;
+    }
+
     function create(chartId, containerId, options) {
+        const effectiveOptions = options || {};
         const container = document.getElementById(containerId);
         if (!container) {
             throw new Error(`TradingView chart container not found: ${containerId}`);
@@ -345,26 +370,29 @@ window.tradingViewCharts = (() => {
 
         dispose(chartId);
 
-        const theme = resolveTheme(options || {});
+        const theme = resolveTheme(effectiveOptions);
         const themeColors = getThemeColors(theme);
-        const chart = LightweightCharts.createChart(container, buildChartOptions(options || {}, themeColors, container));
+        const chart = LightweightCharts.createChart(container, buildChartOptions(effectiveOptions, themeColors, container));
 
-        const mainSeriesType = (options.mainSeriesType || "candlestick").toLowerCase();
-        const mainSeries = addSeries(chart, mainSeriesType, buildMainSeriesOptions(mainSeriesType, themeColors, options || {}));
+        const mainSeriesType = normalizeSeriesType(effectiveOptions.mainSeriesType);
+        const mainSeries = addSeries(chart, mainSeriesType, buildMainSeriesOptions(mainSeriesType, themeColors, effectiveOptions));
 
         let volumeSeries = null;
-        if (options.showVolume !== false) {
+        const showVolume = effectiveOptions.showVolume !== false;
+        const volumeInSeparatePane = effectiveOptions.volumeInSeparatePane === true;
+
+        if (showVolume) {
             const volumeOptions = {
-                priceScaleId: options.volumeInSeparatePane === true ? "" : "volume",
+                priceScaleId: volumeInSeparatePane ? "" : "volume",
                 priceFormat: { type: "volume" },
                 lastValueVisible: false,
                 priceLineVisible: false,
-                scaleMargins: options.volumeInSeparatePane === true
+                scaleMargins: volumeInSeparatePane
                     ? { top: 0.05, bottom: 0.0 }
                     : { top: 0.72, bottom: 0.0 }
             };
 
-            const paneIndex = options.volumeInSeparatePane === true ? 1 : undefined;
+            const paneIndex = volumeInSeparatePane ? 1 : undefined;
             volumeSeries = addSeries(chart, "histogram", volumeOptions, paneIndex);
         }
 
@@ -375,6 +403,9 @@ window.tradingViewCharts = (() => {
             volumeSeries,
             markersApi: null,
             mainSeriesType,
+            showVolume,
+            volumeInSeparatePane,
+            height: resolveHeight(effectiveOptions.height),
             resizeObserver: null,
             themeColors,
             priceLines: []
@@ -384,7 +415,7 @@ window.tradingViewCharts = (() => {
             const resizeObserver = new ResizeObserver(() => {
                 chart.applyOptions({
                     width: Math.max(container.clientWidth || 0, 240),
-                    height: Math.max(Number(options.height) || defaultChartHeight, 220)
+                    height: state.height
                 });
             });
 
@@ -393,23 +424,29 @@ window.tradingViewCharts = (() => {
         }
 
         charts.set(chartId, state);
-        updateData(chartId, options || {});
+        updateData(chartId, effectiveOptions);
         return true;
     }
 
     function update(chartId, options) {
+        const effectiveOptions = options || {};
         const state = charts.get(chartId);
         if (!state) {
             throw new Error(`TradingView chart not initialized: ${chartId}`);
         }
 
-        const theme = resolveTheme(options || {});
+        if (shouldRecreate(state, effectiveOptions)) {
+            return create(chartId, state.container.id, effectiveOptions);
+        }
+
+        state.height = resolveHeight(effectiveOptions.height);
+        const theme = resolveTheme(effectiveOptions);
         state.themeColors = getThemeColors(theme);
 
-        state.chart.applyOptions(buildChartOptions(options || {}, state.themeColors, state.container));
-        state.mainSeries.applyOptions(buildMainSeriesOptions(state.mainSeriesType, state.themeColors, options || {}));
+        state.chart.applyOptions(buildChartOptions(effectiveOptions, state.themeColors, state.container));
+        state.mainSeries.applyOptions(buildMainSeriesOptions(state.mainSeriesType, state.themeColors, effectiveOptions));
 
-        return updateData(chartId, options || {});
+        return updateData(chartId, effectiveOptions);
     }
 
     function fitContent(chartId) {

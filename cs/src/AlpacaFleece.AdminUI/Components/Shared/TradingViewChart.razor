@@ -15,7 +15,7 @@
     [Parameter] public bool AutoFitContent { get; set; } = true;
     [Parameter] public bool ShowLeftPriceScale { get; set; }
     [Parameter] public bool ShowRightPriceScale { get; set; } = true;
-    [Parameter] public bool? IsDarkTheme { get; set; } = true;
+    [Parameter] public bool? IsDarkTheme { get; set; }
     [Parameter] public string MainSeriesType { get; set; } = "candlestick";
     [Parameter] public int Height { get; set; } = 400;
     [Parameter] public int PricePrecision { get; set; } = 2;
@@ -137,14 +137,9 @@
 
     private string CreateDataFingerprint()
     {
-        if (Data.Count == 0)
-        {
-            return $"{Symbol}|{Timeframe}|{MainSeriesType}|{ShowVolume}|empty";
-        }
-
         var orderedBars = Data.OrderBy(b => b.Timestamp).ToArray();
-        var first = orderedBars[0];
-        var last = orderedBars[^1];
+        var barsFingerprint = string.Join(";", orderedBars.Select(b =>
+            $"{ToUnixTimeSeconds(b.Timestamp)}:{b.Open}:{b.High}:{b.Low}:{b.Close}:{b.Volume}"));
 
         return string.Join("|",
             Symbol,
@@ -157,15 +152,12 @@
             AutoFitContent,
             IsDarkTheme,
             Data.Count,
-            first.Timestamp.Ticks,
-            last.Timestamp.Ticks,
-            last.Close,
-            last.Volume,
             Height,
             Locale,
             TimeZone,
             PricePrecision,
-            PriceMinMove);
+            PriceMinMove,
+            barsFingerprint);
     }
 
     public async ValueTask DisposeAsync()
