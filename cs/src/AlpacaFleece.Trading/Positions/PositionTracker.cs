@@ -141,17 +141,40 @@ public class PositionTracker(IStateRepository stateRepository, ILogger<PositionT
     }
 
     /// <summary>
-    /// Updates trailing stop for a position.
+    /// Updates trailing stop for a position (persists to DB and updates in-memory state).
+    /// Serialised by <see cref="_positionSemaphore"/> to prevent DB/memory inconsistency.
     /// </summary>
-    public void UpdateTrailingStop(string symbol, decimal newTrailingStop)
+    public async ValueTask UpdateTrailingStopAsync(string symbol, decimal newTrailingStop, CancellationToken ct = default)
     {
-        lock (_lock)
+        await _positionSemaphore.WaitAsync(ct);
+        try
         {
-            if (_positions.TryGetValue(symbol, out var pos))
+            PositionData? pos;
+            lock (_lock)
+                _positions.TryGetValue(symbol, out pos);
+
+            if (pos == null)
+                return;
+
+            // Persist the updated trailing stop to DB
+            await _stateRepository.UpsertPositionTrackingAsync(
+                symbol, pos.CurrentQuantity, pos.EntryPrice, pos.AtrValue, newTrailingStop, ct);
+
+            // Update in-memory state
+            lock (_lock)
             {
-                pos.TrailingStopPrice = newTrailingStop;
-                pos.LastUpdateAt = DateTimeOffset.UtcNow;
+                if (_positions.TryGetValue(symbol, out pos))
+                {
+                    pos.TrailingStopPrice = newTrailingStop;
+                    pos.LastUpdateAt = DateTimeOffset.UtcNow;
+                }
             }
+
+            logger.LogInformation("Trailing stop updated: {symbol} {newStop}", symbol, newTrailingStop);
+        }
+        finally
+        {
+            _positionSemaphore.Release();
         }
     }
 

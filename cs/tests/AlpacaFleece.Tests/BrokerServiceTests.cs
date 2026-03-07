@@ -158,8 +158,6 @@ public sealed class BrokerServiceTests
         await mockClient.DidNotReceive().CancelOrderAsync(Arg.Any<Guid>(), Arg.Any<CancellationToken>());
     }
 
-    // ─── C-1: Fractional fault guard ─────────────────────────────────────────────
-
     [Fact]
     public void IsFractionalFault_FilledAndQtyZero_ReturnsTrue()
     {

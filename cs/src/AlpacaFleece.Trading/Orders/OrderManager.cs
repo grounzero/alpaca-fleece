@@ -271,16 +271,7 @@ public sealed class OrderManager(
                 signalTimestamp: dayTs,
                 side: side.ToLowerInvariant());
 
-            await stateRepository.SaveOrderIntentAsync(
-                clientOrderId,
-                symbol,
-                side,
-                quantity,
-                limitPrice,
-                DateTimeOffset.UtcNow,
-                ct);
-
-            // H-1: Idempotency check — if this exit was already submitted to the broker, skip re-submission
+            // Idempotency check BEFORE persist — if this exit was already submitted to the broker, skip re-submission
             var existingExitIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
             if (existingExitIntent is { AlpacaOrderId: not null })
             {
@@ -289,6 +280,16 @@ public sealed class OrderManager(
                     symbol, existingExitIntent.AlpacaOrderId);
                 return;
             }
+
+            // Persist intent AFTER checking for existing order (no-op if row already exists from concurrent call)
+            await stateRepository.SaveOrderIntentAsync(
+                clientOrderId,
+                symbol,
+                side,
+                quantity,
+                limitPrice,
+                DateTimeOffset.UtcNow,
+                ct);
 
             if (options.Execution.DryRun)
             {
@@ -372,7 +373,7 @@ public sealed class OrderManager(
                 // Persist intent BEFORE submission (crash recovery idempotency):
                 // SaveOrderIntentAsync is a no-op if clientOrderId already exists, so a restart
                 // after a partial crash will not create a duplicate exit.
-                // C-2: Use 0m as limitPrice so the broker submits a market order for flatten.
+                // Use 0m as limitPrice so the broker submits a market order for flatten.
                 // Passing pos.CurrentPrice as a limit could cause fill failures when the price moves.
                 await stateRepository.SaveOrderIntentAsync(
                     clientOrderId,

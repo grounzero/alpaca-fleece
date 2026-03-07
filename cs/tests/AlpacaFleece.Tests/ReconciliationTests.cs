@@ -255,8 +255,6 @@ public sealed class ReconciliationTests(TradingFixture fixture)
         // Assert: no exception expected
     }
 
-    // ─── C-3: Startup gate via reconciliation outcome ─────────────────────────────
-
     [Fact]
     public async Task ReconciliationPasses_TradingReadyShouldBeTrue_WhenCallerSetsIt()
     {
@@ -322,13 +320,11 @@ public sealed class ReconciliationTests(TradingFixture fixture)
         Assert.Equal("false", ready);
     }
 
-    // ─── C-3: PartiallyFilled is non-terminal ───────────────────────────────────
-
     [Fact]
     public async Task PartiallyFilledOrder_DoesNotBlockStartup()
     {
         // Arrange: Alpaca has a PartiallyFilled order that also exists in SQLite as PendingNew.
-        // After C-3 fix, PartiallyFilled is non-terminal — Rule 3 checks if the non-terminal
+        // PartiallyFilled is non-terminal — Rule 3 checks if the non-terminal
         // Alpaca order exists in SQLite (it does), so no discrepancy is raised.
         var reconciliation = new ReconciliationService(_brokerMock, fixture.StateRepository, _logger);
 
@@ -358,8 +354,6 @@ public sealed class ReconciliationTests(TradingFixture fixture)
         // Act & Assert: should not throw — PartiallyFilled is non-terminal so no false discrepancy
         await reconciliation.PerformStartupReconciliationAsync(CancellationToken.None);
     }
-
-    // ─── C-4: Ghost positions cleared from DB ───────────────────────────────────
 
     [Fact]
     public async Task GhostPosition_IsClearedFromSqlite()

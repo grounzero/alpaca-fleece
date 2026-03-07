@@ -578,6 +578,8 @@ public sealed class StateRepository(
 
             if (attempt != null)
             {
+                // Increment attempt count so backoff escalates (2^1, 2^2, 2^3, ... up to 300s)
+                attempt.AttemptCount++;
                 attempt.LastAttemptAt = DateTimeOffset.UtcNow;
                 attempt.NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(
                     Math.Min((int)Math.Pow(2, Math.Max(attempt.AttemptCount, 1)), 300));

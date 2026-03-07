@@ -526,8 +526,6 @@ public sealed class StrategyTests
             .PublishAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>());
     }
 
-    // ─── C-2: Staleness gate ─────────────────────────────────────────────────────
-
     [Fact]
     public async Task OnBarAsync_StaleBar_UpdatesIndicatorsButNoSignal()
     {

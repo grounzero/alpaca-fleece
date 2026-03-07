@@ -793,8 +793,6 @@ public sealed class StreamPollerTests
         Assert.Equal(5, capturedDepths[1]);   // Second poll: WarmPollDepth
     }
 
-    // ─── C-5: Fractional fault uses fallback qty, no CB trip ────────────────────
-
     [Fact]
     public async Task FractionalFault_UsesFallbackQty_NoCbTrip()
     {

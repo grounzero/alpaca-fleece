@@ -532,8 +532,6 @@ public sealed class RiskManagerTests(TradingFixture fixture) : IAsyncLifetime
         Assert.Equal("PASSED", result.RiskTier);
     }
 
-    // ─── C-3: Trading-ready gate ──────────────────────────────────────────────────
-
     [Fact]
     public async Task CheckSignalAsync_TradingReadyEmptyString_BlocksWithSafetyException()
     {

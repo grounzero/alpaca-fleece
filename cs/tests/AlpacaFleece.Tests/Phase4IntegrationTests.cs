@@ -297,7 +297,7 @@ public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifet
         // Arrange
         await _positionTracker.OpenPositionAsync("AAPL", 100, 150m, 2m);
 
-        // Flatten now routes through IOrderManager (C-5 fix)
+        // Flatten now routes through IOrderManager
         var orderManagerMock = Substitute.For<IOrderManager>();
         orderManagerMock.FlattenPositionsAsync(Arg.Any<CancellationToken>())
             .Returns(new ValueTask<int>(1));

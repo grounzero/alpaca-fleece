@@ -27,9 +27,9 @@ public interface IPositionTracker
     ValueTask ClosePositionAsync(string symbol, CancellationToken ct = default);
 
     /// <summary>
-    /// Updates trailing stop for a position.
+    /// Updates trailing stop for a position (persists to DB).
     /// </summary>
-    void UpdateTrailingStop(string symbol, decimal newTrailingStop);
+    ValueTask UpdateTrailingStopAsync(string symbol, decimal newTrailingStop, CancellationToken ct = default);
 
     /// <summary>
     /// Updates the quantity and average entry price of an existing open position (partial fill).

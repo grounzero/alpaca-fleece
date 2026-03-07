@@ -141,9 +141,8 @@ public class ExitManager(
                     continue;
                 }
 
-                // Skip if pending exit or in backoff
-                var backoffSeconds = await stateRepository.GetExitBackoffSecondsAsync(symbol, ct);
-                if (posData.PendingExit && backoffSeconds > 0)
+                // Skip if pending exit (backoff is checked separately for retry delay)
+                if (posData.PendingExit)
                 {
                     continue;
                 }

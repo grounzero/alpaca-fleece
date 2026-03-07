@@ -392,7 +392,7 @@ public sealed class StreamPollerService(
                 return;
             }
 
-            // C-5: Adapter fault guard — SDK v7.2.0 cannot read fractional filled quantities.
+            // Adapter fault guard — SDK v7.2.0 cannot read fractional filled quantities.
             // A terminal-fill with FilledQuantity=0 indicates a crypto fill where the integer
             // quantity field is null. Instead of tripping the circuit breaker, use the persisted
             // intent quantity as a fallback so the position can be opened/closed correctly.

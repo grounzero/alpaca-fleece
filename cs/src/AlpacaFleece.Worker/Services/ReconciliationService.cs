@@ -188,7 +188,7 @@ public sealed class ReconciliationService(
                     "Ghost position detected for {symbol}: qty={qty} entryPrice={price} — not present in Alpaca and no open orders. Clearing from DB.",
                     sqlitePos.Symbol, sqlitePos.Quantity, sqlitePos.EntryPrice);
 
-                // C-4: Clear the ghost position from DB so PositionTracker does not rehydrate stale data.
+                // Clear the ghost position from DB so PositionTracker does not rehydrate stale data.
                 await stateRepository.UpsertPositionTrackingAsync(
                     sqlitePos.Symbol, 0m, 0m, 0m, 0m, ct);
             }
@@ -275,7 +275,7 @@ public sealed class ReconciliationService(
             OrderState.Canceled => true,
             OrderState.Expired => true,
             OrderState.Rejected => true,
-            // C-3: PartiallyFilled is NOT terminal — the order may still receive further fills.
+            // PartiallyFilled is NOT terminal — the order may still receive further fills.
             // Treating it as terminal would block startup when a partial fill is in progress.
             _ => false
         };

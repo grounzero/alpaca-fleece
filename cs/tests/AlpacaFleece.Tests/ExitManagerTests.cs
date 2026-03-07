@@ -351,4 +351,32 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Assert: should exit gracefully
         Assert.True(true);
     }
+
+    [Fact]
+    public async Task CheckPositionsAsync_PendingExit_WithoutBackoff_PreventsDoubleExit()
+    {
+        // Test that PendingExit alone (without a failure backoff) prevents re-exit.
+        // Arrange: open position with ATR stop that would normally trigger
+        var entryPrice = 100m;
+        var atrValue = 2m;
+        await _positionTracker.OpenPositionAsync("BTC/USD", 1m, entryPrice, atrValue);
+
+        // Explicitly clear any prior exit attempt records for this symbol (clean state)
+        // to ensure backoffSeconds = 0
+        var position = _positionTracker.GetPosition("BTC/USD")!;
+        position.PendingExit = true;
+
+        _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+
+        // Market data returns price below ATR stop (95 < 97) so a signal WOULD normally trigger
+        _marketDataClientMock.GetSnapshotAsync(Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new BidAskSpread("BTC/USD", 95m, 95m, 100, 100, DateTimeOffset.UtcNow));
+
+        // Act
+        var signals = await _exitManager.CheckPositionsAsync(CancellationToken.None);
+
+        // Assert: no signal should be generated because PendingExit=true blocks it
+        Assert.Empty(signals);
+    }
 }
