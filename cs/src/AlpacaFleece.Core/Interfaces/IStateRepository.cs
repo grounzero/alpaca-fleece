@@ -123,6 +123,12 @@ public interface IStateRepository
     ValueTask RecordExitAttemptFailureAsync(string symbol, CancellationToken ct = default);
 
     /// <summary>
+    /// Gets the next retry timestamp for an exit attempt (or null if not found).
+    /// Used to enforce backoff timing when retrying failed exits.
+    /// </summary>
+    ValueTask<DateTimeOffset?> GetExitAttemptNextRetryAtAsync(string symbol, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts an equity snapshot to equity_curve table.
     /// </summary>
     ValueTask InsertEquitySnapshotAsync(

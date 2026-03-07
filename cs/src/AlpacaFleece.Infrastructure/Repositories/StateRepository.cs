@@ -597,6 +597,25 @@ public sealed class StateRepository(
     }
 
     /// <summary>
+    /// Gets the next retry timestamp for an exit attempt (or null if not found).
+    /// </summary>
+    public async ValueTask<DateTimeOffset?> GetExitAttemptNextRetryAtAsync(string symbol, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            var attempt = await dbContext.ExitAttempts
+                .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
+            return attempt?.NextRetryAt;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get exit attempt next retry for {symbol}", symbol);
+            throw new StateRepositoryException($"Failed to get exit attempt next retry for {symbol}", ex);
+        }
+    }
+
+    /// <summary>
     /// Inserts equity snapshot to equity_curve table (idempotent by timestamp).
     /// </summary>
     public async ValueTask InsertEquitySnapshotAsync(
