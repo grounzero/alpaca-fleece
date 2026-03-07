@@ -67,6 +67,40 @@ public static class ConfigDescriptions
                 "Maximum pairwise correlation allowed between a new position and any existing position.",
             ["Correlation.MaxSectorPct"] =
                 "Maximum percentage of max concurrent positions that may be in the same GICS sector.",
+            ["VolatilityRegime.Enabled"] =
+                "Enables realised-volatility regime detection and applies regime-based sizing and ATR stop multipliers.",
+            ["VolatilityRegime.LookbackBars"] =
+                "Number of 1-minute bars used to estimate realised volatility.",
+            ["VolatilityRegime.TransitionConfirmationBars"] =
+                "Consecutive bars required before accepting a regime change. Higher values reduce regime flapping.",
+            ["VolatilityRegime.HysteresisBuffer"] =
+                "Buffer around regime thresholds to prevent churn near boundaries.",
+            ["VolatilityRegime.LowMaxVolatility"] =
+                "Upper bound of the Low volatility regime. Must be less than Normal and High bounds.",
+            ["VolatilityRegime.NormalMaxVolatility"] =
+                "Upper bound of the Normal volatility regime. Must be less than High bound.",
+            ["VolatilityRegime.HighMaxVolatility"] =
+                "Upper bound of the High regime; values above this are treated as Extreme.",
+            ["VolatilityRegime.LowPositionMultiplier"] =
+                "Position multiplier when volatility is Low.",
+            ["VolatilityRegime.NormalPositionMultiplier"] =
+                "Position multiplier when volatility is Normal.",
+            ["VolatilityRegime.HighPositionMultiplier"] =
+                "Position multiplier when volatility is High.",
+            ["VolatilityRegime.ExtremePositionMultiplier"] =
+                "Position multiplier when volatility is Extreme.",
+            ["VolatilityRegime.LowStopMultiplier"] =
+                "ATR stop/target distance multiplier when volatility is Low.",
+            ["VolatilityRegime.NormalStopMultiplier"] =
+                "ATR stop/target distance multiplier when volatility is Normal.",
+            ["VolatilityRegime.HighStopMultiplier"] =
+                "ATR stop/target distance multiplier when volatility is High.",
+            ["VolatilityRegime.ExtremeStopMultiplier"] =
+                "ATR stop/target distance multiplier when volatility is Extreme.",
+            ["VolatilityRegime.EquityOverrides"] =
+                "When enabled, equity symbols use dedicated volatility regime settings instead of the global defaults.",
+            ["VolatilityRegime.CryptoOverrides"] =
+                "When enabled, crypto symbols use dedicated volatility regime settings instead of the global defaults.",
             ["Broker.KillSwitch"] =
                 "Emergency kill switch. When true, no new orders are submitted and existing positions may be flattened.",
             ["Broker.DryRun"] =

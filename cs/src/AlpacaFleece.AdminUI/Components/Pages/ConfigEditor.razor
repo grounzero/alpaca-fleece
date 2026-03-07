@@ -59,6 +59,9 @@ else if (_draft is not null)
                         <MudExpansionPanel Text="Signal Filters" @bind-Expanded="_filtersExpanded">
                             <SignalFiltersSection />
                         </MudExpansionPanel>
+                        <MudExpansionPanel Text="Volatility Regime" @bind-Expanded="_volExpanded">
+                            <VolatilityRegimeSection />
+                        </MudExpansionPanel>
                         <MudExpansionPanel Text="Execution" @bind-Expanded="_execExpanded">
                             <ExecutionSection />
                         </MudExpansionPanel>
@@ -160,7 +163,7 @@ else if (_draft is not null)
     // Expansion state
     private bool _dangerExpanded, _credExpanded, _symbolsExpanded = true;
     private bool _riskExpanded, _drawdownExpanded, _exitExpanded;
-    private bool _filtersExpanded, _execExpanded, _corrExpanded;
+    private bool _filtersExpanded, _volExpanded, _execExpanded, _corrExpanded;
 
     protected override async Task OnInitializedAsync()
     {
@@ -319,6 +322,18 @@ else if (_draft is not null)
             updated.MaxTradesPerDay > original.MaxTradesPerDay);
         Add("AllowFractionalOrders", original.AllowFractionalOrders.ToString(), updated.AllowFractionalOrders.ToString());
         Add("EntryOrderType", original.EntryOrderType, updated.EntryOrderType);
+        Add("VolatilityRegimeEnabled", original.VolatilityRegimeEnabled.ToString(), updated.VolatilityRegimeEnabled.ToString());
+        Add("VolatilityLookbackBars", original.VolatilityLookbackBars.ToString(), updated.VolatilityLookbackBars.ToString());
+        Add("VolatilityTransitionConfirmationBars", original.VolatilityTransitionConfirmationBars.ToString(), updated.VolatilityTransitionConfirmationBars.ToString());
+        Add("VolatilityLowMaxVolatility", original.VolatilityLowMaxVolatility.ToString("F5"), updated.VolatilityLowMaxVolatility.ToString("F5"));
+        Add("VolatilityNormalMaxVolatility", original.VolatilityNormalMaxVolatility.ToString("F5"), updated.VolatilityNormalMaxVolatility.ToString("F5"));
+        Add("VolatilityHighMaxVolatility", original.VolatilityHighMaxVolatility.ToString("F5"), updated.VolatilityHighMaxVolatility.ToString("F5"));
+        Add("VolatilityHighPositionMultiplier", original.VolatilityHighPositionMultiplier.ToString("F2"), updated.VolatilityHighPositionMultiplier.ToString("F2"));
+        Add("VolatilityExtremePositionMultiplier", original.VolatilityExtremePositionMultiplier.ToString("F2"), updated.VolatilityExtremePositionMultiplier.ToString("F2"));
+        Add("VolatilityHighStopMultiplier", original.VolatilityHighStopMultiplier.ToString("F2"), updated.VolatilityHighStopMultiplier.ToString("F2"));
+        Add("VolatilityExtremeStopMultiplier", original.VolatilityExtremeStopMultiplier.ToString("F2"), updated.VolatilityExtremeStopMultiplier.ToString("F2"));
+        Add("UseEquityVolatilityOverrides", original.UseEquityVolatilityOverrides.ToString(), updated.UseEquityVolatilityOverrides.ToString());
+        Add("UseCryptoVolatilityOverrides", original.UseCryptoVolatilityOverrides.ToString(), updated.UseCryptoVolatilityOverrides.ToString());
 
         return changes;
     }

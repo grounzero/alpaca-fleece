@@ -1,0 +1,442 @@
+@* Volatility regime configuration: realised-vol thresholds, hysteresis, and regime multipliers. *@
+
+<MudGrid Spacing="4">
+    <MudItem xs="12">
+        <div class="d-flex align-center gap-2">
+            <MudSwitch T="bool"
+                       @bind-Value="Draft.VolatilityRegimeEnabled"
+                       Color="Color.Primary"
+                       Label="Enable Volatility Regime Adaptation"
+                       @bind-Value:after="MarkDirty" />
+            <InfoPopup FieldKey="VolatilityRegime.Enabled" />
+        </div>
+    </MudItem>
+
+    @if (Draft.VolatilityRegimeEnabled)
+    {
+        <MudItem xs="12"><MudDivider /></MudItem>
+        <MudItem xs="12"><MudText Typo="Typo.subtitle2">Global Profile</MudText></MudItem>
+
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOOKBACK BARS</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LookbackBars" />
+            </div>
+            <SliderWithZones Min="5" Max="240" Step="5"
+                             @bind-Value="@GlobalLookbackDecimal"
+                             @bind-Value:after="MarkDirty"
+                             Label="Lookback Bars" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">TRANSITION CONFIRMATION</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.TransitionConfirmationBars" />
+            </div>
+            <SliderWithZones Min="1" Max="10" Step="1"
+                             @bind-Value="@GlobalConfirmDecimal"
+                             @bind-Value:after="MarkDirty"
+                             Label="Confirmation Bars" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HYSTERESIS BUFFER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HysteresisBuffer" />
+            </div>
+            <SliderWithZones Min="0.00000m" Max="0.00200m" Step="0.00005m"
+                             @bind-Value="Draft.VolatilityHysteresisBuffer"
+                             @bind-Value:after="MarkDirty"
+                             Label="Hysteresis"
+                             Format="F5" />
+        </MudItem>
+
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOW MAX VOLATILITY</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LowMaxVolatility" />
+            </div>
+            <SliderWithZones Min="0.00050m" Max="0.02000m" Step="0.00010m"
+                             @bind-Value="Draft.VolatilityLowMaxVolatility"
+                             @bind-Value:after="OnGlobalThresholdChanged"
+                             Label="Low Max"
+                             Format="F5" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">NORMAL MAX VOLATILITY</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.NormalMaxVolatility" />
+            </div>
+            <SliderWithZones Min="0.00100m" Max="0.03000m" Step="0.00010m"
+                             @bind-Value="Draft.VolatilityNormalMaxVolatility"
+                             @bind-Value:after="OnGlobalThresholdChanged"
+                             Label="Normal Max"
+                             Format="F5" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HIGH MAX VOLATILITY</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HighMaxVolatility" />
+            </div>
+            <SliderWithZones Min="0.00200m" Max="0.05000m" Step="0.00010m"
+                             @bind-Value="Draft.VolatilityHighMaxVolatility"
+                             @bind-Value:after="OnGlobalThresholdChanged"
+                             Label="High Max"
+                             Format="F5" />
+        </MudItem>
+
+        <MudItem xs="12"><MudText Typo="Typo.subtitle2">Position Multipliers</MudText></MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityLowPositionMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Low"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityNormalPositionMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Normal"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityHighPositionMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="High"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityExtremePositionMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Extreme"
+                             Format="F2" />
+        </MudItem>
+
+        <MudItem xs="12"><MudText Typo="Typo.subtitle2">Stop Multipliers</MudText></MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityLowStopMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Low"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityNormalStopMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Normal"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityHighStopMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="High"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             @bind-Value="Draft.VolatilityExtremeStopMultiplier"
+                             @bind-Value:after="MarkDirty"
+                             Label="Extreme"
+                             Format="F2" />
+        </MudItem>
+
+        <MudItem xs="12"><MudDivider /></MudItem>
+        <MudItem xs="12">
+            <div class="d-flex align-center gap-2">
+                <MudSwitch T="bool"
+                           @bind-Value="Draft.UseEquityVolatilityOverrides"
+                           Color="Color.Primary"
+                           Label="Use Equity Overrides"
+                           @bind-Value:after="MarkDirty" />
+                <InfoPopup FieldKey="VolatilityRegime.EquityOverrides" />
+            </div>
+        </MudItem>
+        @if (Draft.UseEquityVolatilityOverrides)
+        {
+            @ProfileEditors("Equity", true)
+        }
+
+        <MudItem xs="12"><MudDivider /></MudItem>
+        <MudItem xs="12">
+            <div class="d-flex align-center gap-2">
+                <MudSwitch T="bool"
+                           @bind-Value="Draft.UseCryptoVolatilityOverrides"
+                           Color="Color.Primary"
+                           Label="Use Crypto Overrides"
+                           @bind-Value:after="MarkDirty" />
+                <InfoPopup FieldKey="VolatilityRegime.CryptoOverrides" />
+            </div>
+        </MudItem>
+        @if (Draft.UseCryptoVolatilityOverrides)
+        {
+            @ProfileEditors("Crypto", false)
+        }
+    }
+</MudGrid>
+
+@code {
+    [CascadingParameter] public ConfigDraft Draft { get; set; } = null!;
+
+    private decimal GlobalLookbackDecimal
+    {
+        get => Draft.VolatilityLookbackBars;
+        set => Draft.VolatilityLookbackBars = (int)value;
+    }
+
+    private decimal GlobalConfirmDecimal
+    {
+        get => Draft.VolatilityTransitionConfirmationBars;
+        set => Draft.VolatilityTransitionConfirmationBars = (int)value;
+    }
+
+    private void OnGlobalThresholdChanged()
+    {
+        var low = Draft.VolatilityLowMaxVolatility;
+        var normal = Draft.VolatilityNormalMaxVolatility;
+        var high = Draft.VolatilityHighMaxVolatility;
+        EnsureAscending(ref low, ref normal, ref high);
+        Draft.VolatilityLowMaxVolatility = low;
+        Draft.VolatilityNormalMaxVolatility = normal;
+        Draft.VolatilityHighMaxVolatility = high;
+        MarkDirty();
+    }
+
+    private void OnEquityThresholdChanged()
+    {
+        var low = Draft.EquityVolatilityLowMaxVolatility;
+        var normal = Draft.EquityVolatilityNormalMaxVolatility;
+        var high = Draft.EquityVolatilityHighMaxVolatility;
+        EnsureAscending(ref low, ref normal, ref high);
+        Draft.EquityVolatilityLowMaxVolatility = low;
+        Draft.EquityVolatilityNormalMaxVolatility = normal;
+        Draft.EquityVolatilityHighMaxVolatility = high;
+        MarkDirty();
+    }
+
+    private void OnCryptoThresholdChanged()
+    {
+        var low = Draft.CryptoVolatilityLowMaxVolatility;
+        var normal = Draft.CryptoVolatilityNormalMaxVolatility;
+        var high = Draft.CryptoVolatilityHighMaxVolatility;
+        EnsureAscending(ref low, ref normal, ref high);
+        Draft.CryptoVolatilityLowMaxVolatility = low;
+        Draft.CryptoVolatilityNormalMaxVolatility = normal;
+        Draft.CryptoVolatilityHighMaxVolatility = high;
+        MarkDirty();
+    }
+
+    private static void EnsureAscending(ref decimal low, ref decimal normal, ref decimal high)
+    {
+        const decimal minStep = 0.0001m;
+        if (normal <= low) normal = low + minStep;
+        if (high <= normal) high = normal + minStep;
+    }
+
+    private RenderFragment ProfileEditors(string label, bool equity) => @<text>
+        <MudItem xs="12"><MudText Typo="Typo.subtitle2">@label Profile</MudText></MudItem>
+        <MudItem xs="12" md="4">
+            <SliderWithZones Min="5" Max="240" Step="5"
+                             Value="@(equity ? Draft.EquityVolatilityLookbackBars : Draft.CryptoVolatilityLookbackBars)"
+                             ValueChanged="@(v => SetLookback(equity, (int)v))"
+                             Label="Lookback Bars" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SliderWithZones Min="1" Max="10" Step="1"
+                             Value="@(equity ? Draft.EquityVolatilityTransitionConfirmationBars : Draft.CryptoVolatilityTransitionConfirmationBars)"
+                             ValueChanged="@(v => SetConfirmation(equity, (int)v))"
+                             Label="Confirmation Bars" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SliderWithZones Min="0.00000m" Max="0.00200m" Step="0.00005m"
+                             Value="@(equity ? Draft.EquityVolatilityHysteresisBuffer : Draft.CryptoVolatilityHysteresisBuffer)"
+                             ValueChanged="@(v => SetHysteresis(equity, v))"
+                             Label="Hysteresis"
+                             Format="F5" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SliderWithZones Min="0.00050m" Max="0.02000m" Step="0.00010m"
+                             Value="@(equity ? Draft.EquityVolatilityLowMaxVolatility : Draft.CryptoVolatilityLowMaxVolatility)"
+                             ValueChanged="@(v => SetLowThreshold(equity, v))"
+                             Label="Low Max"
+                             Format="F5" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SliderWithZones Min="0.00100m" Max="0.03000m" Step="0.00010m"
+                             Value="@(equity ? Draft.EquityVolatilityNormalMaxVolatility : Draft.CryptoVolatilityNormalMaxVolatility)"
+                             ValueChanged="@(v => SetNormalThreshold(equity, v))"
+                             Label="Normal Max"
+                             Format="F5" />
+        </MudItem>
+        <MudItem xs="12" md="4">
+            <SliderWithZones Min="0.00200m" Max="0.05000m" Step="0.00010m"
+                             Value="@(equity ? Draft.EquityVolatilityHighMaxVolatility : Draft.CryptoVolatilityHighMaxVolatility)"
+                             ValueChanged="@(v => SetHighThreshold(equity, v))"
+                             Label="High Max"
+                             Format="F5" />
+        </MudItem>
+        <MudItem xs="12"><MudText Typo="Typo.subtitle2">@label Position Multipliers</MudText></MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityLowPositionMultiplier : Draft.CryptoVolatilityLowPositionMultiplier)"
+                             ValueChanged="@(v => SetLowPositionMultiplier(equity, v))"
+                             Label="Low"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityNormalPositionMultiplier : Draft.CryptoVolatilityNormalPositionMultiplier)"
+                             ValueChanged="@(v => SetNormalPositionMultiplier(equity, v))"
+                             Label="Normal"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityHighPositionMultiplier : Draft.CryptoVolatilityHighPositionMultiplier)"
+                             ValueChanged="@(v => SetHighPositionMultiplier(equity, v))"
+                             Label="High"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityExtremePositionMultiplier : Draft.CryptoVolatilityExtremePositionMultiplier)"
+                             ValueChanged="@(v => SetExtremePositionMultiplier(equity, v))"
+                             Label="Extreme"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12"><MudText Typo="Typo.subtitle2">@label Stop Multipliers</MudText></MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityLowStopMultiplier : Draft.CryptoVolatilityLowStopMultiplier)"
+                             ValueChanged="@(v => SetLowStopMultiplier(equity, v))"
+                             Label="Low"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityNormalStopMultiplier : Draft.CryptoVolatilityNormalStopMultiplier)"
+                             ValueChanged="@(v => SetNormalStopMultiplier(equity, v))"
+                             Label="Normal"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityHighStopMultiplier : Draft.CryptoVolatilityHighStopMultiplier)"
+                             ValueChanged="@(v => SetHighStopMultiplier(equity, v))"
+                             Label="High"
+                             Format="F2" />
+        </MudItem>
+        <MudItem xs="12" md="3">
+            <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
+                             Value="@(equity ? Draft.EquityVolatilityExtremeStopMultiplier : Draft.CryptoVolatilityExtremeStopMultiplier)"
+                             ValueChanged="@(v => SetExtremeStopMultiplier(equity, v))"
+                             Label="Extreme"
+                             Format="F2" />
+        </MudItem>
+    </text>;
+
+    private void SetLookback(bool equity, int value)
+    {
+        if (equity) Draft.EquityVolatilityLookbackBars = value;
+        else Draft.CryptoVolatilityLookbackBars = value;
+        MarkDirty();
+    }
+
+    private void SetConfirmation(bool equity, int value)
+    {
+        if (equity) Draft.EquityVolatilityTransitionConfirmationBars = value;
+        else Draft.CryptoVolatilityTransitionConfirmationBars = value;
+        MarkDirty();
+    }
+
+    private void SetHysteresis(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityHysteresisBuffer = value;
+        else Draft.CryptoVolatilityHysteresisBuffer = value;
+        MarkDirty();
+    }
+
+    private void SetLowThreshold(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityLowMaxVolatility = value;
+        else Draft.CryptoVolatilityLowMaxVolatility = value;
+        if (equity) OnEquityThresholdChanged();
+        else OnCryptoThresholdChanged();
+    }
+
+    private void SetNormalThreshold(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityNormalMaxVolatility = value;
+        else Draft.CryptoVolatilityNormalMaxVolatility = value;
+        if (equity) OnEquityThresholdChanged();
+        else OnCryptoThresholdChanged();
+    }
+
+    private void SetHighThreshold(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityHighMaxVolatility = value;
+        else Draft.CryptoVolatilityHighMaxVolatility = value;
+        if (equity) OnEquityThresholdChanged();
+        else OnCryptoThresholdChanged();
+    }
+
+    private void SetLowPositionMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityLowPositionMultiplier = value;
+        else Draft.CryptoVolatilityLowPositionMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetNormalPositionMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityNormalPositionMultiplier = value;
+        else Draft.CryptoVolatilityNormalPositionMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetHighPositionMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityHighPositionMultiplier = value;
+        else Draft.CryptoVolatilityHighPositionMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetExtremePositionMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityExtremePositionMultiplier = value;
+        else Draft.CryptoVolatilityExtremePositionMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetLowStopMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityLowStopMultiplier = value;
+        else Draft.CryptoVolatilityLowStopMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetNormalStopMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityNormalStopMultiplier = value;
+        else Draft.CryptoVolatilityNormalStopMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetHighStopMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityHighStopMultiplier = value;
+        else Draft.CryptoVolatilityHighStopMultiplier = value;
+        MarkDirty();
+    }
+
+    private void SetExtremeStopMultiplier(bool equity, decimal value)
+    {
+        if (equity) Draft.EquityVolatilityExtremeStopMultiplier = value;
+        else Draft.CryptoVolatilityExtremeStopMultiplier = value;
+        MarkDirty();
+    }
+
+    private void MarkDirty() => Draft.IsDirty = true;
+}
