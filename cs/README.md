@@ -59,7 +59,7 @@ cs/
 - Broker integration: Alpaca broker abstraction with fresh clock reads, short-lived account/position cache, and safe order submission semantics.
 - Persistence: SQLite-backed state repository including order intent persistence, idempotent fill recording, circuit-breaker state and key-value state store.
 - Strategy: multi-timeframe SMA crossover strategy with ATR and regime detection.
-- Order lifecycle: deterministic `client_order_id` generation (SHA-256), persist-before-submit flow, and deduplication.
+- Order lifecycle: deterministic `client_order_id` generation (SHA-256), persist-before-submit flow, deduplication, and strict long-only SELL handling (SELL signals only exit existing longs; no synthetic short entries).
 - Configuration: runtime options for symbols, risk limits, exit rules, and execution gates (dry-run / kill-switch).
 
 ## Runtime services
