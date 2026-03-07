@@ -24,7 +24,13 @@ public static class ConfigDescriptions
             ["RiskLimits.StopLossPct"] =
                 "Fixed stop-loss distance as a percentage of entry price (used when ATR is unavailable).",
             ["RiskLimits.MinSignalConfidence"] =
-                "Minimum strategy confidence score (0–1) required before a signal proceeds to risk checks.",
+                "Minimum strategy confidence score (0–1) required before a signal proceeds to risk checks. " +
+                "Formula: (base + alignmentBoost) × regimeStrength. " +
+                "Base: 0.8 for trend-aligned, 0.5 for trend-misaligned, 0.2 for ranging. " +
+                "Alignment boost: +0.1 when slow SMA aligns with signal direction. " +
+                "Regime strength: 0-1 based on trend strength (2% spread = 1.0). " +
+                "Typical values: 0.20 blocks ranging markets (0.10-0.15), allows most trends (0.375-0.81). " +
+                "0.50 requires strong trends or aligned setups. 0.65 conservative, only high-conviction signals.",
             ["Drawdown.WarningThresholdPct"] =
                 "Drawdown percentage at which position size is halved (Warning level). Triggered when portfolio falls this far below its peak.",
             ["Drawdown.HaltThresholdPct"] =
