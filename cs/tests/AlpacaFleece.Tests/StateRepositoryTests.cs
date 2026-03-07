@@ -137,13 +137,15 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
         var repo = fixture.StateRepository;
         var clientOrderId = "test_order_123";
 
-        await repo.SaveOrderIntentAsync(
+        var isNew = await repo.SaveOrderIntentAsync(
             clientOrderId,
             "AAPL",
             "BUY",
             100,
             150m,
             DateTimeOffset.UtcNow);
+
+        Assert.True(isNew, "Should return true for new insert");
 
         var intent = await repo.GetOrderIntentAsync(clientOrderId);
 
@@ -161,7 +163,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
         var repo = fixture.StateRepository;
         var clientOrderId = "test_order_456";
 
-        await repo.SaveOrderIntentAsync(
+        _ = await repo.SaveOrderIntentAsync(
             clientOrderId,
             "AAPL",
             "BUY",

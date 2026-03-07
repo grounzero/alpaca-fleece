@@ -147,7 +147,7 @@ public sealed class ReconciliationTests(TradingFixture fixture)
             fixture.StateRepository,
             _logger);
 
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "client_123",
             "AAPL",
             "BUY",
@@ -219,7 +219,7 @@ public sealed class ReconciliationTests(TradingFixture fixture)
     public async Task GetAllOrderIntentsAsync_ReturnsStoredOrders()
     {
         // Arrange
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "client_123",
             "AAPL",
             "BUY",
@@ -346,7 +346,7 @@ public sealed class ReconciliationTests(TradingFixture fixture)
             .Returns(new List<PositionInfo>());
 
         // Pre-populate SQLite with matching intent (PendingNew)
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "client_partial", "NVDA", "BUY", 10m, 800m, DateTimeOffset.UtcNow);
         await fixture.StateRepository.UpdateOrderIntentAsync(
             "client_partial", "alpaca_partial", OrderState.PendingNew, DateTimeOffset.UtcNow);

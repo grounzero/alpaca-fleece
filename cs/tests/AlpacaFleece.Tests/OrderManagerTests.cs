@@ -406,7 +406,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     {
         // Arrange: save a non-terminal BUY intent for PGATE_A
         const string symbol = "PGATE_A";
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "pgate_existing_buy", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
 
         var options = new TradingOptions
@@ -441,7 +441,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     {
         // A pending BUY should NOT block a SELL signal (different side)
         const string symbol = "PGATE_B";
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "pgate_buy_for_sell_test", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
 
         var options = new TradingOptions
@@ -479,7 +479,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange: create a pending intent then mark it as Filled (terminal)
         const string symbol = "PGATE_C";
         const string existingClientId = "pgate_filled_buy";
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             existingClientId, symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
         // Mark as Filled (terminal)
         await fixture.StateRepository.UpdateOrderIntentAsync(
@@ -640,7 +640,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             side: "sell");
 
         // Persist intent with AlpacaOrderId already set (as if broker already received it)
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             clientOrderId, "TSLA", "SELL", 25m, 0m, nowUtc);
         await fixture.StateRepository.UpdateOrderIntentAsync(
             clientOrderId, "alpaca_already_submitted", OrderState.Accepted, nowUtc);

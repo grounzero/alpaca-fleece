@@ -44,8 +44,9 @@ public interface IStateRepository
 
     /// <summary>
     /// Saves an order intent to persistence (for crash recovery).
+    /// Returns true if a new row was inserted, false if it already existed (idempotent case).
     /// </summary>
-    ValueTask SaveOrderIntentAsync(
+    ValueTask<bool> SaveOrderIntentAsync(
         string clientOrderId,
         string symbol,
         string side,

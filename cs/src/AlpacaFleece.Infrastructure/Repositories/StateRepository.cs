@@ -162,7 +162,7 @@ public sealed class StateRepository(
     /// <summary>
     /// Saves an order intent to persistence.
     /// </summary>
-    public async ValueTask SaveOrderIntentAsync(
+    public async ValueTask<bool> SaveOrderIntentAsync(
         string clientOrderId,
         string symbol,
         string side,
@@ -192,12 +192,14 @@ public sealed class StateRepository(
             });
 
             await dbContext.SaveChangesAsync(ct);
+            return true;  // Successfully inserted new order intent
         }
         catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqliteEx && sqliteEx.SqliteErrorCode == 19)
         {
             // UNIQUE constraint violation on ClientOrderId: row already exists.
-            // This is the idempotent case — return silently.
+            // This is the idempotent case — return false to signal caller should skip submission.
             logger.LogDebug("SaveOrderIntentAsync: {id} already exists (idempotent)", clientOrderId);
+            return false;
         }
         catch (Exception ex)
         {
@@ -593,11 +595,12 @@ public sealed class StateRepository(
 
             if (attempt != null)
             {
-                // Increment attempt count so backoff escalates (2^1, 2^2, 2^3, ... up to 300s)
+                // Increment attempt count so backoff escalates (2^0=1, 2^1=2, 2^2=4, ... up to 300s)
+                // Use same formula as GetExitBackoffSecondsAsync: 2^(AttemptCount-1)
                 attempt.AttemptCount++;
                 attempt.LastAttemptAt = DateTimeOffset.UtcNow;
                 attempt.NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(
-                    Math.Min((int)Math.Pow(2, Math.Max(attempt.AttemptCount, 1)), 300));
+                    Math.Min((int)Math.Pow(2, attempt.AttemptCount - 1), 300));
 
                 await dbContext.SaveChangesAsync(ct);
                 logger.LogWarning("Recorded exit attempt failure for {symbol}: next retry in {seconds}s",
