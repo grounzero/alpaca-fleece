@@ -559,6 +559,29 @@ public sealed class StrategyTests
     }
 
     [Fact]
+    public async Task SmaCrossoverStrategy_UptrendSignals_UseTrendingUpRegimeMetadata()
+    {
+        var eventBus = Substitute.For<IEventBus>();
+        eventBus.PublishAsync(Arg.Any<IEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<bool>(true));
+
+        var strategy = new SmaCrossoverStrategy(
+            eventBus, Substitute.For<ILogger<SmaCrossoverStrategy>>());
+
+        await RunUptrendBarsAsync(strategy);
+
+        await eventBus.Received()
+            .PublishAsync(Arg.Is<SignalEvent>(s =>
+                s.Symbol == "AAPL" &&
+                s.Metadata.Regime == "TRENDING_UP"), Arg.Any<CancellationToken>());
+
+        await eventBus.DidNotReceive()
+            .PublishAsync(Arg.Is<SignalEvent>(s =>
+                s.Symbol == "AAPL" &&
+                s.Metadata.Regime == "TRENDING_DOWN"), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task OnBarAsync_StaleBar_UpdatesIndicatorsButNoSignal()
     {
         // 60 bars starting 2 hours ago — the last bar is still ~60 min old, well beyond MaxBarAgeMinutes=3

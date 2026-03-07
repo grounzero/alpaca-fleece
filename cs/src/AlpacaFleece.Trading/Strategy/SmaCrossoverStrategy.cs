@@ -97,7 +97,7 @@ public sealed class SmaCrossoverStrategy(
             }
 
             // Detect regime
-            var regime = _regimeDetector.DetectRegime(bar.Symbol, fast3, fast2, fast1);
+            var regime = _regimeDetector.DetectRegime(bar.Symbol, fast1, fast2, fast3);
 
             logger.LogDebug(
                 "Bar: {symbol} | P1:({fast1:F2},{slow1:F2}) P2:({fast2:F2},{slow2:F2}) P3:({fast3:F2},{slow3:F2}) | Regime={regime} | ATR={atr:F2}",
