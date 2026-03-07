@@ -379,4 +379,67 @@ public sealed class ExitManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Assert: no signal should be generated because PendingExit=true blocks it
         Assert.Empty(signals);
     }
+
+    [Fact]
+    public async Task CheckPositionsAsync_VolatilityStopMultiplier_WidensAtrStop()
+    {
+        // Baseline stop: 100 - (2 * 1.5) = 97
+        // With high-vol multiplier 2.0: stop = 94
+        // Price at 96 should no longer trigger ATR stop.
+        await _positionTracker.OpenPositionAsync("AAPL", 100, 100m, 2m);
+        await _positionTracker.UpdateTrailingStopAsync("AAPL", 0m);
+
+        var options = Options.Create(new TradingOptions
+        {
+            Exit = new ExitOptions
+            {
+                AtrStopLossMultiplier = 1.5m,
+                AtrProfitTargetMultiplier = 3.0m
+            },
+            VolatilityRegime = new VolatilityRegimeOptions
+            {
+                Enabled = true,
+                LookbackBars = 20,
+                TransitionConfirmationBars = 1,
+                LowMaxVolatility = 0.001m,
+                NormalMaxVolatility = 0.003m,
+                HighMaxVolatility = 0.020m,
+                HighStopMultiplier = 2.0m
+            },
+            Symbols = new SymbolLists()
+        });
+
+        var volDetector = new VolatilityRegimeDetector(
+            _marketDataClientMock, options.Value, Substitute.For<ILogger<VolatilityRegimeDetector>>());
+
+        _marketDataClientMock.GetSnapshotAsync("AAPL", Arg.Any<CancellationToken>())
+            .Returns(new BidAskSpread("AAPL", 96m, 96m, 100, 100, DateTimeOffset.UtcNow));
+
+        var quotes = new List<Quote>();
+        var ts = DateTimeOffset.UtcNow.AddMinutes(-21);
+        decimal px = 100m;
+        for (var i = 0; i < 21; i++)
+        {
+            px *= i % 2 == 0 ? 1.01m : 0.99m;
+            quotes.Add(new Quote("AAPL", ts.AddMinutes(i), px, px, px, px, 1000));
+        }
+        _marketDataClientMock.GetBarsAsync("AAPL", "1m", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<Quote>>(quotes.AsReadOnly()));
+
+        _brokerMock.GetClockAsync(Arg.Any<CancellationToken>())
+            .Returns(new ClockInfo(true, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow));
+
+        var exitManager = new ExitManager(
+            _positionTracker,
+            _brokerMock,
+            _marketDataClientMock,
+            fixture.EventBus,
+            fixture.StateRepository,
+            _logger,
+            options,
+            volatilityRegimeDetector: volDetector);
+
+        var signals = await exitManager.CheckPositionsAsync(CancellationToken.None);
+        Assert.Empty(signals);
+    }
 }

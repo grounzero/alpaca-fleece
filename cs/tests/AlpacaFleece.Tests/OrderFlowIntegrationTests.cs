@@ -1,11 +1,11 @@
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// End-to-end Phase 3 integration tests.
-/// Verifies complete flow: Signal → RiskManager → OrderManager → Database.
+/// End-to-end order flow integration tests.
+/// Verifies complete flow: signal processing, risk checks, idempotency, circuit breaker, and intent persistence.
 /// </summary>
 [Collection("Trading Database Collection")]
-public sealed class Phase3IntegrationTests(TradingFixture fixture) : IAsyncLifetime
+public sealed class OrderFlowIntegrationTests(TradingFixture fixture) : IAsyncLifetime
 {
     private readonly IBrokerService _brokerMock = Substitute.For<IBrokerService>();
     private readonly ILogger<RiskManager> _riskManagerLogger = Substitute.For<ILogger<RiskManager>>();

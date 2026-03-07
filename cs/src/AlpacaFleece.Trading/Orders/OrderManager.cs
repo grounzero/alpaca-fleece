@@ -18,7 +18,8 @@ public sealed class OrderManager(
     IEventBus eventBus,
     TradingOptions options,
     ILogger<OrderManager> logger,
-    DrawdownMonitor? drawdownMonitor = null) : IOrderManager
+    DrawdownMonitor? drawdownMonitor = null,
+    VolatilityRegimeDetector? volatilityRegimeDetector = null) : IOrderManager
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _submissionLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<OrderState> ActiveOrderStates =
@@ -69,7 +70,25 @@ public sealed class OrderManager(
                     signal.Symbol, quantity, account.PortfolioValue, isCrypto);
             }
 
-            // Step 1d: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
+            // Step 1d: Volatility regime sizing multiplier (entries only).
+            // Applied before drawdown scaling so drawdown remains the final safety override.
+            if (volatilityRegimeDetector is { Enabled: true } &&
+                signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+            {
+                var regime = await volatilityRegimeDetector.GetRegimeAsync(signal.Symbol, ct);
+                var preVol = quantity;
+                quantity = isCrypto
+                    ? Math.Max(0.0001m, Math.Round(quantity * regime.PositionMultiplier, 8))
+                    : Math.Max(1m, Math.Floor(quantity * regime.PositionMultiplier));
+
+                logger.LogInformation(
+                    "Volatility sizing for {symbol}: regime={regime} vol={vol:F6} bars={bars} " +
+                    "multiplier={mult:F2} qty={before}->{after}",
+                    signal.Symbol, regime.Regime, regime.RealisedVolatility, regime.BarsInRegime,
+                    regime.PositionMultiplier, preVol, quantity);
+            }
+
+            // Step 1e: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
             if (positionMultiplier < 1.0m)
             {
                 var originalQty = quantity;
@@ -84,7 +103,7 @@ public sealed class OrderManager(
                 }
             }
 
-            // Step 1e: Enforce whole-number quantities when AllowFractionalOrders is disabled.
+            // Step 1f: Enforce whole-number quantities when AllowFractionalOrders is disabled.
             // SDK v7.2.0 cannot read back fractional fills; keeping this gate prevents spurious
             // circuit-breaker trips caused by IsFractionalFault detecting a 0-qty filled order.
             if (!options.Execution.AllowFractionalOrders)
