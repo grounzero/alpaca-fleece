@@ -4,12 +4,13 @@ namespace AlpacaFleece.Infrastructure.EventBus;
 /// Event bus implementation with dual-channel architecture.
 /// Normal events: bounded channel (capacity=10000); published via TryWrite and dropped when full.
 /// FullMode.Wait is configured so TryWrite fails on full instead of silently dropping.
-/// Exit signals: unbounded channel, written with WriteAsync and never dropped.
+/// Exit signals and order updates: unbounded channels, written with WriteAsync and never dropped.
 /// </summary>
 public sealed class EventBusService : IEventBus
 {
     private readonly Channel<IEvent> _normalChannel;
     private readonly Channel<ExitSignalEvent> _exitChannel;
+    private readonly Channel<OrderUpdateEvent> _orderUpdateChannel;
     private long _droppedCount;
 
     /// <summary>
@@ -31,6 +32,7 @@ public sealed class EventBusService : IEventBus
         _normalChannel = Channel.CreateBounded<IEvent>(normalOptions);
 
         _exitChannel = Channel.CreateUnbounded<ExitSignalEvent>();
+        _orderUpdateChannel = Channel.CreateUnbounded<OrderUpdateEvent>();
     }
 
     /// <summary>
@@ -41,6 +43,10 @@ public sealed class EventBusService : IEventBus
         if (@event is ExitSignalEvent exitSignal)
         {
             return PublishExitSignalAsync(exitSignal, ct);
+        }
+        if (@event is OrderUpdateEvent orderUpdate)
+        {
+            return PublishOrderUpdateAsync(orderUpdate, ct);
         }
 
         return PublishNormalEventAsync(@event, ct);
@@ -57,6 +63,12 @@ public sealed class EventBusService : IEventBus
         return new ValueTask<bool>(false);
     }
 
+    private async ValueTask<bool> PublishOrderUpdateAsync(OrderUpdateEvent orderUpdate, CancellationToken ct)
+    {
+        await _orderUpdateChannel.Writer.WriteAsync(orderUpdate, ct);
+        return true;
+    }
+
     private async ValueTask<bool> PublishExitSignalAsync(ExitSignalEvent exitSignal, CancellationToken ct)
     {
         await _exitChannel.Writer.WriteAsync(exitSignal, ct);
@@ -65,7 +77,7 @@ public sealed class EventBusService : IEventBus
 
     /// <summary>
     /// Dispatches all events from both channels to handler.
-    /// Priority: drain exit signals first, then normal events.
+    /// Priority: drain exit signals first, then order updates, then normal events.
     /// </summary>
     public async ValueTask DispatchAsync(Func<IEvent, ValueTask> handler, CancellationToken ct = default)
     {
@@ -73,6 +85,12 @@ public sealed class EventBusService : IEventBus
         while (_exitChannel.Reader.TryRead(out var exitSignal))
         {
             await handler(exitSignal);
+        }
+
+        // Then order updates
+        while (_orderUpdateChannel.Reader.TryRead(out var orderUpdate))
+        {
+            await handler(orderUpdate);
         }
 
         // Then normal events
@@ -92,9 +110,10 @@ public sealed class EventBusService : IEventBus
             {
                 // Check for exit signal
                 var exitTask = _exitChannel.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
+                var orderUpdateTask = _orderUpdateChannel.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
                 var normalTask = _normalChannel.Reader.WaitToReadAsync(linkedCts.Token).AsTask();
 
-                var completedTask = await Task.WhenAny(exitTask, normalTask).ConfigureAwait(false);
+                var completedTask = await Task.WhenAny(exitTask, orderUpdateTask, normalTask).ConfigureAwait(false);
 
                 // Cancel the linked CTS so the non-selected wait is cancelled
                 await linkedCts.CancelAsync();
@@ -103,6 +122,13 @@ public sealed class EventBusService : IEventBus
                     while (_exitChannel.Reader.TryRead(out var exitSignal))
                     {
                         await handler(exitSignal);
+                    }
+                }
+                else if (completedTask == orderUpdateTask && await orderUpdateTask)
+                {
+                    while (_orderUpdateChannel.Reader.TryRead(out var orderUpdate))
+                    {
+                        await handler(orderUpdate);
                     }
                 }
                 else if (completedTask == normalTask && await normalTask)

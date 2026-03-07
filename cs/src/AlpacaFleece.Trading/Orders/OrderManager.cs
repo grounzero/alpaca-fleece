@@ -20,6 +20,16 @@ public sealed class OrderManager(
     ILogger<OrderManager> logger,
     DrawdownMonitor? drawdownMonitor = null) : IOrderManager
 {
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _submissionLocks = new(StringComparer.OrdinalIgnoreCase);
+    private static readonly HashSet<OrderState> ActiveOrderStates =
+    [
+        OrderState.PendingNew,
+        OrderState.Accepted,
+        OrderState.PartiallyFilled,
+        OrderState.PendingCancel,
+        OrderState.PendingReplace,
+    ];
+
     /// <summary>
     /// Submits a signal as an order (persist first, then submit).
     /// Returns the generated clientOrderId, or empty string if the order was gated/filtered.
@@ -251,7 +261,7 @@ public sealed class OrderManager(
 
     /// <summary>
     /// Submits an exit order for a symbol.
-    /// Uses a deterministic clientOrderId based on symbol + UTC date (idempotent per day).
+    /// Recovers a pending unsent intent when present; otherwise creates a fresh clientOrderId.
     /// </summary>
     public async ValueTask SubmitExitAsync(
         string symbol,
@@ -260,55 +270,15 @@ public sealed class OrderManager(
         decimal limitPrice,
         CancellationToken ct = default)
     {
+        var lockKey = $"{symbol}:{side}";
+        var gate = _submissionLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
+        await gate.WaitAsync(ct);
         try
         {
-            // Deterministic exit ID: same symbol+side+date will yield the same ID (idempotent per day)
-            var nowUtc = DateTimeOffset.UtcNow;
-            var dateKey = nowUtc.ToString("yyyyMMdd");
-            var dayTs = new DateTimeOffset(nowUtc.Year, nowUtc.Month, nowUtc.Day, 0, 0, 0, TimeSpan.Zero);
-            var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
-                strategy: "exit",
-                symbol: symbol,
-                timeframe: dateKey,
-                signalTimestamp: dayTs,
-                side: side.ToLowerInvariant());
-
-            // Idempotency check BEFORE persist — if this exit was already submitted to the broker, skip re-submission
-            var existingExitIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
-            if (existingExitIntent is { AlpacaOrderId: not null })
-            {
-                logger.LogInformation(
-                    "Exit order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
-                    symbol, existingExitIntent.AlpacaOrderId);
+            var (clientOrderId, shouldSubmit) = await ResolveExitIntentAsync(
+                strategy: "exit", symbol, side, quantity, limitPrice, ct);
+            if (!shouldSubmit)
                 return;
-            }
-
-            // Persist intent AFTER checking for existing order
-            // Return value indicates whether this call won the race to persist (true) or another concurrent caller did (false)
-            bool isNewExitIntent = await stateRepository.SaveOrderIntentAsync(
-                clientOrderId,
-                symbol,
-                side,
-                quantity,
-                limitPrice,
-                DateTimeOffset.UtcNow,
-                ct);
-
-            if (!isNewExitIntent)
-            {
-                // Idempotent case: intent already exists. But we need to check if it was already submitted:
-                // - If AlpacaOrderId is set: concurrent caller/previous process submitted it — skip
-                // - If AlpacaOrderId is null: previous process crashed before broker submit — proceed (crash recovery)
-                var existingIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
-                if (existingIntent?.AlpacaOrderId != null)
-                {
-                    logger.LogInformation("Exit order {id} already submitted (alpaca_id={alpacaId}), skipping",
-                        clientOrderId, existingIntent.AlpacaOrderId);
-                    return;
-                }
-                // AlpacaOrderId is null → crashed before submission, proceed below
-                logger.LogInformation("Exit order {id} exists but not submitted yet (crash recovery scenario)", clientOrderId);
-            }
 
             if (options.Execution.DryRun)
             {
@@ -341,6 +311,10 @@ public sealed class OrderManager(
             logger.LogError(ex, "Failed to submit exit order for {symbol}", symbol);
             throw new OrderManagerException("Failed to submit exit order", ex);
         }
+        finally
+        {
+            gate.Release();
+        }
     }
 
     /// <summary>
@@ -372,45 +346,19 @@ public sealed class OrderManager(
         var submitted = 0;
         foreach (var pos in positions)
         {
+            var lockKey = $"{pos.Symbol}:{(pos.Quantity > 0 ? "SELL" : "BUY")}";
+            var gate = _submissionLocks.GetOrAdd(lockKey, _ => new SemaphoreSlim(1, 1));
+            await gate.WaitAsync(ct);
             try
             {
                 // Long position (qty > 0) → SELL; short (qty < 0) → BUY
                 var exitSide = pos.Quantity > 0 ? "SELL" : "BUY";
                 var absQty = Math.Abs(pos.Quantity);
 
-                // Deterministic flatten ID: symbol + side + today so the same call is idempotent
-                var flattenNow = DateTimeOffset.UtcNow;
-                var flattenDateKey = flattenNow.ToString("yyyyMMdd");
-                var flattenDayTs = new DateTimeOffset(flattenNow.Year, flattenNow.Month, flattenNow.Day, 0, 0, 0, TimeSpan.Zero);
-                var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
-                    strategy: "flatten",
-                    symbol: pos.Symbol,
-                    timeframe: flattenDateKey,
-                    signalTimestamp: flattenDayTs,
-                    side: exitSide.ToLowerInvariant());
-
-                // Persist intent BEFORE submission (crash recovery idempotency)
-                // Use 0m as limitPrice so the broker submits a market order for flatten.
-                // Passing pos.CurrentPrice as a limit could cause fill failures when the price moves.
-                _ = await stateRepository.SaveOrderIntentAsync(
-                    clientOrderId,
-                    pos.Symbol,
-                    exitSide,
-                    absQty,
-                    0m,
-                    DateTimeOffset.UtcNow,
-                    ct);
-
-                // Check if this intent was already submitted to the broker (has an AlpacaOrderId).
-                // On restart after crash, intent may exist from previous run but AlpacaOrderId may or may not be set yet.
-                var existingFlattenIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
-                if (existingFlattenIntent is { AlpacaOrderId: not null })
-                {
-                    logger.LogInformation(
-                        "Flatten order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
-                        pos.Symbol, existingFlattenIntent.AlpacaOrderId);
+                var (clientOrderId, shouldSubmit) = await ResolveExitIntentAsync(
+                    strategy: "flatten", pos.Symbol, exitSide, absQty, 0m, ct);
+                if (!shouldSubmit)
                     continue;
-                }
 
                 if (options.Execution.DryRun)
                 {
@@ -451,9 +399,98 @@ public sealed class OrderManager(
             {
                 logger.LogError(ex, "FlattenPositionsAsync: failed for {symbol}, skipping", pos.Symbol);
             }
+            finally
+            {
+                gate.Release();
+            }
         }
 
         return submitted;
+    }
+
+    private async ValueTask<(string ClientOrderId, bool ShouldSubmit)> ResolveExitIntentAsync(
+        string strategy,
+        string symbol,
+        string side,
+        decimal quantity,
+        decimal limitPrice,
+        CancellationToken ct)
+    {
+        var intents = await stateRepository.GetNonTerminalOrderIntentsAsync(ct);
+        var activeIntent = intents
+            .Where(i => i.Symbol.Equals(symbol, StringComparison.OrdinalIgnoreCase) &&
+                        i.Side.Equals(side, StringComparison.OrdinalIgnoreCase) &&
+                        ActiveOrderStates.Contains(i.Status))
+            .OrderByDescending(i => i.CreatedAt)
+            .FirstOrDefault();
+
+        if (activeIntent is { AlpacaOrderId: not null })
+        {
+            logger.LogInformation(
+                "{strategy} order already active for {symbol} (alpaca_id={alpacaId}), skipping",
+                strategy, symbol, activeIntent.AlpacaOrderId);
+            return (activeIntent.ClientOrderId, false);
+        }
+
+        if (activeIntent is { AlpacaOrderId: null })
+        {
+            logger.LogInformation(
+                "{strategy} intent {id} exists but not submitted yet for {symbol} (crash recovery)",
+                strategy, activeIntent.ClientOrderId, symbol);
+            return (activeIntent.ClientOrderId, true);
+        }
+
+        const int maxCreateAttempts = 3;
+        for (var attempt = 1; attempt <= maxCreateAttempts; attempt++)
+        {
+            var nowUtc = DateTimeOffset.UtcNow;
+            var sequenceKey = nowUtc.ToUnixTimeMilliseconds().ToString();
+            var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
+                strategy: strategy,
+                symbol: symbol,
+                timeframe: sequenceKey,
+                signalTimestamp: nowUtc,
+                side: side.ToLowerInvariant());
+
+            var saved = await stateRepository.SaveOrderIntentAsync(
+                clientOrderId,
+                symbol,
+                side,
+                quantity,
+                limitPrice,
+                nowUtc,
+                ct);
+
+            if (saved)
+            {
+                logger.LogInformation(
+                    "Created new {strategy} intent {id} for {symbol}",
+                    strategy, clientOrderId, symbol);
+                return (clientOrderId, true);
+            }
+
+            var existing = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
+            if (existing is { AlpacaOrderId: not null } && ActiveOrderStates.Contains(existing.Status))
+            {
+                logger.LogInformation(
+                    "{strategy} order already active for {symbol} (alpaca_id={alpacaId}), skipping",
+                    strategy, symbol, existing.AlpacaOrderId);
+                return (existing.ClientOrderId, false);
+            }
+
+            if (existing is { AlpacaOrderId: null } && ActiveOrderStates.Contains(existing.Status))
+            {
+                logger.LogInformation(
+                    "{strategy} intent {id} exists but not submitted yet for {symbol} (crash recovery, duplicate id)",
+                    strategy, existing.ClientOrderId, symbol);
+                return (existing.ClientOrderId, true);
+            }
+        }
+
+        logger.LogWarning(
+            "Could not create unique {strategy} intent for {symbol} after retries; skipping submit",
+            strategy, symbol);
+        return (string.Empty, false);
     }
 
     /// <summary>
