@@ -92,8 +92,10 @@ public sealed class EventDispatcherService(
 
         try
         {
-            var orderManager = serviceProvider.GetRequiredService<IOrderManager>();
-            var positionTracker = serviceProvider.GetRequiredService<IPositionTracker>();
+            // Resolve scoped services from dedicated scope (IOrderManager is scoped)
+            using var scope = serviceProvider.CreateScope();
+            var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
+            var positionTracker = scope.ServiceProvider.GetRequiredService<IPositionTracker>();
 
             // Long-only strategy: exits are always sells.
             var exitSide = "SELL";
@@ -134,12 +136,14 @@ public sealed class EventDispatcherService(
 
         try
         {
-            var positionTracker = serviceProvider.GetRequiredService<IPositionTracker>();
-            var exitManager = serviceProvider.GetRequiredService<ExitManager>();
+            // Resolve scoped services from dedicated scope
+            using var scope = serviceProvider.CreateScope();
+            var positionTracker = scope.ServiceProvider.GetRequiredService<IPositionTracker>();
+            var exitManager = scope.ServiceProvider.GetRequiredService<ExitManager>();
 
             if (updateEvent.Status == OrderState.Filled)
             {
-                var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
+                var stateRepo = scope.ServiceProvider.GetRequiredService<IStateRepository>();
 
                 if (string.Equals(updateEvent.Side, "BUY", StringComparison.OrdinalIgnoreCase))
                 {
@@ -185,7 +189,7 @@ public sealed class EventDispatcherService(
             {
                 // Partial fills: update in-memory + DB position to reflect cumulative filled qty.
                 // Uses the intent's quantity to derive the remaining qty for SELL orders (idempotent).
-                var stateRepo = serviceProvider.GetRequiredService<IStateRepository>();
+                var stateRepo = scope.ServiceProvider.GetRequiredService<IStateRepository>();
 
                 if (string.Equals(updateEvent.Side, "BUY", StringComparison.OrdinalIgnoreCase))
                 {
@@ -250,9 +254,8 @@ public sealed class EventDispatcherService(
 
     /// <summary>
     /// Handles signal events: OrderManager.SubmitSignalAsync (risk check is authoritative in OrderManager).
-    /// H-2: The risk check here was a duplicate — removed. OrderManager.SubmitSignalAsync calls
-    ///      RiskManager.CheckSignalAsync internally and throws RiskManagerException on SAFETY/RISK failure.
-    /// R-5: OrderManager is scoped; resolve from a new scope to avoid consuming a root-scoped instance.
+    /// RiskManager.CheckSignalAsync internally and throws RiskManagerException on SAFETY/RISK failure.
+    /// OrderManager is scoped; resolve from a new scope to avoid consuming a root-scoped instance.
     /// </summary>
     private async ValueTask HandleSignalEventAsync(SignalEvent signalEvent)
     {

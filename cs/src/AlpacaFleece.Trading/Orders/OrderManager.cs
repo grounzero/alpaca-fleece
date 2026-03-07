@@ -166,6 +166,8 @@ public sealed class OrderManager(
             }
 
             // Step 7: Persist intent BEFORE submission (crash recovery); store ATR seed for fill-time position open
+            // Note: SaveOrderIntentAsync is idempotent on same clientOrderId (signal can be retried).
+            // The intent may already exist from a previous failed submission attempt.
             await stateRepository.SaveOrderIntentAsync(
                 clientOrderId,
                 signal.Symbol,
@@ -271,7 +273,19 @@ public sealed class OrderManager(
                 signalTimestamp: dayTs,
                 side: side.ToLowerInvariant());
 
-            await stateRepository.SaveOrderIntentAsync(
+            // Idempotency check BEFORE persist — if this exit was already submitted to the broker, skip re-submission
+            var existingExitIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
+            if (existingExitIntent is { AlpacaOrderId: not null })
+            {
+                logger.LogInformation(
+                    "Exit order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
+                    symbol, existingExitIntent.AlpacaOrderId);
+                return;
+            }
+
+            // Persist intent AFTER checking for existing order
+            // Return value indicates whether this call won the race to persist (true) or another concurrent caller did (false)
+            bool isNewExitIntent = await stateRepository.SaveOrderIntentAsync(
                 clientOrderId,
                 symbol,
                 side,
@@ -280,14 +294,20 @@ public sealed class OrderManager(
                 DateTimeOffset.UtcNow,
                 ct);
 
-            // H-1: Idempotency check — if this exit was already submitted to the broker, skip re-submission
-            var existingExitIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
-            if (existingExitIntent is { AlpacaOrderId: not null })
+            if (!isNewExitIntent)
             {
-                logger.LogInformation(
-                    "Exit order already submitted for {symbol} (alpaca_id={alpacaId}), skipping",
-                    symbol, existingExitIntent.AlpacaOrderId);
-                return;
+                // Idempotent case: intent already exists. But we need to check if it was already submitted:
+                // - If AlpacaOrderId is set: concurrent caller/previous process submitted it — skip
+                // - If AlpacaOrderId is null: previous process crashed before broker submit — proceed (crash recovery)
+                var existingIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
+                if (existingIntent?.AlpacaOrderId != null)
+                {
+                    logger.LogInformation("Exit order {id} already submitted (alpaca_id={alpacaId}), skipping",
+                        clientOrderId, existingIntent.AlpacaOrderId);
+                    return;
+                }
+                // AlpacaOrderId is null → crashed before submission, proceed below
+                logger.LogInformation("Exit order {id} exists but not submitted yet (crash recovery scenario)", clientOrderId);
             }
 
             if (options.Execution.DryRun)
@@ -369,12 +389,10 @@ public sealed class OrderManager(
                     signalTimestamp: flattenDayTs,
                     side: exitSide.ToLowerInvariant());
 
-                // Persist intent BEFORE submission (crash recovery idempotency):
-                // SaveOrderIntentAsync is a no-op if clientOrderId already exists, so a restart
-                // after a partial crash will not create a duplicate exit.
-                // C-2: Use 0m as limitPrice so the broker submits a market order for flatten.
+                // Persist intent BEFORE submission (crash recovery idempotency)
+                // Use 0m as limitPrice so the broker submits a market order for flatten.
                 // Passing pos.CurrentPrice as a limit could cause fill failures when the price moves.
-                await stateRepository.SaveOrderIntentAsync(
+                _ = await stateRepository.SaveOrderIntentAsync(
                     clientOrderId,
                     pos.Symbol,
                     exitSide,
@@ -383,9 +401,8 @@ public sealed class OrderManager(
                     DateTimeOffset.UtcNow,
                     ct);
 
-                // If this exact clientOrderId was already submitted to the broker (has an AlpacaOrderId),
-                // skip re-submission to prevent duplicate orders on restart.
-                // Do NOT increment submitted — this call did not submit an order.
+                // Check if this intent was already submitted to the broker (has an AlpacaOrderId).
+                // On restart after crash, intent may exist from previous run but AlpacaOrderId may or may not be set yet.
                 var existingFlattenIntent = await stateRepository.GetOrderIntentAsync(clientOrderId, ct);
                 if (existingFlattenIntent is { AlpacaOrderId: not null })
                 {

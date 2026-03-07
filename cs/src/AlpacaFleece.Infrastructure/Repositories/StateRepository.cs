@@ -35,26 +35,38 @@ public sealed class StateRepository(
     {
         try
         {
+            // Use transaction with Serializable isolation to atomically check-then-update/insert.
+            // Prevents TOCTOU race where two callers both read entity==null and both try to insert.
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            var entity = await dbContext.BotState
-                .FirstOrDefaultAsync(x => x.Key == key, ct);
-
-            if (entity == null)
+            await using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            try
             {
-                dbContext.BotState.Add(new BotStateEntity
+                var entity = await dbContext.BotState
+                    .FirstOrDefaultAsync(x => x.Key == key, ct);
+
+                if (entity == null)
                 {
-                    Key = key,
-                    Value = value,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                });
-            }
-            else
-            {
-                entity.Value = value;
-                entity.UpdatedAt = DateTimeOffset.UtcNow;
-            }
+                    dbContext.BotState.Add(new BotStateEntity
+                    {
+                        Key = key,
+                        Value = value,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    });
+                }
+                else
+                {
+                    entity.Value = value;
+                    entity.UpdatedAt = DateTimeOffset.UtcNow;
+                }
 
-            await dbContext.SaveChangesAsync(ct);
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
         }
         catch (Exception ex)
         {
@@ -150,7 +162,7 @@ public sealed class StateRepository(
     /// <summary>
     /// Saves an order intent to persistence.
     /// </summary>
-    public async ValueTask SaveOrderIntentAsync(
+    public async ValueTask<bool> SaveOrderIntentAsync(
         string clientOrderId,
         string symbol,
         string side,
@@ -162,13 +174,11 @@ public sealed class StateRepository(
     {
         try
         {
-            // Idempotency: return silently if already exists
+            // Idempotency via DB unique constraint catch, not pre-check.
+            // The pre-check had a TOCTOU race: two concurrent calls could both read entity==null
+            // and both try to insert. Instead, let the unique index on ClientOrderId enforce it
+            // and catch the resulting DbUpdateException.
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            var existing = await dbContext.OrderIntents
-                .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId, ct);
-            if (existing != null)
-                return;
-
             dbContext.OrderIntents.Add(new OrderIntentEntity
             {
                 ClientOrderId = clientOrderId,
@@ -182,10 +192,21 @@ public sealed class StateRepository(
             });
 
             await dbContext.SaveChangesAsync(ct);
+            return true;  // Successfully inserted new order intent
+        }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqliteEx
+            && sqliteEx.SqliteErrorCode == 19
+            && sqliteEx.Message.Contains("UNIQUE constraint failed"))
+        {
+            // UNIQUE constraint violation on ClientOrderId: row already exists.
+            // This is the idempotent case — return false to signal caller should skip submission.
+            // Note: SqliteErrorCode 19 = SQLITE_CONSTRAINT (covers multiple constraint types),
+            // so we check the message to ensure this is specifically a UNIQUE violation.
+            logger.LogDebug("SaveOrderIntentAsync: {id} already exists (idempotent)", clientOrderId);
+            return false;
         }
         catch (Exception ex)
         {
-            // No DbContext state kept between calls when using factory; nothing to clear here
             logger.LogError(ex, "Failed to save order intent {clientOrderId}", clientOrderId);
             throw new StateRepositoryException($"Failed to save order intent", ex);
         }
@@ -578,9 +599,12 @@ public sealed class StateRepository(
 
             if (attempt != null)
             {
+                // Increment attempt count so backoff escalates (2^0=1, 2^1=2, 2^2=4, ... up to 300s)
+                // Use same formula as GetExitBackoffSecondsAsync: 2^(AttemptCount-1)
+                attempt.AttemptCount++;
                 attempt.LastAttemptAt = DateTimeOffset.UtcNow;
                 attempt.NextRetryAt = DateTimeOffset.UtcNow.AddSeconds(
-                    Math.Min((int)Math.Pow(2, Math.Max(attempt.AttemptCount, 1)), 300));
+                    Math.Min((int)Math.Pow(2, attempt.AttemptCount - 1), 300));
 
                 await dbContext.SaveChangesAsync(ct);
                 logger.LogWarning("Recorded exit attempt failure for {symbol}: next retry in {seconds}s",
@@ -591,6 +615,25 @@ public sealed class StateRepository(
         {
             logger.LogError(ex, "Failed to record exit attempt failure for {symbol}", symbol);
             throw new StateRepositoryException($"Failed to record exit attempt failure for {symbol}", ex);
+        }
+    }
+
+    /// <summary>
+    /// Gets the next retry timestamp for an exit attempt (or null if not found).
+    /// </summary>
+    public async ValueTask<DateTimeOffset?> GetExitAttemptNextRetryAtAsync(string symbol, CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            var attempt = await dbContext.ExitAttempts
+                .FirstOrDefaultAsync(x => x.Symbol == symbol, ct);
+            return attempt?.NextRetryAt;
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get exit attempt next retry for {symbol}", symbol);
+            throw new StateRepositoryException($"Failed to get exit attempt next retry for {symbol}", ex);
         }
     }
 
@@ -674,30 +717,58 @@ public sealed class StateRepository(
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var intents = await dbContext.OrderIntents
                 .ToListAsync(ct);
-
-            var dtos = new List<OrderIntentDto>(intents.Count);
-            foreach (var intent in intents)
-            {
-                dtos.Add(new OrderIntentDto(
-                    ClientOrderId: intent.ClientOrderId,
-                    AlpacaOrderId: intent.AlpacaOrderId,
-                    Symbol: intent.Symbol,
-                    Side: intent.Side,
-                    Quantity: intent.Quantity,
-                    LimitPrice: intent.LimitPrice,
-                    Status: Enum.Parse<OrderState>(intent.Status),
-                    CreatedAt: intent.CreatedAt,
-                    UpdatedAt: intent.UpdatedAt,
-                    AtrSeed: intent.AtrSeed));
-            }
-
-            return dtos.AsReadOnly();
+            return intents.Select(MapOrderIntentToDto).ToList().AsReadOnly();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get all order intents");
             throw new StateRepositoryException($"Failed to get all order intents", ex);
         }
+    }
+
+    /// <summary>
+    /// Gets only non-terminal order intents (for fill reconciliation).
+    /// Filtered query to avoid full table scan.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<OrderIntentDto>> GetNonTerminalOrderIntentsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var nonTerminalStatuses = new[]
+            {
+                nameof(OrderState.PendingNew), nameof(OrderState.Accepted),
+                nameof(OrderState.PartiallyFilled), nameof(OrderState.PendingCancel),
+                nameof(OrderState.PendingReplace),
+            };
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            var intents = await dbContext.OrderIntents
+                .Where(x => nonTerminalStatuses.Contains(x.Status))
+                .ToListAsync(ct);
+            return intents.Select(MapOrderIntentToDto).ToList().AsReadOnly();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get non-terminal order intents");
+            throw new StateRepositoryException($"Failed to get non-terminal order intents", ex);
+        }
+    }
+
+    /// <summary>
+    /// Maps an OrderIntentEntity to OrderIntentDto.
+    /// </summary>
+    private static OrderIntentDto MapOrderIntentToDto(OrderIntentEntity intent)
+    {
+        return new OrderIntentDto(
+            ClientOrderId: intent.ClientOrderId,
+            AlpacaOrderId: intent.AlpacaOrderId,
+            Symbol: intent.Symbol,
+            Side: intent.Side,
+            Quantity: intent.Quantity,
+            LimitPrice: intent.LimitPrice,
+            Status: Enum.Parse<OrderState>(intent.Status),
+            CreatedAt: intent.CreatedAt,
+            UpdatedAt: intent.UpdatedAt,
+            AtrSeed: intent.AtrSeed);
     }
 
     /// <summary>

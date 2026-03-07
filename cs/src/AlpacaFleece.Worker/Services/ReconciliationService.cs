@@ -29,23 +29,34 @@ public sealed class ReconciliationService(
 
             var discrepancies = new List<string>();
 
-            // Rule 1: Alpaca terminal + SQLite non-terminal → auto-apply
-            foreach (var alpacaOrder in alpacaOrders.Where(o => IsTerminal(o.Status)))
+            // Rule 1: SQLite non-terminal but Alpaca already terminal → auto-apply
+            // Optimization: Orders still in alpacaOrders (GetOpenOrdersAsync) are definitely open on Alpaca.
+            // Only call GetOrderByIdAsync for orders NOT in that list (they may be terminal).
+            var openAlpacaOrderIds = new HashSet<string>(alpacaOrders.Select(o => o.AlpacaOrderId));
+            var nonTerminalSqlite = sqliteOrders.Where(so => !IsTerminal(so.Status) && so.AlpacaOrderId != null);
+
+            foreach (var sqliteOrder in nonTerminalSqlite)
             {
-                var sqliteOrder = sqliteOrders.FirstOrDefault(
-                    so => so.AlpacaOrderId == alpacaOrder.AlpacaOrderId);
-                if (sqliteOrder != null && !IsTerminal(sqliteOrder.Status))
-                {
-                    logger.LogInformation(
-                        "Auto-applying Alpaca terminal status to SQLite: {orderId} {status}",
-                        alpacaOrder.AlpacaOrderId, alpacaOrder.Status);
-                    await stateRepository.UpdateOrderIntentAsync(
-                        sqliteOrder.ClientOrderId,
-                        alpacaOrder.AlpacaOrderId,
-                        alpacaOrder.Status,
-                        DateTimeOffset.UtcNow,
-                        ct);
-                }
+                var alpacaOrderId = sqliteOrder.AlpacaOrderId!;
+
+                // If order is still in the open orders list, it's definitely not terminal yet
+                if (openAlpacaOrderIds.Contains(alpacaOrderId))
+                    continue;
+
+                // Not in open orders list → check if terminal (requires broker call)
+                var brokerOrder = await brokerService.GetOrderByIdAsync(alpacaOrderId, ct);
+                if (brokerOrder == null || !IsTerminal(brokerOrder.Status))
+                    continue;  // Not found or still pending — no action
+
+                logger.LogInformation(
+                    "Rule 1: auto-applying Alpaca terminal status to SQLite: {orderId} {status}",
+                    alpacaOrderId, brokerOrder.Status);
+                await stateRepository.UpdateOrderIntentAsync(
+                    sqliteOrder.ClientOrderId,
+                    alpacaOrderId,
+                    brokerOrder.Status,
+                    DateTimeOffset.UtcNow,
+                    ct);
             }
 
             // Rule 2: SQLite terminal + Alpaca non-terminal → discrepancy
@@ -113,11 +124,13 @@ public sealed class ReconciliationService(
     {
         try
         {
-            var sqliteOrders = await stateRepository.GetAllOrderIntentsAsync(ct);
+            // Use filtered query — fill events only occur on non-terminal orders
+            var sqliteOrders = await stateRepository.GetNonTerminalOrderIntentsAsync(ct);
             var alpacaOrders = await brokerService.GetOpenOrdersAsync(ct);
 
             foreach (var sqliteOrder in sqliteOrders)
             {
+                // Already filtered to non-terminal, but keep the check for safety
                 if (sqliteOrder.Status.IsTerminal())
                     continue;
 
@@ -188,7 +201,7 @@ public sealed class ReconciliationService(
                     "Ghost position detected for {symbol}: qty={qty} entryPrice={price} — not present in Alpaca and no open orders. Clearing from DB.",
                     sqlitePos.Symbol, sqlitePos.Quantity, sqlitePos.EntryPrice);
 
-                // C-4: Clear the ghost position from DB so PositionTracker does not rehydrate stale data.
+                // Clear the ghost position from DB so PositionTracker does not rehydrate stale data.
                 await stateRepository.UpsertPositionTrackingAsync(
                     sqlitePos.Symbol, 0m, 0m, 0m, 0m, ct);
             }
@@ -275,7 +288,7 @@ public sealed class ReconciliationService(
             OrderState.Canceled => true,
             OrderState.Expired => true,
             OrderState.Rejected => true,
-            // C-3: PartiallyFilled is NOT terminal — the order may still receive further fills.
+            // PartiallyFilled is NOT terminal — the order may still receive further fills.
             // Treating it as terminal would block startup when a partial fill is in progress.
             _ => false
         };

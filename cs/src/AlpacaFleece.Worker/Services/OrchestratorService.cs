@@ -59,7 +59,7 @@ public sealed class OrchestratorService(
             await reconciliation.PerformStartupReconciliationAsync(cancellationToken);
             await reconciliation.ReconcileFillsAsync(cancellationToken);
             await stateRepository.SetStateAsync("trading_ready", "true", cancellationToken);
-            // H-5: Clear the market_data_degraded flag set by ExitManager during the previous session.
+            // Clear the market_data_degraded flag set by ExitManager during the previous session.
             // On clean startup the price feeds are assumed good; ExitManager will re-raise if needed.
             await stateRepository.SetStateAsync("market_data_degraded", "false", cancellationToken);
             logger.LogInformation("Startup reconciliation complete — trading enabled");

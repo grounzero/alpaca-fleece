@@ -44,8 +44,9 @@ public interface IStateRepository
 
     /// <summary>
     /// Saves an order intent to persistence (for crash recovery).
+    /// Returns true if a new row was inserted, false if it already existed (idempotent case).
     /// </summary>
-    ValueTask SaveOrderIntentAsync(
+    ValueTask<bool> SaveOrderIntentAsync(
         string clientOrderId,
         string symbol,
         string side,
@@ -123,6 +124,12 @@ public interface IStateRepository
     ValueTask RecordExitAttemptFailureAsync(string symbol, CancellationToken ct = default);
 
     /// <summary>
+    /// Gets the next retry timestamp for an exit attempt (or null if not found).
+    /// Used to enforce backoff timing when retrying failed exits.
+    /// </summary>
+    ValueTask<DateTimeOffset?> GetExitAttemptNextRetryAtAsync(string symbol, CancellationToken ct = default);
+
+    /// <summary>
     /// Inserts an equity snapshot to equity_curve table.
     /// </summary>
     ValueTask InsertEquitySnapshotAsync(
@@ -143,6 +150,12 @@ public interface IStateRepository
     /// Gets all order intents from the database.
     /// </summary>
     ValueTask<IReadOnlyList<OrderIntentDto>> GetAllOrderIntentsAsync(CancellationToken ct = default);
+
+    /// <summary>
+    /// Gets only non-terminal order intents (PendingNew, Accepted, PartiallyFilled, PendingCancel, PendingReplace).
+    /// Used for fill reconciliation where only in-flight orders matter.
+    /// </summary>
+    ValueTask<IReadOnlyList<OrderIntentDto>> GetNonTerminalOrderIntentsAsync(CancellationToken ct = default);
 
     /// <summary>
     /// Returns true if any order intent for the given symbol+side is in a non-terminal state

@@ -169,4 +169,43 @@ public sealed class PositionTrackerTests(TradingFixture fixture) : IAsyncLifetim
         Assert.NotEqual(default, dbRow);
         Assert.Equal(0m, dbRow.Quantity);
     }
+
+    [Fact]
+    public async Task UpdateTrailingStopAsync_PersistsToDb_SurvivesRestart()
+    {
+        // Test that trailing stop updates are persisted to DB and rehydrated on restart.
+        // Arrange: open position with initial trailing stop
+        var symbol = $"TST{Guid.NewGuid():N}"[..8];
+        var logger = Substitute.For<ILogger<PositionTracker>>();
+        var tracker1 = new PositionTracker(fixture.StateRepository, logger);
+        await tracker1.OpenPositionAsync(symbol, 10m, 100m, 2m);
+
+        // Verify initial trailing stop is set by OpenPositionAsync (ATR * 1.5 = 2 * 1.5 = 3, so 100 - 3 = 97)
+        var pos1 = tracker1.GetPosition(symbol)!;
+        Assert.Equal(97m, pos1.TrailingStopPrice);
+
+        // Tighten the trailing stop (e.g., as price improves)
+        var tightenedStop = 98m;
+        await tracker1.UpdateTrailingStopAsync(symbol, tightenedStop);
+
+        // Assert: in-memory trailing stop is updated
+        var posAfterUpdate = tracker1.GetPosition(symbol)!;
+        Assert.Equal(98m, posAfterUpdate.TrailingStopPrice);
+
+        // Assert: DB row is persisted with new trailing stop
+        var rows1 = await fixture.StateRepository.GetAllPositionTrackingAsync();
+        var dbRow1 = rows1.FirstOrDefault(r => r.Symbol == symbol);
+        Assert.NotEqual(default, dbRow1);
+        Assert.Equal(98m, dbRow1.TrailingStopPrice);
+
+        // Act: simulate restart — create new tracker and rehydrate from DB
+        var tracker2 = new PositionTracker(fixture.StateRepository, logger);
+        await tracker2.InitialiseFromDbAsync();
+
+        // Assert: tightened trailing stop survived restart
+        var pos2 = tracker2.GetPosition(symbol)!;
+        Assert.Equal(98m, pos2.TrailingStopPrice);
+        Assert.Equal(10m, pos2.CurrentQuantity);
+        Assert.Equal(100m, pos2.EntryPrice);
+    }
 }

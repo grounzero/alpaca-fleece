@@ -137,13 +137,15 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
         var repo = fixture.StateRepository;
         var clientOrderId = "test_order_123";
 
-        await repo.SaveOrderIntentAsync(
+        var isNew = await repo.SaveOrderIntentAsync(
             clientOrderId,
             "AAPL",
             "BUY",
             100,
             150m,
             DateTimeOffset.UtcNow);
+
+        Assert.True(isNew, "Should return true for new insert");
 
         var intent = await repo.GetOrderIntentAsync(clientOrderId);
 
@@ -161,7 +163,7 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
         var repo = fixture.StateRepository;
         var clientOrderId = "test_order_456";
 
-        await repo.SaveOrderIntentAsync(
+        _ = await repo.SaveOrderIntentAsync(
             clientOrderId,
             "AAPL",
             "BUY",
@@ -245,5 +247,41 @@ public sealed class StateRepositoryTests(TradingFixture fixture)
         var count = await repo.GetCircuitBreakerCountAsync();
 
         Assert.Equal(0, count);
+    }
+
+    [Fact]
+    public async Task RecordExitAttemptFailureAsync_IncrementsAttemptCount_And_EscalatesBackoff()
+    {
+        // Arrange
+        var repo = fixture.StateRepository;
+        var symbol = "QQQ";
+
+        // First attempt (initializes AttemptCount = 1, backoff = 2^(1-1) = 1)
+        await repo.RecordExitAttemptAsync(symbol);
+        var attempt1 = await repo.GetExitBackoffSecondsAsync(symbol);
+        Assert.Equal(1, attempt1); // Initial backoff after first attempt
+
+        // Record first failure (increments to AttemptCount = 2, backoff = 2^(2-1) = 2)
+        await repo.RecordExitAttemptFailureAsync(symbol);
+        var backoff1 = await repo.GetExitBackoffSecondsAsync(symbol);
+        Assert.Equal(2, backoff1); // Backoff escalates to 2 seconds
+
+        // Record second failure (increments to AttemptCount = 3, backoff = 2^(3-1) = 4)
+        await repo.RecordExitAttemptFailureAsync(symbol);
+        var backoff2 = await repo.GetExitBackoffSecondsAsync(symbol);
+        Assert.Equal(4, backoff2); // Backoff escalates to 4 seconds
+
+        // Record third failure (increments to AttemptCount = 4, backoff = 2^(4-1) = 8)
+        await repo.RecordExitAttemptFailureAsync(symbol);
+        var backoff3 = await repo.GetExitBackoffSecondsAsync(symbol);
+        Assert.Equal(8, backoff3); // Backoff escalates to 8 seconds
+
+        // Verify escalation continues and caps at 300s
+        for (int i = 0; i < 10; i++)
+        {
+            await repo.RecordExitAttemptFailureAsync(symbol);
+        }
+        var backoffCapped = await repo.GetExitBackoffSecondsAsync(symbol);
+        Assert.Equal(300, backoffCapped); // Capped at max
     }
 }

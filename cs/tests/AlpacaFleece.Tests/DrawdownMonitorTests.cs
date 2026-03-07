@@ -321,8 +321,6 @@ public sealed class DrawdownMonitorTests(TradingFixture fixture) : IAsyncLifetim
         Assert.Contains("Drawdown halt", ex.Message);
     }
 
-    // ─── H-4: Failure decay + persist fail-safe halt ────────────────────────────
-
     [Fact]
     public async Task ConsecutiveFailures_WithDecay_DoNotEscalate()
     {

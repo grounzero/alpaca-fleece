@@ -17,7 +17,7 @@ public sealed class HousekeepingService(
     }
 
     /// <summary>
-    /// Graceful shutdown: cancel orders, flatten positions, final snapshot.
+    /// Graceful shutdown: block new signals, cancel orders, flatten positions, final snapshot.
     /// </summary>
     public override async Task StopAsync(CancellationToken cancellationToken)
     {
@@ -25,32 +25,76 @@ public sealed class HousekeepingService(
 
         try
         {
-            // Cancel all open orders
-            var openOrders = await brokerService.GetOpenOrdersAsync(cancellationToken);
-            foreach (var order in openOrders)
-            {
-                try
-                {
-                    await brokerService.CancelOrderAsync(order.AlpacaOrderId, cancellationToken);
-                    logger.LogInformation("Cancelled order {orderId}", order.AlpacaOrderId);
-                }
-                catch (Exception ex)
-                {
-                    logger.LogWarning(ex, "Failed to cancel order {orderId}", order.AlpacaOrderId);
-                }
-            }
-
-            // Flatten all positions via OrderManager (deterministic clientOrderId, persist-before-submit)
-            using var scope = scopeFactory.CreateScope();
-            var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
-            var submitted = await orderManager.FlattenPositionsAsync(cancellationToken);
-            logger.LogInformation("Graceful shutdown: flatten submitted {Count} orders", submitted);
-
-            // Final equity snapshot
+            // Block new signals IMMEDIATELY before flattening positions (ExitManager may still dispatch briefly)
+            // Use a short 5s timeout; if DB is locked, don't let it block host shutdown indefinitely.
             try
             {
-                var account = await brokerService.GetAccountAsync(cancellationToken);
-                var dailyPnlStr = await stateRepository.GetStateAsync("daily_realized_pnl", cancellationToken);
+                using var tradingReadyCts = new CancellationTokenSource(TimeSpan.FromSeconds(5));
+                await stateRepository.SetStateAsync("trading_ready", "false", tradingReadyCts.Token);
+                logger.LogInformation("HousekeepingService: trading_ready set to false");
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Failed to set trading_ready=false on shutdown");
+                // Continue with shutdown even if trading_ready fails — don't block host
+            }
+
+            // Per-phase timeouts. Each phase gets independent timeout so slow phase 1 doesn't starve phase 2.
+            // BUT: each phase is linked to the host's cancellationToken, so immediate shutdown requests
+            // (e.g., SIGTERM/SIGINT) interrupt any phase that hasn't completed yet.
+
+            // Phase 1: cancel open orders (20s timeout, or sooner if host requests shutdown)
+            try
+            {
+                using var cancelCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cancelCts.CancelAfter(TimeSpan.FromSeconds(20));
+                var cancelCt = cancelCts.Token;
+
+                var openOrders = await brokerService.GetOpenOrdersAsync(cancelCt);
+                foreach (var order in openOrders)
+                {
+                    try
+                    {
+                        await brokerService.CancelOrderAsync(order.AlpacaOrderId, cancelCt);
+                        logger.LogInformation("Cancelled order {orderId}", order.AlpacaOrderId);
+                    }
+                    catch (Exception ex)
+                    {
+                        logger.LogWarning(ex, "Failed to cancel order {orderId}", order.AlpacaOrderId);
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error cancelling open orders during shutdown");
+            }
+
+            // Phase 2: flatten all positions via OrderManager (60s timeout, or sooner if host requests shutdown)
+            try
+            {
+                using var flattenCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                flattenCts.CancelAfter(TimeSpan.FromSeconds(60));
+                var flattenCt = flattenCts.Token;
+
+                using var scope = scopeFactory.CreateScope();
+                var orderManager = scope.ServiceProvider.GetRequiredService<IOrderManager>();
+                var submitted = await orderManager.FlattenPositionsAsync(flattenCt);
+                logger.LogInformation("Graceful shutdown: flatten submitted {Count} orders", submitted);
+            }
+            catch (Exception ex)
+            {
+                logger.LogError(ex, "Error flattening positions during shutdown");
+            }
+
+            // Phase 3: final equity snapshot (15s timeout, or sooner if host requests shutdown)
+            try
+            {
+                using var snapshotCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                snapshotCts.CancelAfter(TimeSpan.FromSeconds(15));
+                var snapshotCt = snapshotCts.Token;
+
+                var account = await brokerService.GetAccountAsync(snapshotCt);
+                var dailyPnlStr = await stateRepository.GetStateAsync("daily_realized_pnl", snapshotCt);
                 // Use InvariantCulture to ensure consistent parsing across locales
                 var dailyPnl = decimal.TryParse(dailyPnlStr, NumberStyles.Number, CultureInfo.InvariantCulture, out var parsed) ? parsed : 0m;
 
@@ -59,7 +103,7 @@ public sealed class HousekeepingService(
                     account.PortfolioValue,
                     account.CashAvailable,
                     dailyPnl,
-                    cancellationToken);
+                    snapshotCt);
 
                 logger.LogInformation("Final equity snapshot taken: portfolio={portfolio}, dailyPnl={dailyPnl}",
                     account.PortfolioValue, dailyPnl);

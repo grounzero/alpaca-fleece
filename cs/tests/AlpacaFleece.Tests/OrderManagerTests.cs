@@ -406,7 +406,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     {
         // Arrange: save a non-terminal BUY intent for PGATE_A
         const string symbol = "PGATE_A";
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "pgate_existing_buy", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
 
         var options = new TradingOptions
@@ -441,7 +441,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     {
         // A pending BUY should NOT block a SELL signal (different side)
         const string symbol = "PGATE_B";
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "pgate_buy_for_sell_test", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
 
         var options = new TradingOptions
@@ -479,7 +479,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Arrange: create a pending intent then mark it as Filled (terminal)
         const string symbol = "PGATE_C";
         const string existingClientId = "pgate_filled_buy";
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             existingClientId, symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
         // Mark as Filled (terminal)
         await fixture.StateRepository.UpdateOrderIntentAsync(
@@ -582,8 +582,6 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ─── C-2: Flatten submits market orders (limitPrice=0m) ─────────────────────
-
     [Fact]
     public async Task FlattenPositions_SubmitsMarketOrders()
     {
@@ -621,8 +619,6 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             "MSFT", "SELL", 50m, 0m, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ─── H-1: SubmitExit idempotency ─────────────────────────────────────────────
-
     [Fact]
     public async Task SubmitExit_AlreadySubmitted_SkipsBroker()
     {
@@ -644,7 +640,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             side: "sell");
 
         // Persist intent with AlpacaOrderId already set (as if broker already received it)
-        await fixture.StateRepository.SaveOrderIntentAsync(
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
             clientOrderId, "TSLA", "SELL", 25m, 0m, nowUtc);
         await fixture.StateRepository.UpdateOrderIntentAsync(
             clientOrderId, "alpaca_already_submitted", OrderState.Accepted, nowUtc);
@@ -656,5 +652,57 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
         await _brokerMock.DidNotReceive().SubmitOrderAsync(
             Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
             Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubmitExitAsync_ConcurrentCallers_OnlyOneReachesBroker()
+    {
+        // Test that concurrent calls to SubmitExitAsync for the same symbol
+        // result in only one broker submission (idempotent per day).
+        // Arrange
+        var symbol = "EURUSD";
+        var side = "SELL";
+        var quantity = 15m;
+        var limitPrice = 0m;
+
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+
+        // Setup broker mock to accept order
+        _brokerMock.SubmitOrderAsync(Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo(
+                AlpacaOrderId: $"alpaca_order_{Guid.NewGuid():N}"[..20],
+                ClientOrderId: "test_exit",
+                Symbol: symbol,
+                Side: side,
+                Quantity: quantity,
+                FilledQuantity: 0m,
+                AverageFilledPrice: 0m,
+                Status: OrderState.PendingNew,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: DateTimeOffset.UtcNow
+            ));
+
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus,
+            options, _logger);
+
+        // Act: call SubmitExitAsync twice concurrently for the same symbol/day
+        var task1 = orderManager.SubmitExitAsync(symbol, side, quantity, limitPrice);
+        var task2 = orderManager.SubmitExitAsync(symbol, side, quantity, limitPrice);
+
+        // Wait for both to complete
+        await task1;
+        await task2;
+
+        // Assert: broker.SubmitOrderAsync called only once despite two concurrent calls
+        var _ = _brokerMock.Received(1).SubmitOrderAsync(
+            Arg.Is<string>(s => s == symbol),
+            Arg.Is<string>(s => s == side),
+            Arg.Any<decimal>(),
+            Arg.Any<decimal>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
     }
 }

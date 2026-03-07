@@ -141,11 +141,18 @@ public class ExitManager(
                     continue;
                 }
 
-                // Skip if pending exit or in backoff
-                var backoffSeconds = await stateRepository.GetExitBackoffSecondsAsync(symbol, ct);
-                if (posData.PendingExit && backoffSeconds > 0)
+                // Skip if pending exit (waiting for order to fill/fail or in backoff period)
+                if (posData.PendingExit)
                 {
-                    continue;
+                    var nextRetryAt = await stateRepository.GetExitAttemptNextRetryAtAsync(symbol, ct);
+                    // If no backoff recorded (null), order is still pending; keep waiting
+                    // If backoff is recorded but not expired, keep waiting
+                    if (nextRetryAt == null || now < nextRetryAt.Value)
+                    {
+                        continue; // Still waiting (no failure backoff, or backoff not yet expired)
+                    }
+                    // Backoff has expired; allow retry by clearing PendingExit
+                    posData.PendingExit = false;
                 }
 
                 // Skip position if ATR is invalid — cannot safely compute risk levels

@@ -748,8 +748,6 @@ public sealed class StreamPollerTests
             Arg.Any<CancellationToken>());
     }
 
-    // ─── H-3: Reduced bar depth after warmup ────────────────────────────────────
-
     [Fact]
     public async Task BarPoll_AfterWarmup_RequestsReducedDepth()
     {
@@ -792,8 +790,6 @@ public sealed class StreamPollerTests
         Assert.Equal(100, capturedDepths[0]); // First poll: full depth
         Assert.Equal(5, capturedDepths[1]);   // Second poll: WarmPollDepth
     }
-
-    // ─── C-5: Fractional fault uses fallback qty, no CB trip ────────────────────
 
     [Fact]
     public async Task FractionalFault_UsesFallbackQty_NoCbTrip()
