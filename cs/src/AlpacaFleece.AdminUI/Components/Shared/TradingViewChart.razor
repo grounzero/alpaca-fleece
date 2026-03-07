@@ -1,0 +1,197 @@
+@implements IAsyncDisposable
+@inject IJSRuntime JS
+
+<div id="@_containerId" style="width:100%; height:@HeightPx; min-height:220px;"></div>
+
+@code {
+    [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public string Timeframe { get; set; } = string.Empty;
+    [Parameter, EditorRequired] public IReadOnlyList<BarEntity> Data { get; set; } = [];
+
+    [Parameter] public bool ShowVolume { get; set; } = true;
+    [Parameter] public bool VolumeInSeparatePane { get; set; } = true;
+    [Parameter] public bool ShowMarkers { get; set; } = true;
+    [Parameter] public bool ShowPriceLine { get; set; } = true;
+    [Parameter] public bool AutoFitContent { get; set; } = true;
+    [Parameter] public bool ShowLeftPriceScale { get; set; }
+    [Parameter] public bool ShowRightPriceScale { get; set; } = true;
+    [Parameter] public bool? IsDarkTheme { get; set; } = true;
+    [Parameter] public string MainSeriesType { get; set; } = "candlestick";
+    [Parameter] public int Height { get; set; } = 400;
+    [Parameter] public int PricePrecision { get; set; } = 2;
+    [Parameter] public double PriceMinMove { get; set; } = 0.01;
+    [Parameter] public string Locale { get; set; } = "en-US";
+    [Parameter] public string TimeZone { get; set; } = "UTC";
+
+    private readonly string _chartId = $"tvchart_{Guid.NewGuid():N}";
+    private readonly string _containerId = $"tvchart_container_{Guid.NewGuid():N}";
+
+    private bool _isChartCreated;
+    private bool _pendingSync = true;
+    private string? _lastDataFingerprint;
+
+    private string HeightPx => $"{Math.Max(Height, 220)}px";
+
+    protected override void OnParametersSet()
+    {
+        _pendingSync = true;
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!_pendingSync && !firstRender)
+        {
+            return;
+        }
+
+        var payload = BuildInteropPayload();
+        var fingerprint = CreateDataFingerprint();
+
+        if (!firstRender && fingerprint == _lastDataFingerprint)
+        {
+            _pendingSync = false;
+            return;
+        }
+
+        try
+        {
+            if (!_isChartCreated)
+            {
+                await JS.InvokeVoidAsync("tradingViewCharts.create", _chartId, _containerId, payload);
+                _isChartCreated = true;
+            }
+            else
+            {
+                await JS.InvokeVoidAsync("tradingViewCharts.update", _chartId, payload);
+            }
+
+            _lastDataFingerprint = fingerprint;
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit disconnected during render; ignore because Blazor will reconnect.
+        }
+        finally
+        {
+            _pendingSync = false;
+        }
+    }
+
+    private object BuildInteropPayload()
+    {
+        return new
+        {
+            symbol = Symbol,
+            timeframe = Timeframe,
+            data = MapBars(Data),
+            showVolume = ShowVolume,
+            volumeInSeparatePane = VolumeInSeparatePane,
+            showMarkers = ShowMarkers,
+            showPriceLine = ShowPriceLine,
+            autoFitContent = AutoFitContent,
+            showLeftPriceScale = ShowLeftPriceScale,
+            showRightPriceScale = ShowRightPriceScale,
+            isDarkTheme = IsDarkTheme,
+            mainSeriesType = MainSeriesType,
+            height = Height,
+            pricePrecision = PricePrecision,
+            priceMinMove = PriceMinMove,
+            locale = Locale,
+            timeZone = TimeZone
+        };
+    }
+
+    private static IReadOnlyList<TradingViewOhlcPoint> MapBars(IReadOnlyList<BarEntity> bars)
+    {
+        if (bars.Count == 0)
+        {
+            return [];
+        }
+
+        return bars
+            .OrderBy(b => b.Timestamp)
+            .Select(b => new TradingViewOhlcPoint
+            {
+                Time = ToUnixTimeSeconds(b.Timestamp),
+                Open = (double)b.Open,
+                High = (double)b.High,
+                Low = (double)b.Low,
+                Close = (double)b.Close,
+                Volume = b.Volume
+            })
+            .ToList();
+    }
+
+    private static long ToUnixTimeSeconds(DateTime timestamp)
+    {
+        var utcTimestamp = timestamp.Kind switch
+        {
+            DateTimeKind.Utc => timestamp,
+            DateTimeKind.Local => timestamp.ToUniversalTime(),
+            DateTimeKind.Unspecified => DateTime.SpecifyKind(timestamp, DateTimeKind.Utc),
+            _ => timestamp
+        };
+
+        return new DateTimeOffset(utcTimestamp).ToUnixTimeSeconds();
+    }
+
+    private string CreateDataFingerprint()
+    {
+        if (Data.Count == 0)
+        {
+            return $"{Symbol}|{Timeframe}|{MainSeriesType}|{ShowVolume}|empty";
+        }
+
+        var orderedBars = Data.OrderBy(b => b.Timestamp).ToArray();
+        var first = orderedBars[0];
+        var last = orderedBars[^1];
+
+        return string.Join("|",
+            Symbol,
+            Timeframe,
+            MainSeriesType,
+            ShowVolume,
+            VolumeInSeparatePane,
+            ShowMarkers,
+            ShowPriceLine,
+            AutoFitContent,
+            IsDarkTheme,
+            Data.Count,
+            first.Timestamp.Ticks,
+            last.Timestamp.Ticks,
+            last.Close,
+            last.Volume,
+            Height,
+            Locale,
+            TimeZone,
+            PricePrecision,
+            PriceMinMove);
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (!_isChartCreated)
+        {
+            return;
+        }
+
+        try
+        {
+            await JS.InvokeVoidAsync("tradingViewCharts.dispose", _chartId);
+        }
+        catch (JSDisconnectedException)
+        {
+            // Circuit already disconnected.
+        }
+    }
+
+    private sealed class TradingViewOhlcPoint
+    {
+        public long Time { get; set; }
+        public double Open { get; set; }
+        public double High { get; set; }
+        public double Low { get; set; }
+        public double Close { get; set; }
+        public long Volume { get; set; }
+    }
+}
