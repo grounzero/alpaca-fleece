@@ -70,15 +70,41 @@ public sealed class VolatilityRegimeDetectorTests
         var detector = new VolatilityRegimeDetector(_marketData, BuildOptions(), _logger);
 
         var low = detector.ClassifyFromVolatility("AAPL", 0.002m);
-        var high = detector.ClassifyFromVolatility("NVDA", 0.02m);
-        // confirm transition to extreme with second high-vol sample
+        var high = detector.ClassifyFromVolatility("NVDA", 0.012m);
+        // confirm transition to extreme with second above-high-threshold sample
+        var extremePending = detector.ClassifyFromVolatility("NVDA", 0.020m);
         var extreme = detector.ClassifyFromVolatility("NVDA", 0.021m);
 
         Assert.Equal(1.2m, low.PositionMultiplier);
         Assert.Equal(0.8m, low.StopMultiplier);
-        Assert.True(high.PositionMultiplier <= 1.0m);
+        Assert.Equal(VolatilityRegime.High, high.Regime);
+        Assert.Equal(0.6m, high.PositionMultiplier);
+        Assert.Equal(1.5m, high.StopMultiplier);
+        Assert.Equal(VolatilityRegime.High, extremePending.Regime);
         Assert.Equal(0.3m, extreme.PositionMultiplier);
         Assert.Equal(2.0m, extreme.StopMultiplier);
+    }
+
+    [Fact]
+    public async Task GetRegimeAsync_WithInsufficientBars_FallsBackToNormalWithoutLowStateSeed()
+    {
+        var options = BuildOptions();
+        var detector = new VolatilityRegimeDetector(_marketData, options, _logger);
+
+        var bars = new List<Quote>
+        {
+            new("AAPL", DateTimeOffset.UtcNow, 100m, 100m, 100m, 100m, 1000)
+        };
+        _marketData.GetBarsAsync("AAPL", "1m", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<Quote>>(bars.AsReadOnly()));
+
+        var fallback = await detector.GetRegimeAsync("AAPL");
+        var firstClassification = detector.ClassifyFromVolatility("AAPL", 0.012m);
+
+        Assert.Equal(VolatilityRegime.Normal, fallback.Regime);
+        Assert.Equal(1.0m, fallback.PositionMultiplier);
+        Assert.Equal(1.0m, fallback.StopMultiplier);
+        Assert.Equal(VolatilityRegime.High, firstClassification.Regime);
     }
 
     [Fact]

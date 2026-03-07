@@ -1081,4 +1081,103 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
         await _brokerMock.Received(1).SubmitOrderAsync(
             symbol, "BUY", expectedQty, 150m, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
+
+    [Fact]
+    public async Task SubmitSignalAsync_AutoSizing_DoesNotExceedMaxPositionCapAfterVolatilityMultiplier()
+    {
+        const string symbol = "VOLCAP1";
+        // Base qty = floor(100000 * 0.05 / 150) = 33
+        // Low-vol multiplier = 1.2 => 39, but must be capped back to 33.
+        const decimal expectedQty = 33m;
+
+        var options = new TradingOptions
+        {
+            RiskLimits = new RiskLimits
+            {
+                MaxPositionSizePct = 0.05m,
+                MaxRiskPerTradePct = 0.01m,
+                StopLossPct = 0.02m
+            },
+            VolatilityRegime = new VolatilityRegimeOptions
+            {
+                Enabled = true,
+                TransitionConfirmationBars = 1,
+                LowMaxVolatility = 0.001m,
+                NormalMaxVolatility = 0.003m,
+                HighMaxVolatility = 0.020m,
+                LowPositionMultiplier = 1.20m
+            }
+        };
+
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
+
+        var marketData = Substitute.For<IMarketDataClient>();
+        var volDetector = new VolatilityRegimeDetector(
+            marketData, options, Substitute.For<ILogger<VolatilityRegimeDetector>>());
+
+        var quotes = new List<Quote>();
+        var ts = DateTimeOffset.UtcNow.AddMinutes(-21);
+        decimal px = 100m;
+        for (var i = 0; i < 21; i++)
+        {
+            px *= 1.00005m;
+            quotes.Add(new Quote(symbol, ts.AddMinutes(i), px, px, px, px, 1000));
+        }
+        marketData.GetBarsAsync(symbol, "1m", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<Quote>>(quotes.AsReadOnly()));
+
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger,
+            volatilityRegimeDetector: volDetector);
+
+        var signal = new SignalEvent(
+            Symbol: symbol,
+            Side: "BUY",
+            Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.UtcNow,
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15),
+                FastSma: 150m,
+                MediumSma: 149m,
+                SlowSma: 145m,
+                Atr: 2m,
+                Confidence: 0.8m,
+                Regime: "TRENDING_UP",
+                RegimeStrength: 0.7m,
+                CurrentPrice: 150m,
+                BarsInRegime: 15));
+
+        _brokerMock.GetAccountAsync(Arg.Any<CancellationToken>())
+            .Returns(new AccountInfo(
+                AccountId: "test",
+                CashAvailable: 50000m,
+                CashReserved: 0m,
+                PortfolioValue: 100000m,
+                DayTradeCount: 0m,
+                IsTradable: true,
+                IsAccountRestricted: false,
+                FetchedAt: DateTimeOffset.UtcNow));
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+            Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo(
+                AlpacaOrderId: "alpaca_auto_cap",
+                ClientOrderId: "test",
+                Symbol: symbol,
+                Side: "BUY",
+                Quantity: expectedQty,
+                FilledQuantity: 0m,
+                AverageFilledPrice: 0m,
+                Status: OrderState.Accepted,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: null));
+
+        _ = await orderManager.SubmitSignalAsync(signal, 0m, 150m);
+
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            symbol, "BUY", expectedQty, 150m, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
 }

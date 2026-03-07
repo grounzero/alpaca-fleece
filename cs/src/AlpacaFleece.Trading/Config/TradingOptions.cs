@@ -501,22 +501,26 @@ public sealed class VolatilityRegimeOptions
     public decimal ExtremePositionMultiplier { get; set; } = 0.30m;
 
     /// <summary>
-    /// Stop-distance multiplier in Low volatility.
+    /// ATR exit-distance multiplier in Low volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal LowStopMultiplier { get; set; } = 0.80m;
 
     /// <summary>
-    /// Stop-distance multiplier in Normal volatility.
+    /// ATR exit-distance multiplier in Normal volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal NormalStopMultiplier { get; set; } = 1.00m;
 
     /// <summary>
-    /// Stop-distance multiplier in High volatility.
+    /// ATR exit-distance multiplier in High volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal HighStopMultiplier { get; set; } = 1.50m;
 
     /// <summary>
-    /// Stop-distance multiplier in Extreme volatility.
+    /// ATR exit-distance multiplier in Extreme volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal ExtremeStopMultiplier { get; set; } = 2.00m;
 
@@ -590,22 +594,26 @@ public sealed class VolatilityRegimeProfileOptions
     public decimal? ExtremePositionMultiplier { get; set; }
 
     /// <summary>
-    /// Stop-distance multiplier in Low volatility.
+    /// ATR exit-distance multiplier in Low volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal? LowStopMultiplier { get; set; }
 
     /// <summary>
-    /// Stop-distance multiplier in Normal volatility.
+    /// ATR exit-distance multiplier in Normal volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal? NormalStopMultiplier { get; set; }
 
     /// <summary>
-    /// Stop-distance multiplier in High volatility.
+    /// ATR exit-distance multiplier in High volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal? HighStopMultiplier { get; set; }
 
     /// <summary>
-    /// Stop-distance multiplier in Extreme volatility.
+    /// ATR exit-distance multiplier in Extreme volatility.
+    /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal? ExtremeStopMultiplier { get; set; }
 }

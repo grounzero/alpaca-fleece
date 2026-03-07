@@ -70,7 +70,7 @@ public sealed class VolatilityRegimeDetector(
             var lookback = Math.Max(5, profile.LookbackBars);
             var bars = await marketDataClient.GetBarsAsync(symbol, "1m", lookback + 1, ct);
             if (bars.Count < 2)
-                return ClassifyFromVolatility(symbol, 0m);
+                return BuildResult(VolatilityRegime.Normal, 0m, barsInRegime: 0, profile);
 
             var vol = CalculateRealisedVolatility(bars);
             return ClassifyFromVolatility(symbol, vol);

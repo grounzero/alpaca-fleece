@@ -22,6 +22,7 @@ namespace AlpacaFleece.Trading.Exits;
 /// <param name="logger">The logger instance.</param>
 /// <param name="options">The trading options configuration.</param>
 /// <param name="symbolClassifier">Optional symbol classifier for crypto/equity detection.</param>
+/// <param name="volatilityRegimeDetector">Optional volatility regime detector for ATR distance adaptation.</param>
 public class ExitManager(
     IPositionTracker positionTracker,
     IBrokerService brokerService,
@@ -171,20 +172,20 @@ public class ExitManager(
                     continue;
                 }
 
-                var stopMultiplier = 1.0m;
+                var atrDistanceMultiplier = 1.0m;
                 if (volatilityRegimeDetector is { Enabled: true })
                 {
                     var volRegime = await volatilityRegimeDetector.GetRegimeAsync(symbol, ct);
-                    stopMultiplier = volRegime.StopMultiplier;
+                    atrDistanceMultiplier = volRegime.StopMultiplier;
                     logger.LogDebug(
                         "Volatility stops for {symbol}: regime={regime} vol={vol:F6} bars={bars} stopMult={mult:F2}",
-                        symbol, volRegime.Regime, volRegime.RealisedVolatility, volRegime.BarsInRegime, stopMultiplier);
+                        symbol, volRegime.Regime, volRegime.RealisedVolatility, volRegime.BarsInRegime, atrDistanceMultiplier);
                 }
 
                 // ATR levels are valid — compute once (atr_computed = true).
                 // Fixed-% fallbacks (Rules 3 & 5) are mutually excluded when ATR is valid.
-                var atrStop = posData.EntryPrice - (posData.AtrValue * _options.AtrStopLossMultiplier * stopMultiplier);
-                var atrTarget = posData.EntryPrice + (posData.AtrValue * _options.AtrProfitTargetMultiplier * stopMultiplier);
+                var atrStop = posData.EntryPrice - (posData.AtrValue * _options.AtrStopLossMultiplier * atrDistanceMultiplier);
+                var atrTarget = posData.EntryPrice + (posData.AtrValue * _options.AtrProfitTargetMultiplier * atrDistanceMultiplier);
 
                 // Rule 1: ATR-based stop loss (highest priority)
                 if (currentPrice <= atrStop)
