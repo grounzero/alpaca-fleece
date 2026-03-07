@@ -35,26 +35,38 @@ public sealed class StateRepository(
     {
         try
         {
+            // Use transaction with Serializable isolation to atomically check-then-update/insert.
+            // Prevents TOCTOU race where two callers both read entity==null and both try to insert.
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            var entity = await dbContext.BotState
-                .FirstOrDefaultAsync(x => x.Key == key, ct);
-
-            if (entity == null)
+            using var transaction = await dbContext.Database.BeginTransactionAsync(System.Data.IsolationLevel.Serializable, ct);
+            try
             {
-                dbContext.BotState.Add(new BotStateEntity
+                var entity = await dbContext.BotState
+                    .FirstOrDefaultAsync(x => x.Key == key, ct);
+
+                if (entity == null)
                 {
-                    Key = key,
-                    Value = value,
-                    UpdatedAt = DateTimeOffset.UtcNow
-                });
-            }
-            else
-            {
-                entity.Value = value;
-                entity.UpdatedAt = DateTimeOffset.UtcNow;
-            }
+                    dbContext.BotState.Add(new BotStateEntity
+                    {
+                        Key = key,
+                        Value = value,
+                        UpdatedAt = DateTimeOffset.UtcNow
+                    });
+                }
+                else
+                {
+                    entity.Value = value;
+                    entity.UpdatedAt = DateTimeOffset.UtcNow;
+                }
 
-            await dbContext.SaveChangesAsync(ct);
+                await dbContext.SaveChangesAsync(ct);
+                await transaction.CommitAsync(ct);
+            }
+            catch
+            {
+                await transaction.RollbackAsync(ct);
+                throw;
+            }
         }
         catch (Exception ex)
         {
@@ -162,13 +174,11 @@ public sealed class StateRepository(
     {
         try
         {
-            // Idempotency: return silently if already exists
+            // Idempotency via DB unique constraint catch, not pre-check.
+            // The pre-check had a TOCTOU race: two concurrent calls could both read entity==null
+            // and both try to insert. Instead, let the unique index on ClientOrderId enforce it
+            // and catch the resulting DbUpdateException.
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
-            var existing = await dbContext.OrderIntents
-                .FirstOrDefaultAsync(x => x.ClientOrderId == clientOrderId, ct);
-            if (existing != null)
-                return;
-
             dbContext.OrderIntents.Add(new OrderIntentEntity
             {
                 ClientOrderId = clientOrderId,
@@ -183,9 +193,14 @@ public sealed class StateRepository(
 
             await dbContext.SaveChangesAsync(ct);
         }
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqliteEx && sqliteEx.SqliteErrorCode == 19)
+        {
+            // UNIQUE constraint violation on ClientOrderId: row already exists.
+            // This is the idempotent case — return silently.
+            logger.LogDebug("SaveOrderIntentAsync: {id} already exists (idempotent)", clientOrderId);
+        }
         catch (Exception ex)
         {
-            // No DbContext state kept between calls when using factory; nothing to clear here
             logger.LogError(ex, "Failed to save order intent {clientOrderId}", clientOrderId);
             throw new StateRepositoryException($"Failed to save order intent", ex);
         }
@@ -695,30 +710,58 @@ public sealed class StateRepository(
             await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
             var intents = await dbContext.OrderIntents
                 .ToListAsync(ct);
-
-            var dtos = new List<OrderIntentDto>(intents.Count);
-            foreach (var intent in intents)
-            {
-                dtos.Add(new OrderIntentDto(
-                    ClientOrderId: intent.ClientOrderId,
-                    AlpacaOrderId: intent.AlpacaOrderId,
-                    Symbol: intent.Symbol,
-                    Side: intent.Side,
-                    Quantity: intent.Quantity,
-                    LimitPrice: intent.LimitPrice,
-                    Status: Enum.Parse<OrderState>(intent.Status),
-                    CreatedAt: intent.CreatedAt,
-                    UpdatedAt: intent.UpdatedAt,
-                    AtrSeed: intent.AtrSeed));
-            }
-
-            return dtos.AsReadOnly();
+            return intents.Select(MapOrderIntentToDto).ToList().AsReadOnly();
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Failed to get all order intents");
             throw new StateRepositoryException($"Failed to get all order intents", ex);
         }
+    }
+
+    /// <summary>
+    /// Gets only non-terminal order intents (for fill reconciliation).
+    /// Filtered query to avoid full table scan.
+    /// </summary>
+    public async ValueTask<IReadOnlyList<OrderIntentDto>> GetNonTerminalOrderIntentsAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            var nonTerminalStatuses = new[]
+            {
+                nameof(OrderState.PendingNew), nameof(OrderState.Accepted),
+                nameof(OrderState.PartiallyFilled), nameof(OrderState.PendingCancel),
+                nameof(OrderState.PendingReplace),
+            };
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+            var intents = await dbContext.OrderIntents
+                .Where(x => nonTerminalStatuses.Contains(x.Status))
+                .ToListAsync(ct);
+            return intents.Select(MapOrderIntentToDto).ToList().AsReadOnly();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get non-terminal order intents");
+            throw new StateRepositoryException($"Failed to get non-terminal order intents", ex);
+        }
+    }
+
+    /// <summary>
+    /// Maps an OrderIntentEntity to OrderIntentDto.
+    /// </summary>
+    private static OrderIntentDto MapOrderIntentToDto(OrderIntentEntity intent)
+    {
+        return new OrderIntentDto(
+            ClientOrderId: intent.ClientOrderId,
+            AlpacaOrderId: intent.AlpacaOrderId,
+            Symbol: intent.Symbol,
+            Side: intent.Side,
+            Quantity: intent.Quantity,
+            LimitPrice: intent.LimitPrice,
+            Status: Enum.Parse<OrderState>(intent.Status),
+            CreatedAt: intent.CreatedAt,
+            UpdatedAt: intent.UpdatedAt,
+            AtrSeed: intent.AtrSeed);
     }
 
     /// <summary>

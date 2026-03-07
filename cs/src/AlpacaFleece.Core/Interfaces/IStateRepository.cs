@@ -151,6 +151,12 @@ public interface IStateRepository
     ValueTask<IReadOnlyList<OrderIntentDto>> GetAllOrderIntentsAsync(CancellationToken ct = default);
 
     /// <summary>
+    /// Gets only non-terminal order intents (PendingNew, Accepted, PartiallyFilled, PendingCancel, PendingReplace).
+    /// Used for fill reconciliation where only in-flight orders matter.
+    /// </summary>
+    ValueTask<IReadOnlyList<OrderIntentDto>> GetNonTerminalOrderIntentsAsync(CancellationToken ct = default);
+
+    /// <summary>
     /// Returns true if any order intent for the given symbol+side is in a non-terminal state
     /// (PendingNew, Accepted, PartiallyFilled, PendingCancel, PendingReplace).
     /// Used by the pending-order gate in OrderManager to prevent duplicate entries.

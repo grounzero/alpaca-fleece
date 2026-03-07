@@ -29,23 +29,24 @@ public sealed class ReconciliationService(
 
             var discrepancies = new List<string>();
 
-            // Rule 1: Alpaca terminal + SQLite non-terminal → auto-apply
-            foreach (var alpacaOrder in alpacaOrders.Where(o => IsTerminal(o.Status)))
+            // Rule 1: SQLite non-terminal but Alpaca already terminal → auto-apply
+            // (GetOpenOrdersAsync only returns open orders, so we must check SQLite non-terminal intents)
+            var nonTerminalSqlite = sqliteOrders.Where(so => !IsTerminal(so.Status) && so.AlpacaOrderId != null);
+            foreach (var sqliteOrder in nonTerminalSqlite)
             {
-                var sqliteOrder = sqliteOrders.FirstOrDefault(
-                    so => so.AlpacaOrderId == alpacaOrder.AlpacaOrderId);
-                if (sqliteOrder != null && !IsTerminal(sqliteOrder.Status))
-                {
-                    logger.LogInformation(
-                        "Auto-applying Alpaca terminal status to SQLite: {orderId} {status}",
-                        alpacaOrder.AlpacaOrderId, alpacaOrder.Status);
-                    await stateRepository.UpdateOrderIntentAsync(
-                        sqliteOrder.ClientOrderId,
-                        alpacaOrder.AlpacaOrderId,
-                        alpacaOrder.Status,
-                        DateTimeOffset.UtcNow,
-                        ct);
-                }
+                var brokerOrder = await brokerService.GetOrderByIdAsync(sqliteOrder.AlpacaOrderId!, ct);
+                if (brokerOrder == null || !IsTerminal(brokerOrder.Status))
+                    continue;  // Order not found on broker or still open — no action
+
+                logger.LogInformation(
+                    "Rule 1: auto-applying Alpaca terminal status to SQLite: {orderId} {status}",
+                    sqliteOrder.AlpacaOrderId, brokerOrder.Status);
+                await stateRepository.UpdateOrderIntentAsync(
+                    sqliteOrder.ClientOrderId,
+                    brokerOrder.AlpacaOrderId,
+                    brokerOrder.Status,
+                    DateTimeOffset.UtcNow,
+                    ct);
             }
 
             // Rule 2: SQLite terminal + Alpaca non-terminal → discrepancy
@@ -113,11 +114,13 @@ public sealed class ReconciliationService(
     {
         try
         {
-            var sqliteOrders = await stateRepository.GetAllOrderIntentsAsync(ct);
+            // Use filtered query — fill events only occur on non-terminal orders
+            var sqliteOrders = await stateRepository.GetNonTerminalOrderIntentsAsync(ct);
             var alpacaOrders = await brokerService.GetOpenOrdersAsync(ct);
 
             foreach (var sqliteOrder in sqliteOrders)
             {
+                // Already filtered to non-terminal, but keep the check for safety
                 if (sqliteOrder.Status.IsTerminal())
                     continue;
 

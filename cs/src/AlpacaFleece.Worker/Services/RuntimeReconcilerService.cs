@@ -242,7 +242,8 @@ public sealed class RuntimeReconcilerService(
             OrderState.Canceled => true,
             OrderState.Expired => true,
             OrderState.Rejected => true,
-            OrderState.PartiallyFilled => true,
+            // PartiallyFilled is NOT terminal — order may still receive more fills.
+            // Aligns with ReconciliationService.IsTerminal
             _ => false
         };
     }
