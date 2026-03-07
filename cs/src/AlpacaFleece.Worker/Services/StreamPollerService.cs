@@ -29,7 +29,7 @@ public sealed class StreamPollerService(
     private const int MaxRetries = 3;
     private const int BaseBackoffMs = 100;
     private const int OrderPollConcurrency = 10;
-    // H-3: After the first warmup poll, subsequent polls only need the latest bars.
+    // After the first warmup poll, subsequent polls only need the latest bars.
     // Full history (effectiveDepth) is requested until the symbol is warmed; then WarmPollDepth.
     private const int WarmPollDepth = 5;
     private int _backoffMs = BaseBackoffMs;
@@ -43,7 +43,7 @@ public sealed class StreamPollerService(
     // Prevents re-publishing bars we've already emitted in a previous poll cycle.
     private readonly Dictionary<string, DateTimeOffset> _lastPublishedBarTs = new();
 
-    // H-3: Symbols that have completed at least one full-depth warmup poll.
+    // Symbols that have completed at least one full-depth warmup poll.
     // Once warmed, only WarmPollDepth bars are requested per cycle to reduce API payload.
     private readonly HashSet<string> _warmedSymbols = new(StringComparer.OrdinalIgnoreCase);
 
@@ -248,7 +248,7 @@ public sealed class StreamPollerService(
         {
             try
             {
-                // H-3: Use full history depth on first (warmup) poll; subsequent polls fetch only WarmPollDepth bars.
+                // Use full history depth on first (warmup) poll; subsequent polls fetch only WarmPollDepth bars.
                 var symbolDepth = _warmedSymbols.Contains(symbol) ? WarmPollDepth : barDepth;
                 logger.LogDebug("Fetching bars for {Symbol} (depth={Depth}, warmed={Warmed})...", symbol, symbolDepth, _warmedSymbols.Contains(symbol));
                 var quotes = await marketDataClient.GetBarsAsync(symbol, timeframe, symbolDepth, ct);
@@ -291,7 +291,7 @@ public sealed class StreamPollerService(
                 if (newBars > 0)
                 {
                     _lastPublishedBarTs[symbol] = lastTs;
-                    // H-3: Mark symbol as warmed after first successful poll with new bars.
+                    // Mark symbol as warmed after first successful poll with new bars.
                     _warmedSymbols.Add(symbol);
                 }
 

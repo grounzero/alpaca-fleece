@@ -619,8 +619,6 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             "MSFT", "SELL", 50m, 0m, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
-    // ─── H-1: SubmitExit idempotency ─────────────────────────────────────────────
-
     [Fact]
     public async Task SubmitExit_AlreadySubmitted_SkipsBroker()
     {

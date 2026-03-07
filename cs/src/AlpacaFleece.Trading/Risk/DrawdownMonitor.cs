@@ -26,7 +26,7 @@ public sealed class DrawdownMonitor(
     private DateTimeOffset _lastPeakResetTime = DateTimeOffset.UtcNow;
     private int _consecutiveFailures = 0;
     private const int MaxConsecutiveFailures = 3;
-    // H-4: Track last failure time for decay logic.
+    // Track last failure time for decay logic.
     // If more than FailureDecayMinutes have passed since the last failure, the counter resets
     // so transient failures separated by long intervals do not accumulate to a false-positive Halt.
     private DateTimeOffset _lastFailureTime = DateTimeOffset.MinValue;
@@ -185,7 +185,7 @@ public sealed class DrawdownMonitor(
         {
             var now = DateTimeOffset.UtcNow;
 
-            // H-4: Decay logic — reset the failure counter if the last failure was more than
+            // Decay logic — reset the failure counter if the last failure was more than
             // FailureDecayMinutes ago. This prevents isolated transient failures from accumulating
             // to a false-positive fail-safe Halt over long periods.
             var timeSinceLastFailure = now - _lastFailureTime;
@@ -213,7 +213,7 @@ public sealed class DrawdownMonitor(
                         "DrawdownMonitor: fail-safe triggered after {count} failures, escalating from {previous} to HALT",
                         failureCount, previousLevel);
 
-                    // H-4: Persist the fail-safe Halt to DB so it survives a restart.
+                    // Persist the fail-safe Halt to DB so it survives a restart.
                     try
                     {
                         // Best-effort: read existing drawdown state so we don't overwrite

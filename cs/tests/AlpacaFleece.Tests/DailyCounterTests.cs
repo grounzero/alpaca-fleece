@@ -3,7 +3,7 @@ using System.Globalization;
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// Tests for H-4: Daily risk counters written on fills.
+/// Tests for daily risk counters written on fills.
 /// Covers IncrementDailyTradeCountAsync, AddDailyRealizedPnlAsync, and ResetDailyStateAsync.
 /// </summary>
 [Collection("Trading Database Collection")]

@@ -748,8 +748,6 @@ public sealed class StreamPollerTests
             Arg.Any<CancellationToken>());
     }
 
-    // ─── H-3: Reduced bar depth after warmup ────────────────────────────────────
-
     [Fact]
     public async Task BarPoll_AfterWarmup_RequestsReducedDepth()
     {

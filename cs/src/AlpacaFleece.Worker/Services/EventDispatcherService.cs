@@ -254,9 +254,8 @@ public sealed class EventDispatcherService(
 
     /// <summary>
     /// Handles signal events: OrderManager.SubmitSignalAsync (risk check is authoritative in OrderManager).
-    /// H-2: The risk check here was a duplicate — removed. OrderManager.SubmitSignalAsync calls
-    ///      RiskManager.CheckSignalAsync internally and throws RiskManagerException on SAFETY/RISK failure.
-    /// R-5: OrderManager is scoped; resolve from a new scope to avoid consuming a root-scoped instance.
+    /// RiskManager.CheckSignalAsync internally and throws RiskManagerException on SAFETY/RISK failure.
+    /// OrderManager is scoped; resolve from a new scope to avoid consuming a root-scoped instance.
     /// </summary>
     private async ValueTask HandleSignalEventAsync(SignalEvent signalEvent)
     {
