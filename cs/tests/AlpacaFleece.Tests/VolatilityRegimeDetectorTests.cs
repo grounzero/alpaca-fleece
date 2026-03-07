@@ -140,4 +140,68 @@ public sealed class VolatilityRegimeDetectorTests
         Assert.Equal(0.95m, crypto.PositionMultiplier);
         Assert.Equal(1.05m, crypto.StopMultiplier);
     }
+
+    [Fact]
+    public async Task GetRegimeAsync_SameLatestBar_DoesNotIncrementBarsInRegime()
+    {
+        var options = BuildOptions();
+        var detector = new VolatilityRegimeDetector(_marketData, options, _logger);
+
+        var t0 = DateTimeOffset.UtcNow;
+        var lowBars = new List<Quote>
+        {
+            new("AAPL", t0.AddMinutes(-2), 100m, 100m, 100m, 100m, 1000),
+            new("AAPL", t0.AddMinutes(-1), 100.10m, 100.10m, 100.10m, 100.10m, 1000),
+            new("AAPL", t0, 100.00m, 100.00m, 100.00m, 100.00m, 1000),
+        }.AsReadOnly();
+
+        _marketData.GetBarsAsync("AAPL", "1m", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new ValueTask<IReadOnlyList<Quote>>(lowBars),
+                new ValueTask<IReadOnlyList<Quote>>(lowBars));
+
+        var first = await detector.GetRegimeAsync("AAPL");
+        var second = await detector.GetRegimeAsync("AAPL");
+
+        Assert.Equal(VolatilityRegime.Low, first.Regime);
+        Assert.Equal(1, first.BarsInRegime);
+        Assert.Equal(VolatilityRegime.Low, second.Regime);
+        Assert.Equal(1, second.BarsInRegime);
+    }
+
+    [Fact]
+    public async Task GetRegimeAsync_SameLatestBar_OppositeVolatilityDoesNotAdvanceTransition()
+    {
+        var options = BuildOptions();
+        options.VolatilityRegime.TransitionConfirmationBars = 2;
+        var detector = new VolatilityRegimeDetector(_marketData, options, _logger);
+
+        var t0 = DateTimeOffset.UtcNow;
+        var lowBars = new List<Quote>
+        {
+            new("AAPL", t0.AddMinutes(-2), 100m, 100m, 100m, 100m, 1000),
+            new("AAPL", t0.AddMinutes(-1), 100.10m, 100.10m, 100.10m, 100.10m, 1000),
+            new("AAPL", t0, 100.00m, 100.00m, 100.00m, 100.00m, 1000),
+        }.AsReadOnly();
+
+        // Same latest timestamp as lowBars, but much higher realised volatility.
+        var extremeSameBar = new List<Quote>
+        {
+            new("AAPL", t0.AddMinutes(-2), 100m, 100m, 100m, 100m, 1000),
+            new("AAPL", t0.AddMinutes(-1), 104m, 104m, 104m, 104m, 1000),
+            new("AAPL", t0, 96m, 96m, 96m, 96m, 1000),
+        }.AsReadOnly();
+
+        _marketData.GetBarsAsync("AAPL", "1m", Arg.Any<int>(), Arg.Any<CancellationToken>())
+            .Returns(
+                new ValueTask<IReadOnlyList<Quote>>(lowBars),
+                new ValueTask<IReadOnlyList<Quote>>(extremeSameBar));
+
+        var first = await detector.GetRegimeAsync("AAPL");
+        var second = await detector.GetRegimeAsync("AAPL");
+
+        Assert.Equal(VolatilityRegime.Low, first.Regime);
+        Assert.Equal(VolatilityRegime.Low, second.Regime);
+        Assert.Equal(1, second.BarsInRegime);
+    }
 }

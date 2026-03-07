@@ -50,6 +50,7 @@ public sealed class VolatilityRegimeDetector(
         public int BarsInRegime { get; set; } = 0;
         public VolatilityRegime? PendingRegime { get; set; }
         public int PendingBars { get; set; }
+        public DateTimeOffset? LastObservedBarTimestamp { get; set; }
     }
 
     private readonly Dictionary<string, State> _states = new(StringComparer.OrdinalIgnoreCase);
@@ -73,7 +74,28 @@ public sealed class VolatilityRegimeDetector(
                 return BuildResult(VolatilityRegime.Normal, 0m, barsInRegime: 0, profile);
 
             var vol = CalculateRealisedVolatility(bars);
-            return ClassifyFromVolatility(symbol, vol);
+            var latestBarTimestamp = bars[^1].Timestamp;
+
+            lock (_stateLock)
+            {
+                if (_states.TryGetValue(symbol, out var existingState) &&
+                    existingState.LastObservedBarTimestamp == latestBarTimestamp)
+                {
+                    // Repeated poll for the same latest bar: return stable state without
+                    // advancing BarsInRegime/PendingBars on call frequency.
+                    return BuildResult(existingState.CurrentRegime, vol, existingState.BarsInRegime, profile);
+                }
+            }
+
+            var classified = ClassifyFromVolatility(symbol, vol);
+
+            lock (_stateLock)
+            {
+                if (_states.TryGetValue(symbol, out var updatedState))
+                    updatedState.LastObservedBarTimestamp = latestBarTimestamp;
+            }
+
+            return classified;
         }
         catch (Exception ex)
         {
