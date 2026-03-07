@@ -1,0 +1,76 @@
+.ohlc-page {
+    display: flex;
+    flex-direction: column;
+    flex: 1 1 auto;
+    min-height: 0;
+    gap: 4px;
+    overflow: hidden;
+}
+
+.ohlc-topbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.ohlc-toolbar {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(130px, 200px)) auto;
+    gap: 6px;
+    align-items: end;
+}
+
+.ohlc-chart-shell {
+    flex: 1;
+    min-height: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    background: var(--mud-palette-surface);
+    padding: 2px;
+    display: flex;
+    overflow: hidden;
+}
+
+.ohlc-chart-host {
+    display: flex;
+    flex-direction: column;
+    flex: 1;
+    min-height: 0;
+    height: 100%;
+}
+
+.ohlc-state {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+@media (max-width: 960px) {
+    .ohlc-page {
+        gap: 4px;
+    }
+
+    .ohlc-toolbar {
+        grid-template-columns: 1fr 1fr auto;
+    }
+
+    .ohlc-chart-shell {
+        min-height: 0;
+        padding: 2px;
+    }
+}
+
+@media (max-width: 700px) {
+    .ohlc-topbar {
+        align-items: stretch;
+    }
+
+    .ohlc-toolbar {
+        grid-template-columns: 1fr;
+        width: 100%;
+    }
+}

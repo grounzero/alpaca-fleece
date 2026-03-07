@@ -1,7 +1,7 @@
 @implements IAsyncDisposable
 @inject IJSRuntime JS
 
-<div id="@_containerId" style="width:100%; height:@HeightPx; min-height:220px;"></div>
+<div id="@_containerId" style="width:100%; height:@HeightPx; min-height:@MinHeightPx;"></div>
 
 @code {
     [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
@@ -17,6 +17,7 @@
     [Parameter] public bool ShowRightPriceScale { get; set; } = true;
     [Parameter] public bool? IsDarkTheme { get; set; }
     [Parameter] public string MainSeriesType { get; set; } = "candlestick";
+    [Parameter] public bool FillParentHeight { get; set; }
     [Parameter] public int Height { get; set; } = 400;
     [Parameter] public int PricePrecision { get; set; } = 2;
     [Parameter] public double PriceMinMove { get; set; } = 0.01;
@@ -30,7 +31,8 @@
     private bool _pendingSync = true;
     private string? _lastDataFingerprint;
 
-    private string HeightPx => $"{Math.Max(Height, 220)}px";
+    private string HeightPx => FillParentHeight ? "100%" : $"{Math.Max(Height, 220)}px";
+    private string MinHeightPx => FillParentHeight ? "0px" : "220px";
 
     protected override void OnParametersSet()
     {
@@ -93,7 +95,7 @@
             showRightPriceScale = ShowRightPriceScale,
             isDarkTheme = IsDarkTheme,
             mainSeriesType = MainSeriesType,
-            height = Height,
+            height = FillParentHeight ? (int?)null : Height,
             pricePrecision = PricePrecision,
             priceMinMove = PriceMinMove,
             locale = Locale,
@@ -152,6 +154,7 @@
             AutoFitContent,
             IsDarkTheme,
             Data.Count,
+            FillParentHeight,
             Height,
             Locale,
             TimeZone,

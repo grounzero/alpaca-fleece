@@ -184,48 +184,20 @@ else if (_vm is not null)
         </MudItem>
     </MudGrid>
 
-    @* ── Bars Chart ── *@
     <MudGrid Spacing="2" Class="mt-4">
         <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex align-center gap-3 mb-3">
-                    <MudText Typo="Typo.subtitle2">OHLC Bars</MudText>
-                    <MudSelect T="string" Value="_barsSymbol" ValueChanged="OnBarsSymbolChanged" Label="Symbol" Variant="Variant.Outlined" Dense="true"
-                               Style="width: 120px;" Disabled="_barsSymbols.Count == 0">
-                        @foreach (var symbol in _barsSymbols)
-                        {
-                            <MudSelectItem Value="@symbol">@symbol</MudSelectItem>
-                        }
-                    </MudSelect>
-                    <MudSelect T="string" Value="_barsTimeframe" ValueChanged="OnBarsTimeframeChanged" Label="Timeframe" Variant="Variant.Outlined" Dense="true"
-                               Style="width: 120px;" Disabled="_barsTimeframes.Count == 0">
-                        @foreach (var tf in _barsTimeframes)
-                        {
-                            <MudSelectItem Value="@tf">@tf</MudSelectItem>
-                        }
-                    </MudSelect>
-                </div>
-
-                @if (_loadingBars)
-                {
-                    <MudProgressLinear Indeterminate Color="Color.Primary" />
-                }
-                else if (_barsData.Count > 0)
-                {
-                    <TradingViewChart Symbol="@_barsSymbol"
-                                      Timeframe="@_barsTimeframe"
-                                      Data="@_barsData"
-                                      Height="400"
-                                      ShowVolume="true"
-                                      VolumeInSeparatePane="true"
-                                      ShowMarkers="true"
-                                      ShowPriceLine="true"
-                                      AutoFitContent="true" />
-                }
-                else
-                {
-                    <MudText Class="mud-text-secondary">No bars data available. Select symbol and timeframe.</MudText>
-                }
+            <MudPaper Class="pa-4 d-flex flex-wrap align-center gap-3" Elevation="1">
+                <MudText Typo="Typo.subtitle2">Charts</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Open the full-screen OHLC chart view for symbol and timeframe analysis.
+                </MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.ShowChart"
+                           Href="/charts">
+                    Open Chart Page
+                </MudButton>
             </MudPaper>
         </MudItem>
     </MudGrid>
@@ -239,16 +211,6 @@ else if (_vm is not null)
 
     private List<ChartSeries<double>> _equitySeries = [];
     private List<ChartSeries<double>> _dailyPnlSeries = [];
-
-    // Bars chart state
-    private IReadOnlyList<BarEntity> _barsData = [];
-    private List<string> _barsSymbols = [];
-    private List<string> _barsTimeframes = [];
-    private string _barsSymbol = "";
-    private string _barsTimeframe = "";
-    private bool _loadingBars;
-    private CancellationTokenSource? _barsLoadCts;
-    private static readonly TimeSpan BarsLoadDebounceDelay = TimeSpan.FromMilliseconds(300);
 
     protected override async Task OnInitializedAsync()
     {
@@ -298,24 +260,6 @@ else if (_vm is not null)
         {
             _vm = await DbService.GetDashboardAsync();
             BuildChartData();
-
-            // Load bars filters on first refresh
-            var (symbols, timeframes) = await DbService.GetBarsFiltersAsync();
-            _barsSymbols = symbols.ToList();
-            _barsTimeframes = timeframes.ToList();
-            if (_barsSymbols.Count > 0 && string.IsNullOrEmpty(_barsSymbol))
-            {
-                _barsSymbol = _barsSymbols[0];
-            }
-            if (_barsTimeframes.Count > 0 && string.IsNullOrEmpty(_barsTimeframe))
-            {
-                _barsTimeframe = _barsTimeframes[0];
-            }
-
-            if (_barsData.Count == 0 && !string.IsNullOrEmpty(_barsSymbol) && !string.IsNullOrEmpty(_barsTimeframe))
-            {
-                await LoadBarsChartAsync();
-            }
         }
         catch (Exception ex)
         {
@@ -374,96 +318,10 @@ else if (_vm is not null)
         };
     }
 
-    private async Task LoadBarsChartAsync(CancellationToken ct = default)
-    {
-        if (string.IsNullOrEmpty(_barsSymbol) || string.IsNullOrEmpty(_barsTimeframe))
-        {
-            Snackbar.Add("Please select symbol and timeframe", Severity.Warning);
-            return;
-        }
-
-        _loadingBars = true;
-        try
-        {
-            var bars = await DbService.GetRecentBarsAsync(_barsSymbol, _barsTimeframe, 50, ct);
-            if (bars.Count == 0)
-            {
-                _barsData = [];
-                return;
-            }
-
-            _barsData = bars;
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected when debounce cancels superseded requests.
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to load bars: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _loadingBars = false;
-        }
-    }
-
-    private async Task DebouncedLoadBarsChartAsync()
-    {
-        var cts = new CancellationTokenSource();
-        var previous = _barsLoadCts;
-        _barsLoadCts = cts;
-        previous?.Cancel();
-        previous?.Dispose();
-
-        try
-        {
-            await Task.Delay(BarsLoadDebounceDelay, cts.Token);
-            await LoadBarsChartAsync(cts.Token);
-        }
-        catch (OperationCanceledException)
-        {
-            // Expected when user changes selectors quickly.
-        }
-        finally
-        {
-            if (ReferenceEquals(_barsLoadCts, cts))
-            {
-                _barsLoadCts = null;
-            }
-
-            cts.Dispose();
-        }
-    }
-
-    private async Task OnBarsSymbolChanged(string value)
-    {
-        if (_barsSymbol == value)
-        {
-            return;
-        }
-
-        _barsSymbol = value;
-        await DebouncedLoadBarsChartAsync();
-    }
-
-    private async Task OnBarsTimeframeChanged(string value)
-    {
-        if (_barsTimeframe == value)
-        {
-            return;
-        }
-
-        _barsTimeframe = value;
-        await DebouncedLoadBarsChartAsync();
-    }
-
     public async ValueTask DisposeAsync()
     {
         _timerCts?.Cancel();
         _timerCts?.Dispose();
-        _barsLoadCts?.Cancel();
-        _barsLoadCts?.Dispose();
         await ValueTask.CompletedTask;
     }
 }

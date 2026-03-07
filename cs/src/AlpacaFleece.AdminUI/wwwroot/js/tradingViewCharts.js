@@ -57,8 +57,25 @@ window.tradingViewCharts = (() => {
         return Number.isFinite(number) ? number : fallback;
     }
 
-    function resolveHeight(value) {
-        return Math.max(toNumber(value, defaultChartHeight), 220);
+    function hasExplicitHeight(value) {
+        if (value === null || typeof value === "undefined") {
+            return false;
+        }
+
+        return Number.isFinite(Number(value));
+    }
+
+    function resolveHeight(value, container) {
+        if (hasExplicitHeight(value)) {
+            return Math.max(toNumber(value, defaultChartHeight), 220);
+        }
+
+        const containerHeight = Number(container && container.clientHeight);
+        if (Number.isFinite(containerHeight) && containerHeight > 0) {
+            return Math.max(Math.floor(containerHeight), 220);
+        }
+
+        return defaultChartHeight;
     }
 
     function toTime(value) {
@@ -176,7 +193,7 @@ window.tradingViewCharts = (() => {
     function buildChartOptions(options, themeColors, container) {
         return {
             width: Math.max(container.clientWidth || 0, 240),
-            height: resolveHeight(options.height),
+            height: resolveHeight(options.height, container),
             layout: {
                 background: { color: themeColors.background },
                 textColor: themeColors.text,
@@ -361,6 +378,79 @@ window.tradingViewCharts = (() => {
             || requestedVolumeInSeparatePane !== state.volumeInSeparatePane;
     }
 
+    function getContainerWidth(container) {
+        const rect = container.getBoundingClientRect();
+        const rectWidth = Number(rect && rect.width);
+        if (Number.isFinite(rectWidth) && rectWidth > 0) {
+            return Math.max(Math.floor(rectWidth), 240);
+        }
+
+        return Math.max(container.clientWidth || 0, 240);
+    }
+
+    function getContainerHeight(state) {
+        if (!state.autoHeight) {
+            return state.height;
+        }
+
+        return resolveHeight(undefined, state.container);
+    }
+
+    function applyContainerSize(state) {
+        if (!state || !state.chart || !state.container) {
+            return;
+        }
+
+        state.chart.applyOptions({
+            width: getContainerWidth(state.container),
+            height: getContainerHeight(state)
+        });
+    }
+
+    function scheduleSizeSync(state) {
+        if (!state) {
+            return;
+        }
+
+        if (typeof requestAnimationFrame === "function") {
+            requestAnimationFrame(() => {
+                applyContainerSize(state);
+                requestAnimationFrame(() => applyContainerSize(state));
+            });
+            return;
+        }
+
+        setTimeout(() => applyContainerSize(state), 0);
+    }
+
+    function applyPaneHeights(state) {
+        if (!state || !state.chart) {
+            return;
+        }
+
+        if (!state.showVolume || !state.volumeInSeparatePane) {
+            return;
+        }
+
+        if (typeof state.chart.panes !== "function") {
+            return;
+        }
+
+        const panes = state.chart.panes();
+        if (!Array.isArray(panes) || panes.length < 2) {
+            return;
+        }
+
+        const volumePane = panes[1];
+        if (!volumePane || typeof volumePane.setHeight !== "function") {
+            return;
+        }
+
+        const chartHeight = getContainerHeight(state);
+        const targetVolumeHeight = Math.max(72, Math.min(140, Math.floor(chartHeight * 0.2)));
+        volumePane.setHeight(targetVolumeHeight);
+    }
+
     function create(chartId, containerId, options) {
         const effectiveOptions = options || {};
         const container = document.getElementById(containerId);
@@ -405,7 +495,8 @@ window.tradingViewCharts = (() => {
             mainSeriesType,
             showVolume,
             volumeInSeparatePane,
-            height: resolveHeight(effectiveOptions.height),
+            autoHeight: !hasExplicitHeight(effectiveOptions.height),
+            height: resolveHeight(effectiveOptions.height, container),
             resizeObserver: null,
             themeColors,
             priceLines: []
@@ -413,10 +504,7 @@ window.tradingViewCharts = (() => {
 
         if (typeof ResizeObserver !== "undefined") {
             const resizeObserver = new ResizeObserver(() => {
-                chart.applyOptions({
-                    width: Math.max(container.clientWidth || 0, 240),
-                    height: state.height
-                });
+                applyContainerSize(state);
             });
 
             resizeObserver.observe(container);
@@ -424,7 +512,9 @@ window.tradingViewCharts = (() => {
         }
 
         charts.set(chartId, state);
+        scheduleSizeSync(state);
         updateData(chartId, effectiveOptions);
+        applyPaneHeights(state);
         return true;
     }
 
@@ -439,12 +529,17 @@ window.tradingViewCharts = (() => {
             return create(chartId, state.container.id, effectiveOptions);
         }
 
-        state.height = resolveHeight(effectiveOptions.height);
+        state.autoHeight = !hasExplicitHeight(effectiveOptions.height);
+        state.height = state.autoHeight
+            ? resolveHeight(undefined, state.container)
+            : resolveHeight(effectiveOptions.height, state.container);
         const theme = resolveTheme(effectiveOptions);
         state.themeColors = getThemeColors(theme);
 
         state.chart.applyOptions(buildChartOptions(effectiveOptions, state.themeColors, state.container));
+        applyContainerSize(state);
         state.mainSeries.applyOptions(buildMainSeriesOptions(state.mainSeriesType, state.themeColors, effectiveOptions));
+        applyPaneHeights(state);
 
         return updateData(chartId, effectiveOptions);
     }

@@ -1,4 +1,5 @@
 @inherits LayoutComponentBase
+@inject NavigationManager NavManager
 
 <MudThemeProvider Theme="_theme" IsDarkMode="true" />
 <MudPopoverProvider />
@@ -51,7 +52,7 @@
     </MudDrawer>
 
     <MudMainContent>
-        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="pa-4 pa-md-6">
+        <MudContainer MaxWidth="MaxWidth.ExtraLarge" Class="@ContentContainerClass">
             @Body
         </MudContainer>
     </MudMainContent>
@@ -62,6 +63,11 @@
 
     private bool _drawerOpen = true;
     private ConnectionState _connectionState = ConnectionState.Connected;
+    private bool IsChartsRoute => NavManager.ToBaseRelativePath(NavManager.Uri)
+        .StartsWith("charts", StringComparison.OrdinalIgnoreCase);
+    private string ContentContainerClass => IsChartsRoute
+        ? "app-content-container app-content-container-charts pa-2 pa-md-2"
+        : "app-content-container pa-4 pa-md-6";
 
     protected override void OnInitialized()
     {
