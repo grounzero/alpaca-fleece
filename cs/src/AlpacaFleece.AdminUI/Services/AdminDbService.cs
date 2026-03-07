@@ -351,4 +351,34 @@ public sealed class AdminDbService(
             .OrderByDescending(f => f.Id)
             .ToListAsync(ct);
     }
+
+    public async ValueTask<IReadOnlyList<BarEntity>> GetRecentBarsAsync(
+        string symbol, string timeframe, int limit = 50, CancellationToken ct = default)
+    {
+        await using var db = await dbFactory.CreateDbContextAsync(ct);
+        var bars = await db.Bars.AsNoTracking()
+            .Where(b => b.Symbol == symbol && b.Timeframe == timeframe)
+            .OrderByDescending(b => b.Id)
+            .Take(limit)
+            .ToListAsync(ct);
+        // Reverse to chronological order
+        return bars.AsEnumerable().Reverse().ToList();
+    }
+
+    public async ValueTask<(IReadOnlyList<string> Symbols, IReadOnlyList<string> Timeframes)>
+        GetBarsFiltersAsync(CancellationToken ct = default)
+    {
+        try
+        {
+            await using var db = await dbFactory.CreateDbContextAsync(ct);
+            var symbols = await db.Bars.Select(b => b.Symbol).Distinct().OrderBy(s => s).ToListAsync(ct);
+            var timeframes = await db.Bars.Select(b => b.Timeframe).Distinct().OrderBy(t => t).ToListAsync(ct);
+            return (symbols, timeframes);
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to load bars filters");
+            return ([], []);
+        }
+    }
 }
