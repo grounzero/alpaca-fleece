@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// Tests for EventBus (dual-channel, drop on full, exit never drops).
+/// Tests for EventBus (normal channel may drop on full, exit/order updates never drop).
 /// </summary>
 public sealed class EventBusTests
 {
@@ -68,6 +68,63 @@ public sealed class EventBusTests
         // Last one should be dropped
         Assert.False(published);
         Assert.True(eventBus.DroppedCount > 0);
+    }
+
+    [Fact]
+    public async Task PublishAsync_OrderUpdateNeverDrops_WhenNormalChannelIsFull()
+    {
+        const int capacity = 2;
+        var eventBus = new EventBusService(normalChannelCapacity: capacity);
+
+        // Fill bounded normal channel.
+        for (var i = 0; i < capacity; i++)
+        {
+            var barEvent = new BarEvent(
+                Symbol: $"SYM{i}",
+                Timeframe: "1m",
+                Timestamp: DateTimeOffset.UtcNow,
+                Open: 100m,
+                High: 101m,
+                Low: 99m,
+                Close: 100.5m,
+                Volume: 1000);
+            _ = await eventBus.PublishAsync(barEvent);
+        }
+
+        var orderUpdate = new OrderUpdateEvent(
+            AlpacaOrderId: "alpaca-1",
+            ClientOrderId: "client-1",
+            Symbol: "AAPL",
+            Side: "BUY",
+            FilledQuantity: 10m,
+            RemainingQuantity: 0m,
+            AverageFilledPrice: 100m,
+            Status: OrderState.Filled,
+            UpdatedAt: DateTimeOffset.UtcNow);
+
+        var published = await eventBus.PublishAsync(orderUpdate);
+        Assert.True(published);
+
+        var processedOrderUpdates = new List<OrderUpdateEvent>();
+        using var cts = new CancellationTokenSource(TimeSpan.FromSeconds(1));
+        try
+        {
+            await eventBus.DispatchAsync(
+                async @event =>
+                {
+                    if (@event is OrderUpdateEvent e)
+                        processedOrderUpdates.Add(e);
+                    await ValueTask.CompletedTask;
+                },
+                cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected.
+        }
+
+        Assert.Single(processedOrderUpdates);
+        Assert.Equal("client-1", processedOrderUpdates[0].ClientOrderId);
     }
 
     [Fact]

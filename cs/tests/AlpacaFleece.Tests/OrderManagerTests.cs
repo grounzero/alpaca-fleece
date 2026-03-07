@@ -655,10 +655,96 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SubmitExitAsync_ReopenSameDay_SubmitsNewExitAfterPriorTerminalExit()
+    {
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var submittedClientIds = new List<string>();
+        _brokerMock.SubmitOrderAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+                Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                var clientId = callInfo.ArgAt<string>(4);
+                submittedClientIds.Add(clientId);
+                return new ValueTask<OrderInfo>(new OrderInfo(
+                    AlpacaOrderId: $"alpaca_{submittedClientIds.Count}",
+                    ClientOrderId: clientId,
+                    Symbol: "AAPL",
+                    Side: "SELL",
+                    Quantity: 10m,
+                    FilledQuantity: 0m,
+                    AverageFilledPrice: 0m,
+                    Status: OrderState.Accepted,
+                    CreatedAt: DateTimeOffset.UtcNow,
+                    UpdatedAt: null));
+            });
+
+        await orderManager.SubmitExitAsync("AAPL", "SELL", 10m, 0m);
+        Assert.Single(submittedClientIds);
+
+        // Mark first exit terminal (e.g., position closed), then simulate a same-day re-entry and new exit.
+        await fixture.StateRepository.UpdateOrderIntentAsync(
+            submittedClientIds[0],
+            "alpaca_1",
+            OrderState.Filled,
+            DateTimeOffset.UtcNow);
+
+        await orderManager.SubmitExitAsync("AAPL", "SELL", 10m, 0m);
+
+        Assert.Equal(2, submittedClientIds.Count);
+        Assert.NotEqual(submittedClientIds[0], submittedClientIds[1]);
+        await _brokerMock.Received(2).SubmitOrderAsync(
+            "AAPL", "SELL", 10m, 0m, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubmitExitAsync_RecoversPersistedUnsubmittedIntent()
+    {
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var recoveredClientOrderId = "recovered_exit_id";
+        _ = await fixture.StateRepository.SaveOrderIntentAsync(
+            recoveredClientOrderId, "NVDA", "SELL", 5m, 0m, DateTimeOffset.UtcNow);
+
+        string? submittedClientOrderId = null;
+        _brokerMock.SubmitOrderAsync(
+                Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(),
+                Arg.Any<decimal>(), Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(callInfo =>
+            {
+                submittedClientOrderId = callInfo.ArgAt<string>(4);
+                return new ValueTask<OrderInfo>(new OrderInfo(
+                    AlpacaOrderId: "alpaca_recovered",
+                    ClientOrderId: submittedClientOrderId,
+                    Symbol: "NVDA",
+                    Side: "SELL",
+                    Quantity: 5m,
+                    FilledQuantity: 0m,
+                    AverageFilledPrice: 0m,
+                    Status: OrderState.Accepted,
+                    CreatedAt: DateTimeOffset.UtcNow,
+                    UpdatedAt: null));
+            });
+
+        await orderManager.SubmitExitAsync("NVDA", "SELL", 5m, 0m);
+
+        Assert.Equal(recoveredClientOrderId, submittedClientOrderId);
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            "NVDA", "SELL", 5m, 0m, recoveredClientOrderId, Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SubmitExitAsync_ConcurrentCallers_OnlyOneReachesBroker()
     {
         // Test that concurrent calls to SubmitExitAsync for the same symbol
-        // result in only one broker submission (idempotent per day).
+        // result in only one broker submission.
         // Arrange
         var symbol = "EURUSD";
         var side = "SELL";
@@ -688,7 +774,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus,
             options, _logger);
 
-        // Act: call SubmitExitAsync twice concurrently for the same symbol/day
+        // Act: call SubmitExitAsync twice concurrently for the same symbol
         var task1 = orderManager.SubmitExitAsync(symbol, side, quantity, limitPrice);
         var task2 = orderManager.SubmitExitAsync(symbol, side, quantity, limitPrice);
 
