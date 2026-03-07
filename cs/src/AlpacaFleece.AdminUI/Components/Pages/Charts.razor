@@ -1,0 +1,200 @@
+@page "/charts"
+@rendermode InteractiveServer
+@attribute [Authorize]
+@implements IAsyncDisposable
+@inject AdminDbService DbService
+@inject ISnackbar Snackbar
+
+<PageTitle>OHLC Chart — AlpacaFleece Admin</PageTitle>
+
+<div class="ohlc-page">
+    <div class="ohlc-topbar">
+        <MudText Typo="Typo.h6">OHLC Chart</MudText>
+        <div class="ohlc-toolbar">
+            <MudSelect T="string" Value="_barsSymbol" ValueChanged="OnBarsSymbolChanged" Label="Symbol" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Class="ohlc-select" Disabled="_barsSymbols.Count == 0">
+                @foreach (var symbol in _barsSymbols)
+                {
+                    <MudSelectItem Value="@symbol">@symbol</MudSelectItem>
+                }
+            </MudSelect>
+
+            <MudSelect T="string" Value="_barsTimeframe" ValueChanged="OnBarsTimeframeChanged" Label="Timeframe" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true"
+                       Class="ohlc-select" Disabled="_barsTimeframes.Count == 0">
+                @foreach (var tf in _barsTimeframes)
+                {
+                    <MudSelectItem Value="@tf">@tf</MudSelectItem>
+                }
+            </MudSelect>
+
+        </div>
+    </div>
+
+    <div class="ohlc-chart-shell">
+        @if (_loadingBars && _barsData.Count == 0)
+        {
+            <div class="ohlc-state">
+                <MudProgressCircular Indeterminate="true" Color="Color.Primary" />
+            </div>
+        }
+        else if (_loadError is not null)
+        {
+            <MudAlert Severity="Severity.Error">@_loadError</MudAlert>
+        }
+        else if (_barsData.Count > 0)
+        {
+            <div class="ohlc-chart-host">
+                <TradingViewChart Symbol="@_barsSymbol"
+                                  Timeframe="@_barsTimeframe"
+                                  Data="@_barsData"
+                                  FillParentHeight="true"
+                                  ShowVolume="true"
+                                  VolumeInSeparatePane="true"
+                                  ShowMarkers="true"
+                                  ShowPriceLine="true"
+                                  AutoFitContent="true" />
+            </div>
+        }
+        else
+        {
+            <div class="ohlc-state">
+                <MudText Class="mud-text-secondary">No bars data available for this selection.</MudText>
+            </div>
+        }
+    </div>
+</div>
+
+@code {
+    private IReadOnlyList<BarEntity> _barsData = [];
+    private List<string> _barsSymbols = [];
+    private List<string> _barsTimeframes = [];
+    private string _barsSymbol = "";
+    private string _barsTimeframe = "";
+    private bool _loadingBars;
+    private string? _loadError;
+    private CancellationTokenSource? _barsLoadCts;
+    private static readonly TimeSpan BarsLoadDebounceDelay = TimeSpan.FromMilliseconds(300);
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadFiltersAndInitialChartAsync();
+    }
+
+    private async Task LoadFiltersAndInitialChartAsync()
+    {
+        _loadError = null;
+
+        try
+        {
+            var (symbols, timeframes) = await DbService.GetBarsFiltersAsync();
+            _barsSymbols = symbols.ToList();
+            _barsTimeframes = timeframes.ToList();
+
+            if (_barsSymbols.Count > 0 && string.IsNullOrEmpty(_barsSymbol))
+            {
+                _barsSymbol = _barsSymbols[0];
+            }
+
+            if (_barsTimeframes.Count > 0 && string.IsNullOrEmpty(_barsTimeframe))
+            {
+                _barsTimeframe = _barsTimeframes[0];
+            }
+
+            if (!string.IsNullOrEmpty(_barsSymbol) && !string.IsNullOrEmpty(_barsTimeframe))
+            {
+                await LoadBarsChartAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load chart filters: {ex.Message}";
+        }
+    }
+
+    private async Task LoadBarsChartAsync(CancellationToken ct = default)
+    {
+        if (string.IsNullOrEmpty(_barsSymbol) || string.IsNullOrEmpty(_barsTimeframe))
+        {
+            return;
+        }
+
+        _loadError = null;
+        _loadingBars = true;
+
+        try
+        {
+            var bars = await DbService.GetRecentBarsAsync(_barsSymbol, _barsTimeframe, 150, ct);
+            _barsData = bars;
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when debounce cancels superseded requests.
+        }
+        catch (Exception ex)
+        {
+            _loadError = $"Failed to load bars: {ex.Message}";
+            Snackbar.Add(_loadError, Severity.Error);
+        }
+        finally
+        {
+            _loadingBars = false;
+        }
+    }
+
+    private async Task DebouncedLoadBarsChartAsync()
+    {
+        var cts = new CancellationTokenSource();
+        var previous = _barsLoadCts;
+        _barsLoadCts = cts;
+        previous?.Cancel();
+        previous?.Dispose();
+
+        try
+        {
+            await Task.Delay(BarsLoadDebounceDelay, cts.Token);
+            await LoadBarsChartAsync(cts.Token);
+        }
+        catch (OperationCanceledException)
+        {
+            // Expected when user changes selectors quickly.
+        }
+        finally
+        {
+            if (ReferenceEquals(_barsLoadCts, cts))
+            {
+                _barsLoadCts = null;
+            }
+
+            cts.Dispose();
+        }
+    }
+
+    private async Task OnBarsSymbolChanged(string value)
+    {
+        if (_barsSymbol == value)
+        {
+            return;
+        }
+
+        _barsSymbol = value;
+        await DebouncedLoadBarsChartAsync();
+    }
+
+    private async Task OnBarsTimeframeChanged(string value)
+    {
+        if (_barsTimeframe == value)
+        {
+            return;
+        }
+
+        _barsTimeframe = value;
+        await DebouncedLoadBarsChartAsync();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _barsLoadCts?.Cancel();
+        _barsLoadCts?.Dispose();
+        await ValueTask.CompletedTask;
+    }
+}

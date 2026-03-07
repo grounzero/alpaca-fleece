@@ -184,48 +184,20 @@ else if (_vm is not null)
         </MudItem>
     </MudGrid>
 
-    @* ── Bars Chart ── *@
     <MudGrid Spacing="2" Class="mt-4">
         <MudItem xs="12">
-            <MudPaper Class="pa-4" Elevation="2">
-                <div class="d-flex align-center gap-3 mb-3">
-                    <MudText Typo="Typo.subtitle2">OHLC Bars</MudText>
-                    <MudSelect T="string" @bind-Value="_barsSymbol" Label="Symbol" Variant="Variant.Outlined" Dense="true"
-                               Style="width: 120px;" Disabled="_barsSymbols.Count == 0">
-                        @foreach (var symbol in _barsSymbols)
-                        {
-                            <MudSelectItem Value="@symbol">@symbol</MudSelectItem>
-                        }
-                    </MudSelect>
-                    <MudSelect T="string" @bind-Value="_barsTimeframe" Label="Timeframe" Variant="Variant.Outlined" Dense="true"
-                               Style="width: 120px;" Disabled="_barsTimeframes.Count == 0">
-                        @foreach (var tf in _barsTimeframes)
-                        {
-                            <MudSelectItem Value="@tf">@tf</MudSelectItem>
-                        }
-                    </MudSelect>
-                    <MudButton Variant="Variant.Outlined" Size="Size.Small" OnClick="@LoadBarsChartAsync" Disabled="_loadingBars">
-                        Load
-                    </MudButton>
-                </div>
-
-                @if (_loadingBars)
-                {
-                    <MudProgressLinear Indeterminate Color="Color.Primary" />
-                }
-                else if (_barsSeries.Count > 0)
-                {
-                    <MudChart ChartType="ChartType.Line"
-                              ChartSeries="@_barsSeries"
-                              ChartLabels="@_barsLabels"
-                              Width="100%"
-                              Height="400px"
-                              ChartOptions="@_barsChartOptions" />
-                }
-                else
-                {
-                    <MudText Class="mud-text-secondary">No bars data available. Select symbol and timeframe, then click Load.</MudText>
-                }
+            <MudPaper Class="pa-4 d-flex flex-wrap align-center gap-3" Elevation="1">
+                <MudText Typo="Typo.subtitle2">Charts</MudText>
+                <MudText Typo="Typo.body2" Class="mud-text-secondary">
+                    Open the full-screen OHLC chart view for symbol and timeframe analysis.
+                </MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Filled"
+                           Color="Color.Primary"
+                           StartIcon="@Icons.Material.Filled.ShowChart"
+                           Href="/charts">
+                    Open Chart Page
+                </MudButton>
             </MudPaper>
         </MudItem>
     </MudGrid>
@@ -238,32 +210,7 @@ else if (_vm is not null)
     private CancellationTokenSource? _timerCts;
 
     private List<ChartSeries<double>> _equitySeries = [];
-    private string[] _equityLabels = [];
     private List<ChartSeries<double>> _dailyPnlSeries = [];
-    private string[] _dailyPnlLabels = [];
-
-    private ChartOptions _lineOptions = new()
-    {
-        ChartPalette = ["#00BFA5"]
-    };
-
-    private ChartOptions _barOptions = new()
-    {
-        ChartPalette = ["#4FC3F7", "#ef5350"]
-    };
-
-    // Bars chart state
-    private List<ChartSeries<double>> _barsSeries = [];
-    private string[] _barsLabels = [];
-    private List<string> _barsSymbols = [];
-    private List<string> _barsTimeframes = [];
-    private string _barsSymbol = "";
-    private string _barsTimeframe = "";
-    private bool _loadingBars;
-    private ChartOptions _barsChartOptions = new()
-    {
-        ChartPalette = ["#FF9800", "#2196F3", "#4CAF50", "#F44336"]  // Open, High, Low, Close
-    };
 
     protected override async Task OnInitializedAsync()
     {
@@ -313,19 +260,6 @@ else if (_vm is not null)
         {
             _vm = await DbService.GetDashboardAsync();
             BuildChartData();
-
-            // Load bars filters on first refresh
-            var (symbols, timeframes) = await DbService.GetBarsFiltersAsync();
-            _barsSymbols = symbols.ToList();
-            _barsTimeframes = timeframes.ToList();
-            if (_barsSymbols.Count > 0 && string.IsNullOrEmpty(_barsSymbol))
-            {
-                _barsSymbol = _barsSymbols[0];
-            }
-            if (_barsTimeframes.Count > 0 && string.IsNullOrEmpty(_barsTimeframe))
-            {
-                _barsTimeframe = _barsTimeframes[0];
-            }
         }
         catch (Exception ex)
         {
@@ -352,7 +286,6 @@ else if (_vm is not null)
                     Data = _vm.EquityCurve.Select(p => (double)p.Value).ToArray()
                 }
             ];
-            _equityLabels = [.. _vm.EquityCurve.Select(p => p.Timestamp.LocalDateTime.ToString("MM/dd"))];
         }
 
         // Daily P&L
@@ -366,7 +299,6 @@ else if (_vm is not null)
                     Data = _vm.DailyPnl30.Select(p => (double)p.Pnl).ToArray()
                 }
             ];
-            _dailyPnlLabels = [.. _vm.DailyPnl30.Select(p => p.Date)];
         }
     }
 
@@ -384,53 +316,6 @@ else if (_vm is not null)
         {
             ChartPalette = ["#4FC3F7", "#ef5350"]
         };
-    }
-
-    private async Task LoadBarsChartAsync()
-    {
-        if (string.IsNullOrEmpty(_barsSymbol) || string.IsNullOrEmpty(_barsTimeframe))
-        {
-            Snackbar.Add("Please select symbol and timeframe", Severity.Warning);
-            return;
-        }
-
-        _loadingBars = true;
-        try
-        {
-            var bars = await DbService.GetRecentBarsAsync(_barsSymbol, _barsTimeframe, 50);
-            if (bars.Count == 0)
-            {
-                _barsSeries = [];
-                _barsLabels = [];
-                return;
-            }
-
-            // Build OHLC series
-            var openData = bars.Select(b => (double)b.Open).ToArray();
-            var highData = bars.Select(b => (double)b.High).ToArray();
-            var lowData = bars.Select(b => (double)b.Low).ToArray();
-            var closeData = bars.Select(b => (double)b.Close).ToArray();
-
-            _barsSeries =
-            [
-                new ChartSeries<double> { Name = "Open", Data = openData },
-                new ChartSeries<double> { Name = "High", Data = highData },
-                new ChartSeries<double> { Name = "Low", Data = lowData },
-                new ChartSeries<double> { Name = "Close", Data = closeData }
-            ];
-
-            _barsLabels = bars
-                .Select(b => b.Timestamp.ToString("HH:mm"))
-                .ToArray();
-        }
-        catch (Exception ex)
-        {
-            Snackbar.Add($"Failed to load bars: {ex.Message}", Severity.Error);
-        }
-        finally
-        {
-            _loadingBars = false;
-        }
     }
 
     public async ValueTask DisposeAsync()
