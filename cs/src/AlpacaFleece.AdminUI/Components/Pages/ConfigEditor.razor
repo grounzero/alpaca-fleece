@@ -36,7 +36,9 @@ else if (_draft is not null)
         <MudTabs @bind-ActivePanelIndex="_activeTab" Elevation="2" Rounded ApplyEffectsToContainer>
             @* ── Visual Tab ── *@
             <MudTabPanel Text="Visual">
-                <MudPaper Class="pa-4" Elevation="0">
+                <MudPaper Class="pa-4 config-visual-scroll"
+                          Style="max-height: 70vh; overflow-y: auto; overflow-x: hidden; scrollbar-gutter: stable;"
+                          Elevation="0">
                     <MudExpansionPanels MultiExpansion="true">
                         <MudExpansionPanel Text="Danger Zone" @bind-Expanded="_dangerExpanded">
                             <DangerZoneSection />

@@ -63,10 +63,18 @@ public static class ConfigDescriptions
                 "Only take long signals when the daily close is above its SMA. Reduces counter-trend entries.",
             ["SignalFilters.EnableVolumeFilter"] =
                 "Only take signals when current bar volume exceeds the rolling average by the configured multiplier.",
+            ["SignalFilters.DailySmaPeriod"] =
+                "Lookback period (in daily bars) for the SMA used by the daily trend filter.",
+            ["SignalFilters.VolumeLookbackPeriod"] =
+                "Number of bars used to compute average volume for the volume confirmation filter.",
+            ["SignalFilters.VolumeMultiplier"] =
+                "Current bar volume must be at least average volume multiplied by this value.",
             ["Correlation.MaxCorrelation"] =
                 "Maximum pairwise correlation allowed between a new position and any existing position.",
             ["Correlation.MaxSectorPct"] =
                 "Maximum percentage of max concurrent positions that may be in the same GICS sector.",
+            ["Correlation.MaxAssetClassPct"] =
+                "Maximum percentage of max concurrent positions that may be in the same asset class.",
             ["VolatilityRegime.Enabled"] =
                 "Enables realised-volatility regime detection and applies regime-based sizing and ATR stop multipliers.",
             ["VolatilityRegime.LookbackBars"] =

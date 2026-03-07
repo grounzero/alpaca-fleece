@@ -143,6 +143,25 @@ body {
     border-left: 3px solid #FFA726;
 }
 
+/* Config editor visual tab: keep accordion content reachable and improve header/body contrast. */
+.config-visual-scroll .mud-expand-panel-header {
+    background-color: rgba(255, 255, 255, 0.06);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-bottom: 0;
+}
+
+.config-visual-scroll .mud-expand-panel-content {
+    background-color: rgba(255, 255, 255, 0.02);
+    border: 1px solid rgba(255, 255, 255, 0.10);
+    border-top: 0;
+}
+
+.config-visual-scroll .mud-expand-panel {
+    border-radius: 6px;
+    margin-bottom: 8px;
+    overflow: hidden;
+}
+
 /* ─── JSON view ──────────────────────────────────────────── */
 .json-view {
     font-family: 'JetBrains Mono', 'Fira Code', 'Cascadia Code', monospace;

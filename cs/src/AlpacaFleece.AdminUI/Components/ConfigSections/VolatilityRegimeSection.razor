@@ -85,6 +85,10 @@
 
         <MudItem xs="12"><MudText Typo="Typo.subtitle2">Position Multipliers</MudText></MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOW POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LowPositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityLowPositionMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -92,6 +96,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">NORMAL POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.NormalPositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityNormalPositionMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -99,6 +107,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HIGH POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HighPositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityHighPositionMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -106,6 +118,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">EXTREME POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.ExtremePositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityExtremePositionMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -115,6 +131,10 @@
 
         <MudItem xs="12"><MudText Typo="Typo.subtitle2">Stop Multipliers</MudText></MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOW ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LowStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityLowStopMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -122,6 +142,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">NORMAL ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.NormalStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityNormalStopMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -129,6 +153,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HIGH ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HighStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityHighStopMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -136,6 +164,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">EXTREME ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.ExtremeStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              @bind-Value="Draft.VolatilityExtremeStopMultiplier"
                              @bind-Value:after="MarkDirty"
@@ -238,18 +270,30 @@
     private RenderFragment ProfileEditors(string label, bool equity) => @<text>
         <MudItem xs="12"><MudText Typo="Typo.subtitle2">@label Profile</MudText></MudItem>
         <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOOKBACK BARS</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LookbackBars" />
+            </div>
             <SliderWithZones Min="5" Max="240" Step="5"
                              Value="@(equity ? Draft.EquityVolatilityLookbackBars : Draft.CryptoVolatilityLookbackBars)"
                              ValueChanged="@(v => SetLookback(equity, (int)v))"
                              Label="Lookback Bars" />
         </MudItem>
         <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">TRANSITION CONFIRMATION</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.TransitionConfirmationBars" />
+            </div>
             <SliderWithZones Min="1" Max="10" Step="1"
                              Value="@(equity ? Draft.EquityVolatilityTransitionConfirmationBars : Draft.CryptoVolatilityTransitionConfirmationBars)"
                              ValueChanged="@(v => SetConfirmation(equity, (int)v))"
                              Label="Confirmation Bars" />
         </MudItem>
         <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HYSTERESIS BUFFER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HysteresisBuffer" />
+            </div>
             <SliderWithZones Min="0.00000m" Max="0.00200m" Step="0.00005m"
                              Value="@(equity ? Draft.EquityVolatilityHysteresisBuffer : Draft.CryptoVolatilityHysteresisBuffer)"
                              ValueChanged="@(v => SetHysteresis(equity, v))"
@@ -257,6 +301,10 @@
                              Format="F5" />
         </MudItem>
         <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOW MAX VOLATILITY</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LowMaxVolatility" />
+            </div>
             <SliderWithZones Min="0.00050m" Max="0.02000m" Step="0.00010m"
                              Value="@(equity ? Draft.EquityVolatilityLowMaxVolatility : Draft.CryptoVolatilityLowMaxVolatility)"
                              ValueChanged="@(v => SetLowThreshold(equity, v))"
@@ -264,6 +312,10 @@
                              Format="F5" />
         </MudItem>
         <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">NORMAL MAX VOLATILITY</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.NormalMaxVolatility" />
+            </div>
             <SliderWithZones Min="0.00100m" Max="0.03000m" Step="0.00010m"
                              Value="@(equity ? Draft.EquityVolatilityNormalMaxVolatility : Draft.CryptoVolatilityNormalMaxVolatility)"
                              ValueChanged="@(v => SetNormalThreshold(equity, v))"
@@ -271,6 +323,10 @@
                              Format="F5" />
         </MudItem>
         <MudItem xs="12" md="4">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HIGH MAX VOLATILITY</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HighMaxVolatility" />
+            </div>
             <SliderWithZones Min="0.00200m" Max="0.05000m" Step="0.00010m"
                              Value="@(equity ? Draft.EquityVolatilityHighMaxVolatility : Draft.CryptoVolatilityHighMaxVolatility)"
                              ValueChanged="@(v => SetHighThreshold(equity, v))"
@@ -279,6 +335,10 @@
         </MudItem>
         <MudItem xs="12"><MudText Typo="Typo.subtitle2">@label Position Multipliers</MudText></MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOW POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LowPositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityLowPositionMultiplier : Draft.CryptoVolatilityLowPositionMultiplier)"
                              ValueChanged="@(v => SetLowPositionMultiplier(equity, v))"
@@ -286,6 +346,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">NORMAL POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.NormalPositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityNormalPositionMultiplier : Draft.CryptoVolatilityNormalPositionMultiplier)"
                              ValueChanged="@(v => SetNormalPositionMultiplier(equity, v))"
@@ -293,6 +357,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HIGH POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HighPositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityHighPositionMultiplier : Draft.CryptoVolatilityHighPositionMultiplier)"
                              ValueChanged="@(v => SetHighPositionMultiplier(equity, v))"
@@ -300,6 +368,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">EXTREME POSITION MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.ExtremePositionMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="2.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityExtremePositionMultiplier : Draft.CryptoVolatilityExtremePositionMultiplier)"
                              ValueChanged="@(v => SetExtremePositionMultiplier(equity, v))"
@@ -308,6 +380,10 @@
         </MudItem>
         <MudItem xs="12"><MudText Typo="Typo.subtitle2">@label Stop Multipliers</MudText></MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">LOW ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.LowStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityLowStopMultiplier : Draft.CryptoVolatilityLowStopMultiplier)"
                              ValueChanged="@(v => SetLowStopMultiplier(equity, v))"
@@ -315,6 +391,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">NORMAL ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.NormalStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityNormalStopMultiplier : Draft.CryptoVolatilityNormalStopMultiplier)"
                              ValueChanged="@(v => SetNormalStopMultiplier(equity, v))"
@@ -322,6 +402,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">HIGH ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.HighStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityHighStopMultiplier : Draft.CryptoVolatilityHighStopMultiplier)"
                              ValueChanged="@(v => SetHighStopMultiplier(equity, v))"
@@ -329,6 +413,10 @@
                              Format="F2" />
         </MudItem>
         <MudItem xs="12" md="3">
+            <div class="d-flex align-center gap-1 mb-1">
+                <MudText Typo="Typo.caption" Class="mud-text-secondary">EXTREME ATR DISTANCE MULTIPLIER</MudText>
+                <InfoPopup FieldKey="VolatilityRegime.ExtremeStopMultiplier" />
+            </div>
             <SliderWithZones Min="0.10m" Max="3.00m" Step="0.05m"
                              Value="@(equity ? Draft.EquityVolatilityExtremeStopMultiplier : Draft.CryptoVolatilityExtremeStopMultiplier)"
                              ValueChanged="@(v => SetExtremeStopMultiplier(equity, v))"
