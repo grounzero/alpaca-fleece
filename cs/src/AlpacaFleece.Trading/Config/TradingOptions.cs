@@ -59,6 +59,11 @@ public sealed class TradingOptions
     /// Gets or sets the signal filter options.
     /// </summary>
     public SignalFilterOptions SignalFilters { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets volatility-regime options used for adaptive sizing and exit distances.
+    /// </summary>
+    public VolatilityRegimeOptions VolatilityRegime { get; set; } = new();
 }
 
 /// <summary>
@@ -430,4 +435,177 @@ public sealed class CorrelationLimitsOptions
     /// </summary>
     public Dictionary<string, decimal> StaticCorrelations { get; set; } =
         new(StringComparer.OrdinalIgnoreCase);
+}
+
+/// <summary>
+/// Volatility regime options for adaptive sizing and stop behaviour.
+/// Uses realised volatility (standard deviation of 1-minute returns) with hysteresis.
+/// </summary>
+public sealed class VolatilityRegimeOptions
+{
+    /// <summary>
+    /// Enable or disable volatility adaptation.
+    /// </summary>
+    public bool Enabled { get; set; } = false;
+
+    /// <summary>
+    /// Number of bars used to estimate realised volatility.
+    /// </summary>
+    public int LookbackBars { get; set; } = 30;
+
+    /// <summary>
+    /// Consecutive classifications required before a regime transition is accepted.
+    /// </summary>
+    public int TransitionConfirmationBars { get; set; } = 2;
+
+    /// <summary>
+    /// Hysteresis buffer applied around thresholds to reduce flip-churn.
+    /// e.g. 0.0002 = +/-2 bps of return volatility.
+    /// </summary>
+    public decimal HysteresisBuffer { get; set; } = 0.0002m;
+
+    /// <summary>
+    /// Maximum realised volatility considered Low.
+    /// </summary>
+    public decimal LowMaxVolatility { get; set; } = 0.003m;
+
+    /// <summary>
+    /// Maximum realised volatility considered Normal.
+    /// </summary>
+    public decimal NormalMaxVolatility { get; set; } = 0.007m;
+
+    /// <summary>
+    /// Maximum realised volatility considered High.
+    /// Values above this are treated as Extreme.
+    /// </summary>
+    public decimal HighMaxVolatility { get; set; } = 0.015m;
+
+    /// <summary>
+    /// Position-size multiplier in Low volatility.
+    /// </summary>
+    public decimal LowPositionMultiplier { get; set; } = 1.20m;
+
+    /// <summary>
+    /// Position-size multiplier in Normal volatility.
+    /// </summary>
+    public decimal NormalPositionMultiplier { get; set; } = 1.00m;
+
+    /// <summary>
+    /// Position-size multiplier in High volatility.
+    /// </summary>
+    public decimal HighPositionMultiplier { get; set; } = 0.60m;
+
+    /// <summary>
+    /// Position-size multiplier in Extreme volatility.
+    /// </summary>
+    public decimal ExtremePositionMultiplier { get; set; } = 0.30m;
+
+    /// <summary>
+    /// Stop-distance multiplier in Low volatility.
+    /// </summary>
+    public decimal LowStopMultiplier { get; set; } = 0.80m;
+
+    /// <summary>
+    /// Stop-distance multiplier in Normal volatility.
+    /// </summary>
+    public decimal NormalStopMultiplier { get; set; } = 1.00m;
+
+    /// <summary>
+    /// Stop-distance multiplier in High volatility.
+    /// </summary>
+    public decimal HighStopMultiplier { get; set; } = 1.50m;
+
+    /// <summary>
+    /// Stop-distance multiplier in Extreme volatility.
+    /// </summary>
+    public decimal ExtremeStopMultiplier { get; set; } = 2.00m;
+
+    /// <summary>
+    /// Optional equity-specific override profile.
+    /// Unset fields inherit from the top-level volatility settings.
+    /// </summary>
+    public VolatilityRegimeProfileOptions? Equity { get; set; }
+
+    /// <summary>
+    /// Optional crypto-specific override profile.
+    /// Unset fields inherit from the top-level volatility settings.
+    /// </summary>
+    public VolatilityRegimeProfileOptions? Crypto { get; set; }
+}
+
+/// <summary>
+/// Optional per-asset-class overrides for volatility-regime behaviour.
+/// Any null property falls back to the top-level <see cref="VolatilityRegimeOptions"/> value.
+/// </summary>
+public sealed class VolatilityRegimeProfileOptions
+{
+    /// <summary>
+    /// Number of bars used to estimate realised volatility.
+    /// </summary>
+    public int? LookbackBars { get; set; }
+
+    /// <summary>
+    /// Consecutive classifications required before accepting a transition.
+    /// </summary>
+    public int? TransitionConfirmationBars { get; set; }
+
+    /// <summary>
+    /// Hysteresis buffer around thresholds.
+    /// </summary>
+    public decimal? HysteresisBuffer { get; set; }
+
+    /// <summary>
+    /// Maximum realised volatility considered Low.
+    /// </summary>
+    public decimal? LowMaxVolatility { get; set; }
+
+    /// <summary>
+    /// Maximum realised volatility considered Normal.
+    /// </summary>
+    public decimal? NormalMaxVolatility { get; set; }
+
+    /// <summary>
+    /// Maximum realised volatility considered High.
+    /// </summary>
+    public decimal? HighMaxVolatility { get; set; }
+
+    /// <summary>
+    /// Position-size multiplier in Low volatility.
+    /// </summary>
+    public decimal? LowPositionMultiplier { get; set; }
+
+    /// <summary>
+    /// Position-size multiplier in Normal volatility.
+    /// </summary>
+    public decimal? NormalPositionMultiplier { get; set; }
+
+    /// <summary>
+    /// Position-size multiplier in High volatility.
+    /// </summary>
+    public decimal? HighPositionMultiplier { get; set; }
+
+    /// <summary>
+    /// Position-size multiplier in Extreme volatility.
+    /// </summary>
+    public decimal? ExtremePositionMultiplier { get; set; }
+
+    /// <summary>
+    /// Stop-distance multiplier in Low volatility.
+    /// </summary>
+    public decimal? LowStopMultiplier { get; set; }
+
+    /// <summary>
+    /// Stop-distance multiplier in Normal volatility.
+    /// </summary>
+    public decimal? NormalStopMultiplier { get; set; }
+
+    /// <summary>
+    /// Stop-distance multiplier in High volatility.
+    /// </summary>
+    public decimal? HighStopMultiplier { get; set; }
+
+    /// <summary>
+    /// Stop-distance multiplier in Extreme volatility.
+    /// </summary>
+    public decimal? ExtremeStopMultiplier { get; set; }
 }

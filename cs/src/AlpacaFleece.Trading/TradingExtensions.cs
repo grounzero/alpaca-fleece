@@ -21,7 +21,8 @@ public static class TradingExtensions
                 sp.GetRequiredService<IStateRepository>(),
                 sp.GetRequiredService<ILogger<ExitManager>>(),
                 options,
-                sp.GetRequiredService<ISymbolClassifier>()));
+                sp.GetRequiredService<ISymbolClassifier>(),
+                sp.GetRequiredService<VolatilityRegimeDetector>()));
 
         return services;
     }

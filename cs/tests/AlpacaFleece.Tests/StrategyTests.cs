@@ -69,6 +69,38 @@ public sealed class StrategyTests
     }
 
     [Fact]
+    public void RegimeDetector_StatefulBarsInRegime_IncrementsWhenStable()
+    {
+        var detector = new RegimeDetector(transitionConfirmationBars: 2);
+
+        var r1 = detector.DetectRegime("AAPL", 110m, 105m, 100m);
+        var r2 = detector.DetectRegime("AAPL", 111m, 106m, 101m);
+        var r3 = detector.DetectRegime("AAPL", 112m, 107m, 102m);
+
+        Assert.Equal("TRENDING_UP", r1.RegimeType);
+        Assert.Equal(1, r1.BarsInRegime);
+        Assert.Equal(2, r2.BarsInRegime);
+        Assert.Equal(3, r3.BarsInRegime);
+    }
+
+    [Fact]
+    public void RegimeDetector_StatefulTransition_RequiresConfirmation()
+    {
+        var detector = new RegimeDetector(transitionConfirmationBars: 2);
+
+        var up = detector.DetectRegime("AAPL", 110m, 105m, 100m);
+        var oneBarDown = detector.DetectRegime("AAPL", 90m, 95m, 100m);
+        var confirmedDown = detector.DetectRegime("AAPL", 89m, 94m, 99m);
+
+        Assert.Equal("TRENDING_UP", up.RegimeType);
+        // First opposite bar should not instantly flip regime.
+        Assert.Equal("TRENDING_UP", oneBarDown.RegimeType);
+        Assert.True(oneBarDown.BarsInRegime > up.BarsInRegime);
+        Assert.Equal("TRENDING_DOWN", confirmedDown.RegimeType);
+        Assert.Equal(1, confirmedDown.BarsInRegime);
+    }
+
+    [Fact]
     public async Task SmaCrossoverStrategy_EmitsBuySignal()
     {
         var eventBus = Substitute.For<IEventBus>();
