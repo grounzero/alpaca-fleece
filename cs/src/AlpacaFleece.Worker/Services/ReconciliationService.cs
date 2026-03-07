@@ -30,20 +30,30 @@ public sealed class ReconciliationService(
             var discrepancies = new List<string>();
 
             // Rule 1: SQLite non-terminal but Alpaca already terminal → auto-apply
-            // (GetOpenOrdersAsync only returns open orders, so we must check SQLite non-terminal intents)
+            // Optimization: Orders still in alpacaOrders (GetOpenOrdersAsync) are definitely open on Alpaca.
+            // Only call GetOrderByIdAsync for orders NOT in that list (they may be terminal).
+            var openAlpacaOrderIds = new HashSet<string>(alpacaOrders.Select(o => o.AlpacaOrderId));
             var nonTerminalSqlite = sqliteOrders.Where(so => !IsTerminal(so.Status) && so.AlpacaOrderId != null);
+
             foreach (var sqliteOrder in nonTerminalSqlite)
             {
-                var brokerOrder = await brokerService.GetOrderByIdAsync(sqliteOrder.AlpacaOrderId!, ct);
+                var alpacaOrderId = sqliteOrder.AlpacaOrderId!;
+
+                // If order is still in the open orders list, it's definitely not terminal yet
+                if (openAlpacaOrderIds.Contains(alpacaOrderId))
+                    continue;
+
+                // Not in open orders list → check if terminal (requires broker call)
+                var brokerOrder = await brokerService.GetOrderByIdAsync(alpacaOrderId, ct);
                 if (brokerOrder == null || !IsTerminal(brokerOrder.Status))
-                    continue;  // Order not found on broker or still open — no action
+                    continue;  // Not found or still pending — no action
 
                 logger.LogInformation(
                     "Rule 1: auto-applying Alpaca terminal status to SQLite: {orderId} {status}",
-                    sqliteOrder.AlpacaOrderId, brokerOrder.Status);
+                    alpacaOrderId, brokerOrder.Status);
                 await stateRepository.UpdateOrderIntentAsync(
                     sqliteOrder.ClientOrderId,
-                    brokerOrder.AlpacaOrderId,
+                    alpacaOrderId,
                     brokerOrder.Status,
                     DateTimeOffset.UtcNow,
                     ct);

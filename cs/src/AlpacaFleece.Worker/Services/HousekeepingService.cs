@@ -37,11 +37,14 @@ public sealed class HousekeepingService(
             }
 
             // Per-phase timeouts. Each phase gets independent timeout so slow phase 1 doesn't starve phase 2.
+            // BUT: each phase is linked to the host's cancellationToken, so immediate shutdown requests
+            // (e.g., SIGTERM/SIGINT) interrupt any phase that hasn't completed yet.
 
-            // Phase 1: cancel open orders (20s timeout)
+            // Phase 1: cancel open orders (20s timeout, or sooner if host requests shutdown)
             try
             {
-                using var cancelCts = new CancellationTokenSource(TimeSpan.FromSeconds(20));
+                using var cancelCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                cancelCts.CancelAfter(TimeSpan.FromSeconds(20));
                 var cancelCt = cancelCts.Token;
 
                 var openOrders = await brokerService.GetOpenOrdersAsync(cancelCt);
@@ -63,10 +66,11 @@ public sealed class HousekeepingService(
                 logger.LogError(ex, "Error cancelling open orders during shutdown");
             }
 
-            // Phase 2: flatten all positions via OrderManager (60s timeout, independent of phase 1)
+            // Phase 2: flatten all positions via OrderManager (60s timeout, or sooner if host requests shutdown)
             try
             {
-                using var flattenCts = new CancellationTokenSource(TimeSpan.FromSeconds(60));
+                using var flattenCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                flattenCts.CancelAfter(TimeSpan.FromSeconds(60));
                 var flattenCt = flattenCts.Token;
 
                 using var scope = scopeFactory.CreateScope();
@@ -79,10 +83,11 @@ public sealed class HousekeepingService(
                 logger.LogError(ex, "Error flattening positions during shutdown");
             }
 
-            // Phase 3: final equity snapshot (15s timeout, independent of prior phases)
+            // Phase 3: final equity snapshot (15s timeout, or sooner if host requests shutdown)
             try
             {
-                using var snapshotCts = new CancellationTokenSource(TimeSpan.FromSeconds(15));
+                using var snapshotCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+                snapshotCts.CancelAfter(TimeSpan.FromSeconds(15));
                 var snapshotCt = snapshotCts.Token;
 
                 var account = await brokerService.GetAccountAsync(snapshotCt);

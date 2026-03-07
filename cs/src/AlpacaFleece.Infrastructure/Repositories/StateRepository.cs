@@ -194,10 +194,14 @@ public sealed class StateRepository(
             await dbContext.SaveChangesAsync(ct);
             return true;  // Successfully inserted new order intent
         }
-        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqliteEx && sqliteEx.SqliteErrorCode == 19)
+        catch (DbUpdateException ex) when (ex.InnerException is Microsoft.Data.Sqlite.SqliteException sqliteEx
+            && sqliteEx.SqliteErrorCode == 19
+            && sqliteEx.Message.Contains("UNIQUE constraint failed"))
         {
             // UNIQUE constraint violation on ClientOrderId: row already exists.
             // This is the idempotent case — return false to signal caller should skip submission.
+            // Note: SqliteErrorCode 19 = SQLITE_CONSTRAINT (covers multiple constraint types),
+            // so we check the message to ensure this is specifically a UNIQUE violation.
             logger.LogDebug("SaveOrderIntentAsync: {id} already exists (idempotent)", clientOrderId);
             return false;
         }
