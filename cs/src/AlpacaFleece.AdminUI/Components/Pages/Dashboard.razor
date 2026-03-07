@@ -190,14 +190,14 @@ else if (_vm is not null)
             <MudPaper Class="pa-4" Elevation="2">
                 <div class="d-flex align-center gap-3 mb-3">
                     <MudText Typo="Typo.subtitle2">OHLC Bars</MudText>
-                    <MudSelect T="string" @bind-Value="_barsSymbol" Label="Symbol" Variant="Variant.Outlined" Size="Size.Small"
+                    <MudSelect T="string" @bind-Value="_barsSymbol" Label="Symbol" Variant="Variant.Outlined" Dense="true"
                                Style="width: 120px;" Disabled="_barsSymbols.Count == 0">
                         @foreach (var symbol in _barsSymbols)
                         {
                             <MudSelectItem Value="@symbol">@symbol</MudSelectItem>
                         }
                     </MudSelect>
-                    <MudSelect T="string" @bind-Value="_barsTimeframe" Label="Timeframe" Variant="Variant.Outlined" Size="Size.Small"
+                    <MudSelect T="string" @bind-Value="_barsTimeframe" Label="Timeframe" Variant="Variant.Outlined" Dense="true"
                                Style="width: 120px;" Disabled="_barsTimeframes.Count == 0">
                         @foreach (var tf in _barsTimeframes)
                         {
@@ -219,7 +219,7 @@ else if (_vm is not null)
                               ChartSeries="@_barsSeries"
                               ChartLabels="@_barsLabels"
                               Width="100%"
-                              Height="280px"
+                              Height="400px"
                               ChartOptions="@_barsChartOptions" />
                 }
                 else
