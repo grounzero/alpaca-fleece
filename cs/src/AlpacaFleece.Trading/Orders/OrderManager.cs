@@ -166,7 +166,9 @@ public sealed class OrderManager(
             }
 
             // Step 7: Persist intent BEFORE submission (crash recovery); store ATR seed for fill-time position open
-            bool isNewIntent = await stateRepository.SaveOrderIntentAsync(
+            // Note: SaveOrderIntentAsync is idempotent on same clientOrderId (signal can be retried).
+            // The intent may already exist from a previous failed submission attempt.
+            await stateRepository.SaveOrderIntentAsync(
                 clientOrderId,
                 signal.Symbol,
                 signal.Side,
@@ -175,13 +177,6 @@ public sealed class OrderManager(
                 DateTimeOffset.UtcNow,
                 ct,
                 atrSeed: signal.Metadata.Atr ?? signal.Metadata.AtrValue);
-
-            if (!isNewIntent)
-            {
-                // Concurrent caller already saved this intent; they will handle submission
-                logger.LogInformation("Order intent {id} already exists (concurrent call), skipping submission", clientOrderId);
-                return string.Empty;
-            }
 
             logger.LogInformation("Order intent persisted: {id}", clientOrderId);
 
