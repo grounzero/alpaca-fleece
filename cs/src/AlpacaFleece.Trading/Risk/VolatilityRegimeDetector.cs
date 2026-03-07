@@ -124,17 +124,15 @@ public sealed class VolatilityRegimeDetector(
                     // advancing BarsInRegime/PendingBars on call frequency.
                     return BuildResult(existingState.CurrentRegime, vol, existingState.BarsInRegime, profile);
                 }
-            }
 
-            var classified = ClassifyFromVolatility(symbol, vol);
-
-            lock (_stateLock)
-            {
+                // Mutate and stamp timestamp atomically so concurrent calls cannot double-advance
+                // counters for a single latest bar timestamp.
+                var classified = ClassifyFromVolatilityLocked(symbol, vol, profile);
                 if (_states.TryGetValue(symbol, out var updatedState))
                     updatedState.LastObservedBarTimestamp = latestBarTimestamp;
-            }
 
-            return classified;
+                return classified;
+            }
         }
         catch (Exception ex)
         {
@@ -156,49 +154,58 @@ public sealed class VolatilityRegimeDetector(
         var profile = ResolveProfile(symbol);
 
         lock (_stateLock)
+            return ClassifyFromVolatilityLocked(symbol, realisedVolatility, profile);
+    }
+
+    private VolatilityRegimeResult ClassifyFromVolatilityLocked(
+        string symbol,
+        decimal realisedVolatility,
+        EffectiveProfile profile)
+    {
+        if (!_cfg.Enabled)
+            return BuildResult(VolatilityRegime.Normal, realisedVolatility, barsInRegime: 0, profile);
+
+        if (!_states.TryGetValue(symbol, out var state))
         {
-            if (!_states.TryGetValue(symbol, out var state))
-            {
-                var initial = ClassifyRaw(realisedVolatility, profile);
-                state = new State { CurrentRegime = initial, BarsInRegime = 1 };
-                _states[symbol] = state;
-                return BuildResult(initial, realisedVolatility, state.BarsInRegime, profile);
-            }
+            var initial = ClassifyRaw(realisedVolatility, profile);
+            state = new State { CurrentRegime = initial, BarsInRegime = 1 };
+            _states[symbol] = state;
+            return BuildResult(initial, realisedVolatility, state.BarsInRegime, profile);
+        }
 
-            var raw = ClassifyWithHysteresis(realisedVolatility, state.CurrentRegime, profile);
-            if (raw == state.CurrentRegime)
-            {
-                state.BarsInRegime++;
-                state.PendingRegime = null;
-                state.PendingBars = 0;
-                return BuildResult(state.CurrentRegime, realisedVolatility, state.BarsInRegime, profile);
-            }
-
-            if (state.PendingRegime == raw)
-                state.PendingBars++;
-            else
-            {
-                state.PendingRegime = raw;
-                state.PendingBars = 1;
-            }
-
-            if (state.PendingBars >= Math.Max(1, profile.TransitionConfirmationBars))
-            {
-                var previous = state.CurrentRegime;
-                state.CurrentRegime = raw;
-                state.BarsInRegime = 1;
-                state.PendingRegime = null;
-                state.PendingBars = 0;
-
-                logger.LogInformation(
-                    "Volatility regime transition for {Symbol}: {Previous} -> {Current} (vol={Vol:F6})",
-                    symbol, previous, state.CurrentRegime, realisedVolatility);
-                return BuildResult(state.CurrentRegime, realisedVolatility, state.BarsInRegime, profile);
-            }
-
+        var raw = ClassifyWithHysteresis(realisedVolatility, state.CurrentRegime, profile);
+        if (raw == state.CurrentRegime)
+        {
             state.BarsInRegime++;
+            state.PendingRegime = null;
+            state.PendingBars = 0;
             return BuildResult(state.CurrentRegime, realisedVolatility, state.BarsInRegime, profile);
         }
+
+        if (state.PendingRegime == raw)
+            state.PendingBars++;
+        else
+        {
+            state.PendingRegime = raw;
+            state.PendingBars = 1;
+        }
+
+        if (state.PendingBars >= Math.Max(1, profile.TransitionConfirmationBars))
+        {
+            var previous = state.CurrentRegime;
+            state.CurrentRegime = raw;
+            state.BarsInRegime = 1;
+            state.PendingRegime = null;
+            state.PendingBars = 0;
+
+            logger.LogInformation(
+                "Volatility regime transition for {Symbol}: {Previous} -> {Current} (vol={Vol:F6})",
+                symbol, previous, state.CurrentRegime, realisedVolatility);
+            return BuildResult(state.CurrentRegime, realisedVolatility, state.BarsInRegime, profile);
+        }
+
+        state.BarsInRegime++;
+        return BuildResult(state.CurrentRegime, realisedVolatility, state.BarsInRegime, profile);
     }
 
     private VolatilityRegime ClassifyWithHysteresis(

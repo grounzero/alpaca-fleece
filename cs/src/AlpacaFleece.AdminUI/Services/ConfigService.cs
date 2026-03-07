@@ -245,22 +245,25 @@ public sealed class ConfigService(
         if (!draft.IsPaperTrading && draft.AllowLiveTrading)
             errors.Add("Warning: Live trading is enabled. Ensure this is intentional.");
 
-        ValidateVolatilityProfile(
-            errors,
-            "VolatilityRegime",
-            draft.VolatilityLookbackBars,
-            draft.VolatilityTransitionConfirmationBars,
-            draft.VolatilityLowMaxVolatility,
-            draft.VolatilityNormalMaxVolatility,
-            draft.VolatilityHighMaxVolatility,
-            draft.VolatilityLowPositionMultiplier,
-            draft.VolatilityNormalPositionMultiplier,
-            draft.VolatilityHighPositionMultiplier,
-            draft.VolatilityExtremePositionMultiplier,
-            draft.VolatilityLowStopMultiplier,
-            draft.VolatilityNormalStopMultiplier,
-            draft.VolatilityHighStopMultiplier,
-            draft.VolatilityExtremeStopMultiplier);
+        if (draft.VolatilityRegimeEnabled)
+        {
+            ValidateVolatilityProfile(
+                errors,
+                "VolatilityRegime",
+                draft.VolatilityLookbackBars,
+                draft.VolatilityTransitionConfirmationBars,
+                draft.VolatilityLowMaxVolatility,
+                draft.VolatilityNormalMaxVolatility,
+                draft.VolatilityHighMaxVolatility,
+                draft.VolatilityLowPositionMultiplier,
+                draft.VolatilityNormalPositionMultiplier,
+                draft.VolatilityHighPositionMultiplier,
+                draft.VolatilityExtremePositionMultiplier,
+                draft.VolatilityLowStopMultiplier,
+                draft.VolatilityNormalStopMultiplier,
+                draft.VolatilityHighStopMultiplier,
+                draft.VolatilityExtremeStopMultiplier);
+        }
 
         if (draft.UseEquityVolatilityOverrides)
         {
