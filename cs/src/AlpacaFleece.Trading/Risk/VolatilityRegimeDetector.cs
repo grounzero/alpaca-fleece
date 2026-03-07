@@ -1,13 +1,36 @@
 namespace AlpacaFleece.Trading.Risk;
 
+/// <summary>
+/// Volatility regime classification used for adaptive sizing and ATR distance controls.
+/// </summary>
 public enum VolatilityRegime
 {
+    /// <summary>
+    /// Low realised volatility conditions.
+    /// </summary>
     Low,
+    /// <summary>
+    /// Baseline realised volatility conditions.
+    /// </summary>
     Normal,
+    /// <summary>
+    /// Elevated realised volatility conditions.
+    /// </summary>
     High,
+    /// <summary>
+    /// Extreme realised volatility conditions.
+    /// </summary>
     Extreme
 }
 
+/// <summary>
+/// Snapshot of the effective volatility regime and applied multipliers for a symbol.
+/// </summary>
+/// <param name="Regime">Detected volatility regime.</param>
+/// <param name="RealisedVolatility">Computed realised volatility from recent 1-minute returns.</param>
+/// <param name="BarsInRegime">Count of consecutive confirmed observations in the current regime.</param>
+/// <param name="PositionMultiplier">Regime multiplier applied to position size.</param>
+/// <param name="StopMultiplier">Regime multiplier applied to ATR stop/target distances.</param>
 public sealed record VolatilityRegimeResult(
     VolatilityRegime Regime,
     decimal RealisedVolatility,
@@ -56,8 +79,24 @@ public sealed class VolatilityRegimeDetector(
     private readonly Dictionary<string, State> _states = new(StringComparer.OrdinalIgnoreCase);
     private readonly Lock _stateLock = new();
 
+    /// <summary>
+    /// Gets a value indicating whether volatility regime adaptation is enabled.
+    /// </summary>
     public bool Enabled => _cfg.Enabled;
 
+    /// <summary>
+    /// Computes and returns the current volatility regime for a symbol.
+    /// </summary>
+    /// <param name="symbol">Broker symbol to evaluate.</param>
+    /// <param name="ct">Cancellation token for the market-data request.</param>
+    /// <returns>
+    /// A <see cref="VolatilityRegimeResult"/> describing the detected regime and effective multipliers.
+    /// Returns <see cref="VolatilityRegime.Normal"/> with neutral multipliers when disabled or on safe fallback paths.
+    /// </returns>
+    /// <remarks>
+    /// Repeated calls for the same latest bar timestamp return a stable result without advancing
+    /// transition counters, so regime duration semantics remain bar-driven rather than poll-driven.
+    /// </remarks>
     public async ValueTask<VolatilityRegimeResult> GetRegimeAsync(
         string symbol,
         CancellationToken ct = default)

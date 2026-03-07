@@ -25,6 +25,13 @@ public sealed class RegimeDetector
         public int PendingBars { get; set; }
     }
 
+    /// <summary>
+    /// Initializes a new instance of the <see cref="RegimeDetector"/> class.
+    /// </summary>
+    /// <param name="transitionConfirmationBars">
+    /// Number of consecutive opposite regime observations required before a regime transition is confirmed.
+    /// Values below 1 are coerced to 1.
+    /// </param>
     public RegimeDetector(int transitionConfirmationBars = 2)
     {
         _transitionConfirmationBars = Math.Max(1, transitionConfirmationBars);
