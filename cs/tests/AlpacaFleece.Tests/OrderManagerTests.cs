@@ -371,10 +371,10 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
         // Create a position first
         await fixture.StateRepository.UpsertPositionTrackingAsync(
             "TEST_SYMBOL_WITH_POS",
-            quantity: 100,
+            qty: 100,
             entryPrice: 140m,
             atrValue: 2m,
-            trailingStopPrice: 135m,
+            trailingStop: 135m,
             CancellationToken.None);
 
         _brokerMock.SubmitOrderAsync(
