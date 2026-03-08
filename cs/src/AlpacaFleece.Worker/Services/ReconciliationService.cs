@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
-/// Startup reconciliation (Phase 1, blocking).
+/// Startup reconciliation:
 /// Rules: 1) Alpaca terminal + SQLite non-terminal → auto-apply
 ///        2) SQLite terminal + Alpaca non-terminal → block
 ///        3) Open order in Alpaca not in SQLite → block

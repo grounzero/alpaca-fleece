@@ -74,15 +74,15 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         var databasePath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data", "trading.db");
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
 
-        // Infrastructure (Phase 1)
+        // Infrastructure
         services.AddBrokerServices(brokerOptions);
         services.AddStateRepository(databasePath);
         services.AddEventBus();
 
-        // Phase 2: Market Data Client
+        // Market Data Client
         services.AddMarketDataServices(brokerOptions, tradingOptions.Exit.MaxPriceAgeSeconds);
 
-        // Trading (Phase 3: Risk Management + Order Submission)
+        // Trading (Risk Management + Order Submission)
         services.AddSingleton(tradingOptions);
 
         // Symbol classifier (centralised symbol type detection using TradingOptions lists)
@@ -107,12 +107,12 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddSingleton<PositionTracker>();
         services.AddSingleton<IPositionTracker>(sp => sp.GetRequiredService<PositionTracker>());
 
-        // Phase 2: Data Handling
+        // Data Handling
         services.AddSingleton<IDataHandler, DataHandler>();
         services.AddSingleton<BarsHandler>();
         services.AddHostedService(sp => sp.GetRequiredService<BarsHandler>());
 
-        // Phase 4: Exit Manager (needs full TradingOptions for crypto symbol detection)
+        // Exit Manager (needs full TradingOptions for crypto symbol detection)
         services.AddExitManager(Options.Create(tradingOptions));
 
         // Correlation service (singleton — all checks are in-memory)
@@ -153,7 +153,7 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
             volatilityRegimeDetector: sp.GetRequiredService<VolatilityRegimeDetector>()));
 
-        // Phase 5: Reconciliation Service
+        // Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();
 
         // Worker services
@@ -164,19 +164,19 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
         services.AddHostedService<EventDispatcherService>();
         services.AddHostedService<SchemaManagerService>();
 
-        // Phase 2: Stream Polling Service
+        // Stream Polling Service
         services.AddHostedService<StreamPollerService>();
 
-        // Phase 4: Exit Manager Service
+        // Exit Manager Service
         services.AddHostedService<ExitManagerService>();
 
-        // Phase 4: Runtime Reconciliation Service
+        // Runtime Reconciliation Service
         services.AddHostedService<RuntimeReconcilerService>();
 
         // O-3: Register custom HealthCheckService singleton
         services.AddSingleton<HealthCheckService>();
 
-        // Phase 6: Housekeeping Service (graceful shutdown)
+        // Housekeeping Service (graceful shutdown)
         services.AddHostedService(sp => new HousekeepingService(
             sp.GetRequiredService<IBrokerService>(),
             sp.GetRequiredService<IStateRepository>(),

@@ -43,7 +43,7 @@ public sealed class HousekeepingService(
             // BUT: each phase is linked to the host's cancellationToken, so immediate shutdown requests
             // (e.g., SIGTERM/SIGINT) interrupt any phase that hasn't completed yet.
 
-            // Phase 1: cancel open orders (20s timeout, or sooner if host requests shutdown)
+            // Cancel open orders (20s timeout, or sooner if host requests shutdown)
             try
             {
                 using var cancelCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -69,7 +69,7 @@ public sealed class HousekeepingService(
                 logger.LogError(ex, "Error cancelling open orders during shutdown");
             }
 
-            // Phase 2: flatten all positions via OrderManager (60s timeout, or sooner if host requests shutdown)
+            // Flatten all positions via OrderManager (60s timeout, or sooner if host requests shutdown)
             try
             {
                 using var flattenCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
@@ -86,7 +86,7 @@ public sealed class HousekeepingService(
                 logger.LogError(ex, "Error flattening positions during shutdown");
             }
 
-            // Phase 3: final equity snapshot (15s timeout, or sooner if host requests shutdown)
+            // Final equity snapshot (15s timeout, or sooner if host requests shutdown)
             try
             {
                 using var snapshotCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
