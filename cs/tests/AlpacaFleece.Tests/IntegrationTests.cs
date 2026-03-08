@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Tests;
 
 /// <summary>
-/// Phase 4-6 integration tests: full trading system with exit management and reconciliation.
+/// Integration tests: full trading system with exit management and reconciliation.
 /// Test vectors:
 /// 1. Bar arrives → Signal generated → Risk passes → Order submitted → Position tracked
 /// 2. Duplicate signal → Order submitted once (idempotency)
@@ -10,7 +10,7 @@ namespace AlpacaFleece.Tests;
 /// 5. Graceful shutdown → orders cancelled → positions flattened
 /// </summary>
 [Collection("Trading Database Collection")]
-public sealed class Phase4IntegrationTests(TradingFixture fixture) : IAsyncLifetime
+public sealed class IntegrationTests(TradingFixture fixture) : IAsyncLifetime
 {
     private readonly IBrokerService _brokerMock = Substitute.For<IBrokerService>();
     private readonly IMarketDataClient _marketDataMock = Substitute.For<IMarketDataClient>();

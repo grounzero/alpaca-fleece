@@ -1,7 +1,7 @@
 namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
-/// Exit manager service (Phase 4): runs ExitManager.ExecuteAsync in background.
+/// Exit manager service: runs ExitManager.ExecuteAsync in background.
 /// Wraps the synchronous ExitManager logic for hosted service integration.
 /// </summary>
 public sealed class ExitManagerService(

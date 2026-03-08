@@ -2,10 +2,10 @@ namespace AlpacaFleece.Worker.Services;
 
 /// <summary>
 /// Orchestrator service implementing startup via IHostedLifecycleService.
-/// Phase 1: Infrastructure (SchemaManager, reconciliation)
-/// Phase 2: Data Layer (EventBus start)
-/// Phase 3: Trading Logic (services)
-/// Phase 4: Runtime (signal handlers, task monitoring)
+/// Infrastructure (SchemaManager, reconciliation)
+/// Data Layer (EventBus start)
+/// Trading Logic (services)
+/// Runtime (signal handlers, task monitoring)
 /// </summary>
 /// <param name="logger">The logger instance.</param>
 /// <param name="serviceProvider">The service provider for resolving dependencies.</param>
