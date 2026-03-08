@@ -231,6 +231,24 @@ public sealed class OrderManager(
                 }
             }
 
+            // Gate 6d: Exit position check — don't submit SELL if no open position exists
+            // Prevents circuit breaker trips from failed sell orders without positions
+            // Exception: Allow SELL if there's a pending BUY order (position will exist soon)
+            if (action.StartsWith("EXIT", StringComparison.OrdinalIgnoreCase) && existing == null)
+            {
+                var dbPositions = await stateRepository.GetAllPositionTrackingAsync(ct);
+                var hasPosition = dbPositions.Any(p => p.Symbol == signal.Symbol && p.Quantity > 0);
+                var hasPendingBuy = await stateRepository.HasPendingOrderAsync(signal.Symbol, "BUY", ct);
+                
+                if (!hasPosition && !hasPendingBuy)
+                {
+                    logger.LogInformation(
+                        "Exit block: no open position or pending buy for {symbol}, skipping SELL",
+                        signal.Symbol);
+                    return string.Empty;
+                }
+            }
+
             // Step 7: Persist intent BEFORE submission (crash recovery); store ATR seed for fill-time position open
             // Note: SaveOrderIntentAsync is idempotent on same clientOrderId (signal can be retried).
             // The intent may already exist from a previous failed submission attempt.
