@@ -26,19 +26,19 @@ public class HangfireBackgroundJobs(
             Cron.MinuteInterval(1),
             new RecurringJobOptions { TimeZone = TimeZoneInfo.Utc });
 
-        // Daily reset at 09:30 ET, weekdays only
+        // Daily reset at 09:30 ET, daily (including weekends for crypto trading)
         // Use ET timezone so Hangfire handles DST automatically (09:30 ET = 13:30 UTC in summer, 14:30 UTC in winter)
         recurringJobManager.AddOrUpdate<HangfireBackgroundJobs>(
             "daily-reset",
             j => j.DailyResetJobAsync(JobCancellationToken.Null),
-            "30 9 * * 1-5", // 09:30 local ET time
+            "30 9 * * *", // 09:30 local ET time, every day
             new RecurringJobOptions { TimeZone = etZone });
 
-        // Circuit breaker reset at 09:30 ET, weekdays only
+        // Circuit breaker reset at 09:30 ET, daily (including weekends for crypto trading)
         recurringJobManager.AddOrUpdate<HangfireBackgroundJobs>(
             "circuit-breaker-reset",
             j => j.CircuitBreakerResetJobAsync(JobCancellationToken.Null),
-            "30 9 * * 1-5", // 09:30 local ET time
+            "30 9 * * *", // 09:30 local ET time, every day
             new RecurringJobOptions { TimeZone = etZone });
     }
 
