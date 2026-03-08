@@ -236,8 +236,8 @@ public sealed class OrderManager(
             if (action.StartsWith("EXIT", StringComparison.OrdinalIgnoreCase) && existing == null)
             {
                 var dbPositions = await stateRepository.GetAllPositionTrackingAsync(ct);
-                var position = dbPositions.FirstOrDefault(p => p.Symbol == signal.Symbol && p.Quantity > 0);
-                if (position == null)
+                var hasPosition = dbPositions.Any(p => p.Symbol == signal.Symbol && p.Quantity > 0);
+                if (!hasPosition)
                 {
                     logger.LogInformation(
                         "Exit block: no open position for {symbol}, skipping SELL",
