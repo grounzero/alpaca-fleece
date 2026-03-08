@@ -9,6 +9,7 @@ namespace AlpacaFleece.Infrastructure.Broker;
 public sealed class AlpacaBrokerService(
     BrokerOptions options,
     IAlpacaTradingClient tradingClient,
+    ISymbolClassifier symbolClassifier,
     ILogger<AlpacaBrokerService> logger) : IBrokerService
 {
     private readonly SemaphoreSlim _accountCacheLock = new(1, 1);
@@ -174,8 +175,8 @@ public sealed class AlpacaBrokerService(
                 ? OrderSide.Buy
                 : OrderSide.Sell;
 
-            // Crypto symbols (e.g., "BTC/USD") require IOC time-in-force
-            var isCrypto = symbol.Contains('/');
+            // Crypto symbols require IOC time-in-force
+            var isCrypto = symbolClassifier.IsCrypto(symbol);
             var timeInForce = isCrypto ? TimeInForce.Ioc : TimeInForce.Day;
 
             var request = new NewOrderRequest(
