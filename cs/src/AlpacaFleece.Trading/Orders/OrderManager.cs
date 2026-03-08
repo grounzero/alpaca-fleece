@@ -19,7 +19,8 @@ public sealed class OrderManager(
     TradingOptions options,
     ILogger<OrderManager> logger,
     DrawdownMonitor? drawdownMonitor = null,
-    VolatilityRegimeDetector? volatilityRegimeDetector = null) : IOrderManager
+    VolatilityRegimeDetector? volatilityRegimeDetector = null,
+    IPositionTracker? positionTracker = null) : IOrderManager
 {
     private readonly System.Collections.Concurrent.ConcurrentDictionary<string, SemaphoreSlim> _submissionLocks = new(StringComparer.OrdinalIgnoreCase);
     private static readonly HashSet<OrderState> ActiveOrderStates =
@@ -47,17 +48,48 @@ public sealed class OrderManager(
             // Step 1: Determine side (already in signal.Side as "BUY" or "SELL")
             var side = signal.Side;
 
+            // Step 1b: Determine action (simplified long-only: BUY→ENTER_LONG, SELL→EXIT_LONG)
+            var action = DetermineAction(signal.Side);
+
             // Crypto symbols allow fractional quantities (no floor to 1; minimum 0.0001).
             var isCrypto = options.Symbols.CryptoSymbols.Contains(
                 signal.Symbol, StringComparer.OrdinalIgnoreCase);
 
-            // Step 1b: Get drawdown position multiplier (Warning state reduces sizes)
+            // Step 1c: Get drawdown position multiplier (Warning state reduces sizes)
             var positionMultiplier = drawdownMonitor?.GetPositionMultiplier() ?? 1.0m;
             var autoSized = false;
             var accountEquity = 0m;
 
-            // Step 1c: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
-            if (quantity == 0m)
+            // Step 1d: For long-only EXIT_LONG actions, enforce quantity from open position.
+            // This prevents strategy SELL signals from being auto-sized like entries and
+            // accidentally opening short positions after flattening.
+            if (action == "EXIT_LONG")
+            {
+                var openQty = await GetOpenLongQuantityAsync(signal.Symbol, ct);
+                if (openQty <= 0m)
+                {
+                    logger.LogInformation(
+                        "EXIT_LONG skip for {symbol}: no open long position",
+                        signal.Symbol);
+                    return string.Empty;
+                }
+
+                if (quantity <= 0m || quantity > openQty)
+                {
+                    if (quantity > openQty)
+                    {
+                        logger.LogInformation(
+                            "EXIT_LONG quantity clamped for {symbol}: requested={requested} open={open}",
+                            signal.Symbol, quantity, openQty);
+                    }
+
+                    quantity = openQty;
+                }
+            }
+
+            // Step 1e: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer").
+            // Applies to entries only; exits use the tracked open quantity above.
+            if (quantity == 0m && action == "ENTER_LONG")
             {
                 var account = await broker.GetAccountAsync(ct);
                 accountEquity = account.PortfolioValue;
@@ -74,10 +106,10 @@ public sealed class OrderManager(
                     signal.Symbol, quantity, account.PortfolioValue, isCrypto);
             }
 
-            // Step 1d: Volatility regime sizing multiplier (entries only).
+            // Step 1f: Volatility regime sizing multiplier (entries only).
             // Applied before drawdown scaling so drawdown remains the final safety override.
             if (volatilityRegimeDetector is { Enabled: true } &&
-                signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+                action == "ENTER_LONG")
             {
                 var regime = await volatilityRegimeDetector.GetRegimeAsync(signal.Symbol, ct);
                 var preVol = quantity;
@@ -92,8 +124,9 @@ public sealed class OrderManager(
                     regime.PositionMultiplier, preVol, quantity);
             }
 
-            // Step 1e: Apply drawdown position multiplier after sizing (Warning state reduces sizes)
-            if (positionMultiplier < 1.0m)
+            // Step 1g: Apply drawdown position multiplier after sizing (Warning state reduces sizes).
+            // Entry-only by design: drawdown scaling should not reduce exit order size.
+            if (positionMultiplier < 1.0m && action == "ENTER_LONG")
             {
                 var originalQty = quantity;
                 quantity = isCrypto
@@ -107,10 +140,10 @@ public sealed class OrderManager(
                 }
             }
 
-            // Step 1f: Re-apply position-size cap for auto-sized BUYs after adaptive multipliers.
+            // Step 1h: Re-apply position-size cap for auto-sized BUYs after adaptive multipliers.
             // PositionSizer enforces this cap at baseline sizing, but volatility multipliers > 1.0
             // can otherwise push final quantity above MaxPositionSizePct.
-            if (autoSized && signal.Side.Equals("BUY", StringComparison.OrdinalIgnoreCase))
+            if (autoSized && action == "ENTER_LONG")
             {
                 var priceForCap = signal.Metadata.CurrentPrice > 0m ? signal.Metadata.CurrentPrice : limitPrice;
                 if (priceForCap > 0m)
@@ -140,7 +173,7 @@ public sealed class OrderManager(
                 }
             }
 
-            // Step 1g: Enforce whole-number quantities when AllowFractionalOrders is disabled.
+            // Step 1i: Enforce whole-number quantities when AllowFractionalOrders is disabled.
             // SDK v7.2.0 cannot read back fractional fills; keeping this gate prevents spurious
             // circuit-breaker trips caused by IsFractionalFault detecting a 0-qty filled order.
             if (!options.Execution.AllowFractionalOrders)
@@ -166,9 +199,6 @@ public sealed class OrderManager(
                 logger.LogWarning("Signal rejected by risk filter: {reason}", riskCheckResult.Reason);
                 return string.Empty;
             }
-
-            // Step 3: Determine action (simplified long-only: BUY→ENTER_LONG, SELL→EXIT_LONG)
-            var action = DetermineAction(signal.Side);
 
             // Step 4: Generate deterministic clientOrderId before gating so duplicate check works first
             var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
@@ -560,5 +590,21 @@ public sealed class OrderManager(
             "SELL" => "EXIT_LONG",
             _ => "UNKNOWN"
         };
+    }
+
+    private async ValueTask<decimal> GetOpenLongQuantityAsync(string symbol, CancellationToken ct)
+    {
+        if (positionTracker != null)
+        {
+            var tracked = positionTracker.GetPosition(symbol);
+            if (tracked?.CurrentQuantity > 0m)
+                return tracked.CurrentQuantity;
+            return 0m;
+        }
+
+        // Backward-compatible fallback for test fixtures and legacy wiring.
+        var rows = await stateRepository.GetAllPositionTrackingAsync(ct);
+        var row = rows.FirstOrDefault(p => string.Equals(p.Symbol, symbol, StringComparison.OrdinalIgnoreCase));
+        return row.Quantity > 0m ? row.Quantity : 0m;
     }
 }

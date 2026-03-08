@@ -151,7 +151,8 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             tradingOptions,
             sp.GetRequiredService<ILogger<OrderManager>>(),
             drawdownMonitor: sp.GetRequiredService<DrawdownMonitor>(),
-            volatilityRegimeDetector: sp.GetRequiredService<VolatilityRegimeDetector>()));
+            volatilityRegimeDetector: sp.GetRequiredService<VolatilityRegimeDetector>(),
+            positionTracker: sp.GetRequiredService<IPositionTracker>()));
 
         // Reconciliation Service
         services.AddScoped<IReconciliationService, ReconciliationService>();

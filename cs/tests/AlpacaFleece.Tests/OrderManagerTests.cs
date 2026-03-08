@@ -443,6 +443,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
         const string symbol = "PGATE_B";
         _ = await fixture.StateRepository.SaveOrderIntentAsync(
             "pgate_buy_for_sell_test", symbol, "BUY", 10m, 100m, DateTimeOffset.UtcNow);
+        await fixture.StateRepository.UpsertPositionTrackingAsync(symbol, 7m, 101m, 1m, 99m);
 
         var options = new TradingOptions
         {
@@ -469,8 +470,77 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
 
         var result = await orderManager.SubmitSignalAsync(signal, 10m, 100m);
 
-        // SELL proceeds (not an ENTER action, so gate is skipped entirely)
+        // SELL proceeds (not an ENTER action), and qty is clamped to open position size.
         Assert.NotEmpty(result);
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            symbol, "SELL", 7m, 100m, Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubmitSignalAsync_SellWithoutOpenPosition_Skips()
+    {
+        const string symbol = "SELL_NOPOS";
+        var options = new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = [symbol] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var signal = new SignalEvent(
+            Symbol: symbol, Side: "SELL", Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-03-01T11:05:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15), FastSma: 100m, MediumSma: 99m, SlowSma: 95m,
+                Atr: 1m, Confidence: 0.8m, Regime: "TRENDING_DOWN",
+                RegimeStrength: 0.7m, CurrentPrice: 100m, BarsInRegime: 15));
+
+        var result = await orderManager.SubmitSignalAsync(signal, 0m, 100m);
+
+        Assert.Empty(result);
+        await _brokerMock.DidNotReceive().SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubmitSignalAsync_SellWithOpenPosition_UsesTrackedQuantity()
+    {
+        const string symbol = "SELL_WITHPOS";
+        await fixture.StateRepository.UpsertPositionTrackingAsync(symbol, 12m, 101m, 1m, 99m);
+
+        var options = new TradingOptions
+        {
+            Symbols = new SymbolLists { EquitySymbols = [symbol] }
+        };
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, "", "PASSED"));
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(), Arg.Any<string>(), Arg.Any<decimal>(), Arg.Any<decimal>(),
+            Arg.Any<string>(), Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo("alpaca_sell_pos", "test", symbol, "SELL",
+                12m, 0m, 0m, OrderState.PendingNew, DateTimeOffset.UtcNow, null));
+
+        var signal = new SignalEvent(
+            Symbol: symbol, Side: "SELL", Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2025-03-01T11:06:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15), FastSma: 100m, MediumSma: 99m, SlowSma: 95m,
+                Atr: 1m, Confidence: 0.8m, Regime: "TRENDING_DOWN",
+                RegimeStrength: 0.7m, CurrentPrice: 100m, BarsInRegime: 15));
+
+        var result = await orderManager.SubmitSignalAsync(signal, 0m, 100m);
+
+        Assert.NotEmpty(result);
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            symbol, "SELL", 12m, 100m, Arg.Any<string>(), Arg.Any<CancellationToken>());
     }
 
     [Fact]
