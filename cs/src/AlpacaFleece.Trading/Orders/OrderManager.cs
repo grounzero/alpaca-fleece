@@ -231,6 +231,21 @@ public sealed class OrderManager(
                 }
             }
 
+            // Gate 6d: Exit position check — don't submit SELL if no open position exists
+            // Prevents circuit breaker trips from failed sell orders without positions
+            if (action.StartsWith("EXIT", StringComparison.OrdinalIgnoreCase) && existing == null)
+            {
+                var dbPositions = await stateRepository.GetAllPositionTrackingAsync(ct);
+                var position = dbPositions.FirstOrDefault(p => p.Symbol == signal.Symbol && p.CurrentQuantity > 0);
+                if (position == null)
+                {
+                    logger.LogInformation(
+                        "Exit block: no open position for {symbol}, skipping SELL",
+                        signal.Symbol);
+                    return string.Empty;
+                }
+            }
+
             // Step 7: Persist intent BEFORE submission (crash recovery); store ATR seed for fill-time position open
             // Note: SaveOrderIntentAsync is idempotent on same clientOrderId (signal can be retried).
             // The intent may already exist from a previous failed submission attempt.

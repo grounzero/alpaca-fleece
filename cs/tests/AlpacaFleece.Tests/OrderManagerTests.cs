@@ -317,6 +317,115 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             Arg.Any<CancellationToken>());
     }
 
+    [Fact]
+    public async Task SubmitSignalAsync_SellWithoutPosition_BlocksExit()
+    {
+        // Arrange: SELL signal but no open position in DB
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        // Ensure no position exists for TEST_SYMBOL
+        var signal = new SignalEvent(
+            Symbol: "TEST_SYMBOL_NO_POS",
+            Side: "SELL",
+            Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.UtcNow,
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15),
+                FastSma: 150m,
+                MediumSma: 149m,
+                SlowSma: 145m,
+                Atr: 2m,
+                Confidence: 0.8m,
+                Regime: "TRENDING_UP",
+                RegimeStrength: 0.7m,
+                CurrentPrice: 150.5m));
+
+        // Act: Submit SELL signal without having a position
+        var clientOrderId = await orderManager.SubmitSignalAsync(signal, 100, 150m);
+
+        // Assert: Should return empty string (blocked) and NOT call broker
+        Assert.Empty(clientOrderId);
+        await _brokerMock.DidNotReceive().SubmitOrderAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<decimal>(),
+            Arg.Any<decimal>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task SubmitSignalAsync_SellWithPosition_AllowsExit()
+    {
+        // Arrange: SELL signal with existing open position
+        var options = new TradingOptions();
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
+        var orderManager = new OrderManager(_brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        // Create a position first
+        await fixture.StateRepository.UpsertPositionTrackingAsync(
+            "TEST_SYMBOL_WITH_POS",
+            quantity: 100,
+            entryPrice: 140m,
+            atrValue: 2m,
+            trailingStopPrice: 135m,
+            CancellationToken.None);
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<decimal>(),
+            Arg.Any<decimal>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo(
+                AlpacaOrderId: "alpaca_exit",
+                ClientOrderId: "test",
+                Symbol: "TEST_SYMBOL_WITH_POS",
+                Side: "SELL",
+                Quantity: 100,
+                FilledQuantity: 0,
+                AverageFilledPrice: 0m,
+                Status: OrderState.PendingNew,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: null));
+
+        var signal = new SignalEvent(
+            Symbol: "TEST_SYMBOL_WITH_POS",
+            Side: "SELL",
+            Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.UtcNow,
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15),
+                FastSma: 150m,
+                MediumSma: 149m,
+                SlowSma: 145m,
+                Atr: 2m,
+                Confidence: 0.8m,
+                Regime: "TRENDING_UP",
+                RegimeStrength: 0.7m,
+                CurrentPrice: 150.5m));
+
+        // Act: Submit SELL signal with existing position
+        var clientOrderId = await orderManager.SubmitSignalAsync(signal, 100, 150m);
+
+        // Assert: Should submit order to broker
+        Assert.NotEmpty(clientOrderId);
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<decimal>(),
+            Arg.Any<decimal>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
     // ── Issue 3: AllowFractionalOrders gate ───────────────────────────────────
 
     [Fact]
