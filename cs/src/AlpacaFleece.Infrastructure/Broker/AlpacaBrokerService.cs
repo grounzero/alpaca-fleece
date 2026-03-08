@@ -174,12 +174,16 @@ public sealed class AlpacaBrokerService(
                 ? OrderSide.Buy
                 : OrderSide.Sell;
 
+            // Crypto symbols (e.g., "BTC/USD") require IOC time-in-force
+            var isCrypto = symbol.Contains('/');
+            var timeInForce = isCrypto ? TimeInForce.Ioc : TimeInForce.Day;
+
             var request = new NewOrderRequest(
                 symbol,
                 OrderQuantity.Fractional(quantity),
                 orderSide,
                 limitPrice > 0 ? OrderType.Limit : OrderType.Market,
-                TimeInForce.Day)
+                timeInForce)
             {
                 LimitPrice = limitPrice > 0 ? limitPrice : null,
                 ClientOrderId = clientOrderId,
