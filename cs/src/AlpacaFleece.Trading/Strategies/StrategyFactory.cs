@@ -39,7 +39,7 @@ public sealed class StrategyFactory(ILogger<StrategyFactory> logger)
                 $"{string.Join(", ", missing)}. " +
                 $"Available: {string.Join(", ", availableByName.Keys)}");
 
-        foreach (var name in options.Active)
+        foreach (var name in options.Active.Distinct(StringComparer.OrdinalIgnoreCase))
         {
             var (strategy, metadata) = availableByName[name];
             registry.Register(strategy, metadata);
