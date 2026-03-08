@@ -54,7 +54,8 @@ public interface IStateRepository
         decimal limitPrice,
         DateTimeOffset createdAt,
         CancellationToken ct = default,
-        decimal? atrSeed = null);
+        decimal? atrSeed = null,
+        string? strategyName = null);
 
     /// <summary>
     /// Updates an existing order intent status.
@@ -224,4 +225,5 @@ public record OrderIntentDto(
     OrderState Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    decimal? AtrSeed = null);
+    decimal? AtrSeed = null,
+    string? StrategyName = null);

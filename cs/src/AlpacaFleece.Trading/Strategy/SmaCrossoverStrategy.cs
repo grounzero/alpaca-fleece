@@ -20,6 +20,9 @@ public sealed class SmaCrossoverStrategy(
     // Tracks which symbols have already logged the "strategy ready" transition.
     private readonly HashSet<string> _readySymbols = new();
 
+    // Strategy identification for signal attribution
+    private const string StrategyNameValue = "SMA_5x15_10x30_20x50";
+
     // SMA periods: 3 pairs for multi-timeframe analysis
     private const int FastPeriod1 = 5;
     private const int SlowPeriod1 = 15;
@@ -275,7 +278,8 @@ public sealed class SmaCrossoverStrategy(
             Side: side,
             Timeframe: bar.Timeframe,
             SignalTimestamp: bar.Timestamp,
-            Metadata: metadata);
+            Metadata: metadata,
+            StrategyName: StrategyNameValue);
 
         signals.Add(signal);
     }

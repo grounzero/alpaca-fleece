@@ -8,7 +8,8 @@ public sealed record SignalEvent(
     string Side, // "BUY" or "SELL"
     string Timeframe,
     DateTimeOffset SignalTimestamp,
-    SignalMetadata Metadata) : IEvent;
+    SignalMetadata Metadata,
+    string? StrategyName = null) : IEvent;
 
 /// <summary>
 /// Metadata attached to a signal for audit and decision tracking.

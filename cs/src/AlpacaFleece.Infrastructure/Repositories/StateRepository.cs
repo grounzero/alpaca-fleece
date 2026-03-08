@@ -170,7 +170,8 @@ public sealed class StateRepository(
         decimal limitPrice,
         DateTimeOffset createdAt,
         CancellationToken ct = default,
-        decimal? atrSeed = null)
+        decimal? atrSeed = null,
+        string? strategyName = null)
     {
         try
         {
@@ -188,7 +189,8 @@ public sealed class StateRepository(
                 LimitPrice = limitPrice,
                 Status = nameof(OrderState.PendingNew),
                 CreatedAt = createdAt,
-                AtrSeed = atrSeed
+                AtrSeed = atrSeed,
+                StrategyName = strategyName
             });
 
             await dbContext.SaveChangesAsync(ct);
@@ -278,7 +280,8 @@ public sealed class StateRepository(
                 Status: Enum.Parse<OrderState>(intent.Status),
                 CreatedAt: intent.CreatedAt,
                 UpdatedAt: intent.UpdatedAt,
-                AtrSeed: intent.AtrSeed);
+                AtrSeed: intent.AtrSeed,
+                StrategyName: intent.StrategyName);
         }
         catch (Exception ex)
         {
