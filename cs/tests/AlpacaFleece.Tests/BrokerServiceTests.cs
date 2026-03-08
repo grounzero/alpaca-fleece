@@ -1,4 +1,5 @@
 using Alpaca.Markets;
+using AlpacaFleece.Infrastructure.Symbols;
 
 namespace AlpacaFleece.Tests;
 
@@ -7,12 +8,17 @@ namespace AlpacaFleece.Tests;
 /// </summary>
 public sealed class BrokerServiceTests
 {
-    private static (AlpacaBrokerService Broker, IAlpacaTradingClient MockClient) CreateBroker(
-        BrokerOptions? options = null)
+    private static (AlpacaBrokerService Broker, IAlpacaTradingClient MockClient, ISymbolClassifier SymbolClassifier) CreateBroker(
+        BrokerOptions? options = null, List<string>? cryptoSymbols = null)
     {
         options ??= new BrokerOptions { ApiKey = "test", SecretKey = "test" };
         var mockClient = Substitute.For<IAlpacaTradingClient>();
         var logger = Substitute.For<ILogger<AlpacaBrokerService>>();
+
+        // Setup symbol classifier with default crypto symbols
+        cryptoSymbols ??= new List<string> { "BTC/USD", "ETH/USD", "SOL/USD" };
+        var equitySymbols = new List<string> { "AAPL", "MSFT", "GOOGL" };
+        var symbolClassifier = new SymbolClassifier(cryptoSymbols, equitySymbols);
 
         var mockClock = Substitute.For<IClock>();
         mockClock.IsOpen.Returns(true);
@@ -32,13 +38,13 @@ public sealed class BrokerServiceTests
         mockClient.ListPositionsAsync(Arg.Any<CancellationToken>())
             .Returns(new List<IPosition>().AsReadOnly());
 
-        return (new AlpacaBrokerService(options, mockClient, logger), mockClient);
+        return (new AlpacaBrokerService(options, mockClient, symbolClassifier, logger), mockClient, symbolClassifier);
     }
 
     [Fact]
     public async Task GetClockAsync_NeverCaches()
     {
-        var (broker, mockClient) = CreateBroker();
+        var (broker, mockClient, _) = CreateBroker();
 
         await broker.GetClockAsync();
         await broker.GetClockAsync();
@@ -50,7 +56,7 @@ public sealed class BrokerServiceTests
     [Fact]
     public async Task GetAccountAsync_CachesTtl()
     {
-        var (broker, _) = CreateBroker();
+        var (broker, _, _) = CreateBroker();
 
         var account1 = await broker.GetAccountAsync();
         var account2 = await broker.GetAccountAsync();
@@ -62,7 +68,7 @@ public sealed class BrokerServiceTests
     [Fact]
     public async Task GetPositionsAsync_CachesTtl()
     {
-        var (broker, _) = CreateBroker();
+        var (broker, _, _) = CreateBroker();
 
         var positions1 = await broker.GetPositionsAsync();
         var positions2 = await broker.GetPositionsAsync();
@@ -110,7 +116,7 @@ public sealed class BrokerServiceTests
     {
         // Feature 3: after a successful order, the positions cache must be invalidated
         // so the next GetPositionsAsync call fetches fresh data from the broker.
-        var (broker, mockClient) = CreateBroker();
+        var (broker, mockClient, _) = CreateBroker();
 
         // Configure PostOrderAsync with a minimal IOrder mock
         var mockOrder = Substitute.For<IOrder>();
@@ -210,10 +216,99 @@ public sealed class BrokerServiceTests
     [Fact]
     public async Task GetOrderByIdAsync_ReturnsNull_OnInvalidGuid()
     {
-        var (broker, _) = CreateBroker();
+        var (broker, _, _) = CreateBroker();
 
         var result = await broker.GetOrderByIdAsync("not-a-guid");
 
         Assert.Null(result);
+    }
+
+    [Fact]
+    public async Task SubmitOrderAsync_CryptoSymbol_UsesIocTimeInForce()
+    {
+        // Arrange
+        var (broker, mockClient, _) = CreateBroker();
+        NewOrderRequest? capturedRequest = null;
+
+        var mockOrder = Substitute.For<IOrder>();
+        mockOrder.OrderId.Returns(Guid.NewGuid());
+        mockOrder.Symbol.Returns("BTC/USD");
+        mockOrder.OrderSide.Returns(OrderSide.Buy);
+        mockOrder.IntegerQuantity.Returns(1L);
+        mockOrder.IntegerFilledQuantity.Returns(0L);
+        mockOrder.AverageFillPrice.Returns((decimal?)null);
+        mockOrder.OrderStatus.Returns(OrderStatus.Accepted);
+        mockOrder.CreatedAtUtc.Returns((DateTime?)null);
+        mockOrder.UpdatedAtUtc.Returns((DateTime?)null);
+
+        mockClient.PostOrderAsync(Arg.Do<NewOrderRequest>(req => capturedRequest = req), Arg.Any<CancellationToken>())
+            .Returns(mockOrder);
+
+        // Act
+        await broker.SubmitOrderAsync("BTC/USD", "BUY", 1m, 50000m, "client-123");
+
+        // Assert
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(TimeInForce.Ioc, capturedRequest.TimeInForce);
+    }
+
+    [Fact]
+    public async Task SubmitOrderAsync_EquitySymbol_UsesDayTimeInForce()
+    {
+        // Arrange
+        var (broker, mockClient, _) = CreateBroker();
+        NewOrderRequest? capturedRequest = null;
+
+        var mockOrder = Substitute.For<IOrder>();
+        mockOrder.OrderId.Returns(Guid.NewGuid());
+        mockOrder.Symbol.Returns("AAPL");
+        mockOrder.OrderSide.Returns(OrderSide.Buy);
+        mockOrder.IntegerQuantity.Returns(100L);
+        mockOrder.IntegerFilledQuantity.Returns(0L);
+        mockOrder.AverageFillPrice.Returns((decimal?)null);
+        mockOrder.OrderStatus.Returns(OrderStatus.Accepted);
+        mockOrder.CreatedAtUtc.Returns((DateTime?)null);
+        mockOrder.UpdatedAtUtc.Returns((DateTime?)null);
+
+        mockClient.PostOrderAsync(Arg.Do<NewOrderRequest>(req => capturedRequest = req), Arg.Any<CancellationToken>())
+            .Returns(mockOrder);
+
+        // Act
+        await broker.SubmitOrderAsync("AAPL", "BUY", 100m, 150m, "client-456");
+
+        // Assert
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(TimeInForce.Day, capturedRequest.TimeInForce);
+    }
+
+    [Theory]
+    [InlineData("BTC/USD", TimeInForce.Ioc)]
+    [InlineData("ETH/USD", TimeInForce.Ioc)]
+    [InlineData("AAPL", TimeInForce.Day)]
+    [InlineData("MSFT", TimeInForce.Day)]
+    public async Task SubmitOrderAsync_VariousSymbols_CorrectTimeInForce(string symbol, TimeInForce expectedTimeInForce)
+    {
+        // Arrange
+        var (broker, mockClient, _) = CreateBroker();
+        NewOrderRequest? capturedRequest = null;
+
+        var mockOrder = Substitute.For<IOrder>();
+        mockOrder.OrderId.Returns(Guid.NewGuid());
+        mockOrder.Symbol.Returns(symbol);
+        mockOrder.OrderSide.Returns(OrderSide.Buy);
+        mockOrder.IntegerQuantity.Returns(1L);
+        mockOrder.IntegerFilledQuantity.Returns(0L);
+        mockOrder.AverageFillPrice.Returns((decimal?)null);
+        mockOrder.OrderStatus.Returns(OrderStatus.Accepted);
+
+        mockClient.PostOrderAsync(Arg.Do<NewOrderRequest>(req => capturedRequest = req), Arg.Any<CancellationToken>())
+            .Returns(mockOrder);
+
+        // Act
+        await broker.SubmitOrderAsync(symbol, "BUY", 1m, 100m, "client-test");
+
+        // Assert
+        Assert.NotNull(capturedRequest);
+        Assert.Equal(expectedTimeInForce, capturedRequest.TimeInForce);
     }
 }
