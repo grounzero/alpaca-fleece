@@ -1108,4 +1108,48 @@ public sealed class StateRepository(
             throw new StateRepositoryException($"Failed to reset daily state for {todayDateStr}", ex);
         }
     }
+
+    /// <inheritdoc/>
+    public async ValueTask<IReadOnlyList<StrategyStatsDto>> GetStrategyStatsAsync(
+        CancellationToken ct = default)
+    {
+        try
+        {
+            await using var dbContext = await DbFactory.CreateDbContextAsync(ct);
+
+            // Join trades to order_intents on ClientOrderId to get the originating strategy name.
+            // Only SELL-side trades carry realised PnL (exit fills).
+            var stats = await dbContext.Trades
+                .Join(
+                    dbContext.OrderIntents,
+                    t  => t.ClientOrderId,
+                    oi => oi.ClientOrderId,
+                    (t, oi) => new
+                    {
+                        StrategyName = oi.StrategyName ?? "Unknown",
+                        t.RealizedPnl,
+                        t.Side
+                    })
+                .Where(x => x.Side.ToLower() == "sell")
+                .GroupBy(x => x.StrategyName)
+                .Select(g => new
+                {
+                    StrategyName = g.Key,
+                    FillCount    = g.Count(),
+                    RealizedPnl  = g.Sum(x => x.RealizedPnl)
+                })
+                .OrderByDescending(x => x.RealizedPnl)
+                .ToListAsync(ct);
+
+            return stats
+                .Select(s => new StrategyStatsDto(s.StrategyName, s.FillCount, s.RealizedPnl))
+                .ToList()
+                .AsReadOnly();
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Failed to get strategy stats");
+            throw new StateRepositoryException("Failed to get strategy stats", ex);
+        }
+    }
 }

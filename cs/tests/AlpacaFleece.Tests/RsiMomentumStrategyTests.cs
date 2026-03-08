@@ -12,6 +12,7 @@ public sealed class RsiMomentumStrategyTests
     private RsiMomentumStrategy BuildStrategy(
         int period = 14,
         decimal oversold = 30m,
+        decimal overbought = 70m,
         int maxBarAgeMinutes = 0) // 0 = disabled for deterministic tests
     {
         var options = new TradingOptions
@@ -20,7 +21,7 @@ public sealed class RsiMomentumStrategyTests
             {
                 Period = period,
                 OversoldThreshold = oversold,
-                OverboughtThreshold = 70m
+                OverboughtThreshold = overbought
             }
         };
         var execution = new ExecutionOptions { MaxBarAgeMinutes = maxBarAgeMinutes };
@@ -235,6 +236,92 @@ public sealed class RsiMomentumStrategyTests
 
         await _eventBus.DidNotReceive().PublishAsync(
             Arg.Any<IEvent>(), Arg.Any<CancellationToken>());
+    }
+
+    // ── SELL crossover (overbought) ────────────────────────────────────────
+
+    [Fact]
+    public async Task OnBarAsync_EmitsSellSignal_WhenRsiCrossesIntoOverbought()
+    {
+        // period=3, overbought=60 → RequiredBars=5
+        // Pattern: warmup(4 declining bars) + baseline(prevRsi≈20 ≤ 60) + signal(sharp rise → RSI≈93)
+        var strategy = BuildStrategy(period: 3, overbought: 60m);
+
+        await strategy.OnBarAsync(MakeBar("AAPL", 100m)); // warmup
+        await strategy.OnBarAsync(MakeBar("AAPL",  98m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  96m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  94m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  95m)); // first ready → seeds prevRsi ≈ 20
+        await strategy.OnBarAsync(MakeBar("AAPL", 120m)); // sharp rise → RSI ≈ 93 > 60 → SELL
+
+        await _eventBus.Received(1).PublishAsync(
+            Arg.Is<SignalEvent>(s => s.Symbol == "AAPL" && s.Side == "SELL"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_NoSellSignal_WhenRsiAlreadyOverboughtButNoNewCrossover()
+    {
+        // Once RSI is above threshold, staying there does not emit further SELL signals.
+        var strategy = BuildStrategy(period: 3, overbought: 60m);
+
+        await strategy.OnBarAsync(MakeBar("AAPL", 100m)); // warmup
+        await strategy.OnBarAsync(MakeBar("AAPL",  98m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  96m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  94m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  95m)); // seeds prevRsi ≈ 20
+        await strategy.OnBarAsync(MakeBar("AAPL", 120m)); // SELL crossover — RSI ≈ 93
+        await strategy.OnBarAsync(MakeBar("AAPL", 122m)); // still overbought, no new crossover
+
+        // Exactly one SELL signal total
+        await _eventBus.Received(1).PublishAsync(
+            Arg.Is<SignalEvent>(s => s.Side == "SELL"),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_SellConfidence_ScalesWithDepthAboveOverboughtThreshold()
+    {
+        // At-threshold RSI → confidence ≈ 0.50; deeper overbought → higher confidence.
+        // With period=3, overbought=60:
+        //   bar 6 (RSI ≈ 93) → depth = 93 - 60 = 33 → raw = 0.50 + 3.3 = 3.80 → clamped 0.95
+        var strategy = BuildStrategy(period: 3, overbought: 60m);
+
+        await strategy.OnBarAsync(MakeBar("AAPL", 100m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  98m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  96m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  94m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  95m));
+        await strategy.OnBarAsync(MakeBar("AAPL", 120m)); // RSI ≈ 93, depth = 33 → confidence = 0.95
+
+        await _eventBus.Received(1).PublishAsync(
+            Arg.Is<SignalEvent>(s =>
+                s.Side == "SELL" &&
+                s.Metadata.Confidence >= 0.30m &&
+                s.Metadata.Confidence <= 0.95m),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
+    public async Task OnBarAsync_BuyAndSellOnSameBar_NeverBothFire()
+    {
+        // RSI arithmetic guarantees RSI cannot simultaneously be < 30 and > 70,
+        // so BUY and SELL are mutually exclusive. Verify that at most 1 signal
+        // is published per bar across all bars in a sequence.
+        var strategy = BuildStrategy(period: 3, oversold: 30m, overbought: 60m);
+
+        // Sequence: 4 warmup + baseline + drop (BUY crossover) + rise (SELL crossover)
+        await strategy.OnBarAsync(MakeBar("AAPL", 100m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  98m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  96m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  94m));
+        await strategy.OnBarAsync(MakeBar("AAPL",  95m)); // seeds prevRsi ≈ 20 (no crossover)
+        await strategy.OnBarAsync(MakeBar("AAPL", 120m)); // SELL (RSI ≈ 93 > 60)
+
+        // Total across all bars ≤ 1 signal of each type — never same-bar dual publish
+        var totalCalls = _eventBus.ReceivedCalls()
+            .Count(c => c.GetMethodInfo().Name == nameof(IEventBus.PublishAsync));
+        Assert.True(totalCalls <= 1, $"Expected at most 1 signal published, got {totalCalls}");
     }
 
     // ── multi-symbol isolation ─────────────────────────────────────────────

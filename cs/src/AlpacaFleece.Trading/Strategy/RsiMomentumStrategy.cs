@@ -1,23 +1,23 @@
 namespace AlpacaFleece.Trading.Strategy;
 
 /// <summary>
-/// RSI mean-reversion strategy: emits a BUY signal when RSI crosses into oversold territory
-/// (prevRsi ≥ OversoldThreshold &amp;&amp; currentRsi &lt; OversoldThreshold).
+/// RSI mean-reversion strategy: emits BUY and SELL signals on RSI threshold crossovers.
 /// <para>
 /// This strategy is the natural complement to <see cref="SmaCrossoverStrategy"/>:
 /// where the SMA crossover targets trending markets, RSI Momentum targets ranging /
-/// mean-reverting markets by buying oversold dips.
+/// mean-reverting markets by trading oversold bounces and overbought reversals.
 /// </para>
 /// <para>
-/// Signal logic (long-only):
+/// Signal logic:
 /// <list type="bullet">
 ///   <item>BUY — RSI crosses below <c>OversoldThreshold</c> (default 30): entering oversold territory.</item>
-///   <item>Confidence — scaled by depth below threshold: deeper oversold → higher confidence.</item>
-///   <item>Exits — handled entirely by <c>ExitManager</c> (ATR-based stop-loss + profit target).</item>
+///   <item>SELL — RSI crosses above <c>OverboughtThreshold</c> (default 70): entering overbought territory.</item>
+///   <item>Confidence — scaled by depth beyond threshold: deeper extreme → higher confidence.</item>
+///   <item>Only one signal per bar (BUY and SELL are mutually exclusive by RSI arithmetic).</item>
 /// </list>
 /// </para>
 /// Requires 16 bars minimum (14-period RSI needs 15 close prices + 1 ATR buffer).
-/// Thread-safe via a private sync lock; all async work (filter checks, publish) runs outside the lock.
+/// Thread-safe via a private sync lock; all async work (publish) runs outside the lock.
 /// </summary>
 public sealed class RsiMomentumStrategy(
     IEventBus eventBus,
@@ -34,7 +34,7 @@ public sealed class RsiMomentumStrategy(
     // ── IStrategyMetadata ───────────────────────────────────────────────────
     public string StrategyName => "RSI_Momentum_14";
     public string Version => "1.0.0";
-    public string? Description => $"RSI mean-reversion: BUY when RSI({_options.Period}) crosses below {_options.OversoldThreshold} (oversold).";
+    public string? Description => $"RSI mean-reversion: BUY when RSI({_options.Period}) crosses below {_options.OversoldThreshold} (oversold); SELL when RSI crosses above {_options.OverboughtThreshold} (overbought).";
 
     // ── IStrategy ───────────────────────────────────────────────────────────
     public int RequiredHistory => RequiredBars;
@@ -50,8 +50,9 @@ public sealed class RsiMomentumStrategy(
     private readonly object _syncLock = new();
 
     /// <summary>
-    /// Processes <paramref name="bar"/>, updates indicators, and emits a BUY signal
-    /// when RSI crosses from above into oversold territory.
+    /// Processes <paramref name="bar"/>, updates indicators, and emits a BUY signal when RSI
+    /// crosses into oversold territory or a SELL signal when RSI crosses into overbought territory.
+    /// At most one signal is emitted per bar (BUY and SELL are mutually exclusive by RSI arithmetic).
     /// </summary>
     public async ValueTask OnBarAsync(BarEvent bar, CancellationToken ct = default)
     {
@@ -88,11 +89,13 @@ public sealed class RsiMomentumStrategy(
             }
 
             logger.LogDebug(
-                "RSI: {Symbol} | RSI={Rsi:F2} | ATR={Atr:F4} | Threshold={Threshold}",
-                bar.Symbol, rsi, atr, _options.OversoldThreshold);
+                "RSI: {Symbol} | RSI={Rsi:F2} | ATR={Atr:F4} | Oversold={Oversold} | Overbought={Overbought}",
+                bar.Symbol, rsi, atr, _options.OversoldThreshold, _options.OverboughtThreshold);
 
             // Staleness gate: update indicators but suppress signals for old bars.
-            _previousRsi.TryGetValue(bar.Symbol, out var prevRsi);
+            // hasPreviousRsi guards the first ready bar: prevRsi defaults to 0 (TryGetValue),
+            // which would incorrectly satisfy prevRsi ≤ OverboughtThreshold on rising starts.
+            var hasPreviousRsi = _previousRsi.TryGetValue(bar.Symbol, out var prevRsi);
 
             if (_maxBarAgeMinutes > 0)
             {
@@ -107,44 +110,71 @@ public sealed class RsiMomentumStrategy(
                 }
             }
 
-            // BUY signal: RSI crosses INTO oversold territory.
-            // prevRsi = 0 on the very first bar — treat as "above threshold" so we don't
-            // emit a spurious signal on warmup; the real first crossover comes on the next bar.
-            var enteringOversold = prevRsi >= _options.OversoldThreshold
-                && rsi < _options.OversoldThreshold;
+            // BUY: RSI crosses INTO oversold territory (from above).
+            // SELL: RSI crosses INTO overbought territory (from below).
+            // hasPreviousRsi: both checks are skipped on the first ready bar so we never emit
+            // a spurious signal when prevRsi happens to satisfy the crossover condition by default (0).
+            var enteringOversold   = hasPreviousRsi && prevRsi >= _options.OversoldThreshold  && rsi < _options.OversoldThreshold;
+            var enteringOverbought = hasPreviousRsi && prevRsi <= _options.OverboughtThreshold && rsi > _options.OverboughtThreshold;
 
             _previousRsi[bar.Symbol] = rsi;
 
-            if (!enteringOversold)
-                return;
+            if (enteringOversold)
+            {
+                var confidence = CalculateOversoldConfidence(rsi);
 
-            var confidence = CalculateConfidence(rsi);
+                logger.LogInformation(
+                    "RSI signal: {Symbol} BUY | RSI={Rsi:F2} (crossed below {Threshold}) | Confidence={Conf:F2}",
+                    bar.Symbol, rsi, _options.OversoldThreshold, confidence);
 
-            logger.LogInformation(
-                "RSI signal: {Symbol} BUY | RSI={Rsi:F2} (crossed below {Threshold}) | Confidence={Conf:F2}",
-                bar.Symbol, rsi, _options.OversoldThreshold, confidence);
+                localSignal = new SignalEvent(
+                    Symbol: bar.Symbol,
+                    Side: "BUY",
+                    Timeframe: bar.Timeframe,
+                    SignalTimestamp: bar.Timestamp,
+                    Metadata: new SignalMetadata(
+                        SmaPeriod: (_options.Period, 0),
+                        FastSma: rsi,
+                        MediumSma: _options.OversoldThreshold,
+                        SlowSma: 0m,
+                        Atr: atr > 0 ? atr : null,
+                        Confidence: confidence,
+                        Regime: "OVERSOLD",
+                        RegimeStrength: confidence,
+                        CurrentPrice: bar.Close,
+                        AtrValue: atr,
+                        RegimeType: "OVERSOLD",
+                        BarsInRegime: 0),
+                    StrategyName: StrategyName);
+            }
+            else if (enteringOverbought)
+            {
+                var confidence = CalculateOverboughtConfidence(rsi);
 
-            var metadata = new SignalMetadata(
-                SmaPeriod: (_options.Period, 0),        // Fast=RSI period, Slow unused
-                FastSma: rsi,                            // Carries the RSI value
-                MediumSma: _options.OversoldThreshold,  // Carries the trigger threshold
-                SlowSma: 0m,
-                Atr: atr > 0 ? atr : null,
-                Confidence: confidence,
-                Regime: "OVERSOLD",
-                RegimeStrength: confidence,
-                CurrentPrice: bar.Close,
-                AtrValue: atr,
-                RegimeType: "OVERSOLD",
-                BarsInRegime: 0);
+                logger.LogInformation(
+                    "RSI signal: {Symbol} SELL | RSI={Rsi:F2} (crossed above {Threshold}) | Confidence={Conf:F2}",
+                    bar.Symbol, rsi, _options.OverboughtThreshold, confidence);
 
-            localSignal = new SignalEvent(
-                Symbol: bar.Symbol,
-                Side: "BUY",
-                Timeframe: bar.Timeframe,
-                SignalTimestamp: bar.Timestamp,
-                Metadata: metadata,
-                StrategyName: StrategyName);
+                localSignal = new SignalEvent(
+                    Symbol: bar.Symbol,
+                    Side: "SELL",
+                    Timeframe: bar.Timeframe,
+                    SignalTimestamp: bar.Timestamp,
+                    Metadata: new SignalMetadata(
+                        SmaPeriod: (_options.Period, 0),
+                        FastSma: rsi,
+                        MediumSma: _options.OverboughtThreshold,
+                        SlowSma: 0m,
+                        Atr: atr > 0 ? atr : null,
+                        Confidence: confidence,
+                        Regime: "OVERBOUGHT",
+                        RegimeStrength: confidence,
+                        CurrentPrice: bar.Close,
+                        AtrValue: atr,
+                        RegimeType: "OVERBOUGHT",
+                        BarsInRegime: 0),
+                    StrategyName: StrategyName);
+            }
         }
 
         if (localSignal is not null)
@@ -157,9 +187,20 @@ public sealed class RsiMomentumStrategy(
     /// Confidence scales with depth below the oversold threshold.
     /// RSI at threshold → 0.50; RSI 10 points below threshold → 0.95 (clamped).
     /// </summary>
-    private decimal CalculateConfidence(decimal rsi)
+    private decimal CalculateOversoldConfidence(decimal rsi)
     {
         var depth = _options.OversoldThreshold - rsi; // positive when oversold
+        var raw = 0.5m + depth / 10m;
+        return Math.Clamp(raw, 0.30m, 0.95m);
+    }
+
+    /// <summary>
+    /// Confidence scales with depth above the overbought threshold.
+    /// RSI at threshold → 0.50; RSI 10 points above threshold → 0.95 (clamped).
+    /// </summary>
+    private decimal CalculateOverboughtConfidence(decimal rsi)
+    {
+        var depth = rsi - _options.OverboughtThreshold; // positive when overbought
         var raw = 0.5m + depth / 10m;
         return Math.Clamp(raw, 0.30m, 0.95m);
     }

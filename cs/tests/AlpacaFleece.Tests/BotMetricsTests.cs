@@ -5,13 +5,23 @@ namespace AlpacaFleece.Tests;
 /// </summary>
 public sealed class BotMetricsTests
 {
+    private readonly IStateRepository _repo;
     private readonly ILogger<BotMetrics> _logger = Substitute.For<ILogger<BotMetrics>>();
+
+    public BotMetricsTests()
+    {
+        _repo = Substitute.For<IStateRepository>();
+        // Return empty list by default so WriteToFileAsync doesn't fail on null enumeration.
+        _repo.GetStrategyStatsAsync(Arg.Any<CancellationToken>())
+            .Returns(new ValueTask<IReadOnlyList<StrategyStatsDto>>(
+                (IReadOnlyList<StrategyStatsDto>)Array.Empty<StrategyStatsDto>()));
+    }
 
     [Fact]
     public void Counters_IncrementCorrectly()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
 
         // Act
         metrics.IncrementSignalsGenerated();
@@ -31,7 +41,7 @@ public sealed class BotMetricsTests
     public void Gauges_SetCorrectly()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
 
         // Act
         metrics.IncrementOpenPositions();
@@ -51,7 +61,7 @@ public sealed class BotMetricsTests
     public void DecrementOpenPositions_DecreasesCount()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
         metrics.IncrementOpenPositions();
         metrics.IncrementOpenPositions();
 
@@ -66,7 +76,7 @@ public sealed class BotMetricsTests
     public async Task WriteToFileAsync_CreatesMetricsJson()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
         metrics.IncrementSignalsGenerated();
         metrics.IncrementOrdersSubmitted();
         metrics.DailyPnl = 500m;
@@ -99,7 +109,7 @@ public sealed class BotMetricsTests
     public async Task WriteToFileAsync_DefaultsToDataDirectory()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
         var dataDir = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, "data");
         var metricsPath = Path.Combine(dataDir, "metrics.json");
 
@@ -131,7 +141,7 @@ public sealed class BotMetricsTests
     public void GetSummary_ReturnsFormattedString()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
         metrics.IncrementSignalsGenerated();
         metrics.IncrementSignalsFiltered();
         metrics.SetDailyTradeCount(3);
@@ -151,7 +161,7 @@ public sealed class BotMetricsTests
     public async Task Counters_AreThreadSafe()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
         var tasks = new List<Task>();
 
         // Act
@@ -176,7 +186,7 @@ public sealed class BotMetricsTests
     public void EventsDropped_Increments()
     {
         // Arrange
-        var metrics = new BotMetrics(_logger);
+        var metrics = new BotMetrics(_repo, _logger);
 
         // Act
         metrics.IncrementEventsDropped();
