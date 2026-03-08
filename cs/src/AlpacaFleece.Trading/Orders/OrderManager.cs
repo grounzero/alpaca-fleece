@@ -236,7 +236,7 @@ public sealed class OrderManager(
             if (action.StartsWith("EXIT", StringComparison.OrdinalIgnoreCase) && existing == null)
             {
                 var dbPositions = await stateRepository.GetAllPositionTrackingAsync(ct);
-                var position = dbPositions.FirstOrDefault(p => p.Symbol == signal.Symbol && p.CurrentQuantity > 0);
+                var position = dbPositions.FirstOrDefault(p => p.Symbol == signal.Symbol && p.Quantity > 0);
                 if (position == null)
                 {
                     logger.LogInformation(
