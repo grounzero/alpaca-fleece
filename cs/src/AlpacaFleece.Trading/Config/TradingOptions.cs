@@ -225,6 +225,37 @@ public sealed class ExitOptions
     /// Gets or sets the trailing stop percentage (default 2 = 2%).
     /// </summary>
     public decimal TrailingStopPercent { get; set; } = 2m;
+
+    /// <summary>
+    /// Scaling exit tiers for partial profit-taking at multiple targets.
+    /// When empty or disabled, uses single exit logic (existing behaviour).
+    /// </summary>
+    public List<ScalingExitTier> ScalingExits { get; set; } = new();
+}
+
+/// <summary>
+/// Represents a single scaling exit tier (e.g., "take 50% at 2× ATR").
+/// Used for partial profit-taking at multiple targets.
+/// </summary>
+public sealed class ScalingExitTier
+{
+    /// <summary>
+    /// Percentage of position to close at this tier (0.0–1.0).
+    /// Example: 0.5 closes half the position.
+    /// </summary>
+    public decimal PercentageToClose { get; set; }
+
+    /// <summary>
+    /// Exit trigger type: "ProfitTarget" or "TrailingStop".
+    /// </summary>
+    public string Trigger { get; set; } = "ProfitTarget";
+
+    /// <summary>
+    /// Distance multiplier for this tier.
+    /// For ProfitTarget: distance above entry = ATR × DistanceMultiplier.
+    /// For TrailingStop: distance below high water mark = ATR × DistanceMultiplier.
+    /// </summary>
+    public decimal DistanceMultiplier { get; set; }
 }
 
 /// <summary>
@@ -399,6 +430,95 @@ public sealed class SignalFilterOptions
     /// Current volume must be ≥ average × VolumeMultiplier to pass (default: 1.5).
     /// </summary>
     public decimal VolumeMultiplier { get; set; } = 1.5m;
+
+    /// <summary>
+    /// When true, signals are blocked if ADX is below MinAdx (ranging market).
+    /// Default: false (disabled).
+    /// </summary>
+    public bool EnableAdxFilter { get; set; } = false;
+
+    /// <summary>
+    /// ADX period used for trend strength calculation (default: 14).
+    /// </summary>
+    public int AdxPeriod { get; set; } = 14;
+
+    /// <summary>
+    /// Minimum ADX value to allow signals. Below this indicates ranging market.
+    /// Default: 20.0 (standard threshold for weak vs. strong trends).
+    /// </summary>
+    public decimal MinAdx { get; set; } = 20m;
+
+    /// <summary>
+    /// When true, signals are blocked if SMA slope is too shallow (low momentum).
+    /// Default: false (disabled).
+    /// </summary>
+    public bool EnableSlopeFilter { get; set; } = false;
+
+    /// <summary>
+    /// Period for slope calculation (default: 5).
+    /// Compares SMA[today] vs. SMA[N bars ago].
+    /// </summary>
+    public int SlopePeriod { get; set; } = 5;
+
+    /// <summary>
+    /// Minimum absolute SMA slope as a percentage per bar (default: 0.01 = 1%).
+    /// Blocks signals if trend momentum is below this threshold.
+    /// </summary>
+    public decimal MinSlopePercent { get; set; } = 0.01m;
+
+    /// <summary>
+    /// When true, signals must align with weekly SMA direction.
+    /// BUY requires price &gt; weekly SMA; SELL requires price &lt; weekly SMA.
+    /// Default: false (disabled).
+    /// </summary>
+    public bool EnableWeeklyConfirmation { get; set; } = false;
+
+    /// <summary>
+    /// Weekly SMA period (default: 10 weeks).
+    /// </summary>
+    public int WeeklySmaPeriod { get; set; } = 10;
+
+    /// <summary>
+    /// Per-symbol filter configuration overrides (null values inherit global config).
+    /// </summary>
+    public Dictionary<string, SymbolFilterConfig> SymbolOverrides { get; set; } = new();
+}
+
+/// <summary>
+/// Per-symbol filter configuration overrides.
+/// Null properties inherit the global SignalFilterOptions value.
+/// </summary>
+public sealed class SymbolFilterConfig
+{
+    /// <summary>
+    /// Override EnableDailyTrendFilter for this symbol.
+    /// </summary>
+    public bool? EnableDailyTrendFilter { get; set; }
+
+    /// <summary>
+    /// Override EnableAdxFilter for this symbol.
+    /// </summary>
+    public bool? EnableAdxFilter { get; set; }
+
+    /// <summary>
+    /// Override MinAdx for this symbol.
+    /// </summary>
+    public decimal? MinAdx { get; set; }
+
+    /// <summary>
+    /// Override EnableSlopeFilter for this symbol.
+    /// </summary>
+    public bool? EnableSlopeFilter { get; set; }
+
+    /// <summary>
+    /// Override MinSlopePercent for this symbol.
+    /// </summary>
+    public decimal? MinSlopePercent { get; set; }
+
+    /// <summary>
+    /// Override EnableWeeklyConfirmation for this symbol.
+    /// </summary>
+    public bool? EnableWeeklyConfirmation { get; set; }
 }
 
 /// <summary>

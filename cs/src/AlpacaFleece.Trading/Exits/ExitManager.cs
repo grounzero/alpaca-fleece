@@ -54,6 +54,9 @@ public class ExitManager(
     private DateTimeOffset _clockCacheTime = DateTimeOffset.MinValue;
     private static readonly TimeSpan ClockCacheTtl = TimeSpan.FromSeconds(60);
 
+    // Scaling exits: track high water mark per symbol for trailing stop tiers
+    private readonly Dictionary<string, decimal> _highWaterMarks = new();
+
     /// <summary>
     /// Main execution loop — run this in a hosted service background task.
     /// </summary>
@@ -208,6 +211,16 @@ public class ExitManager(
                     continue;
                 }
 
+                // Scaling exits: check for partial profit-taking at multiple tiers
+                if (_options.ScalingExits.Count > 0)
+                {
+                    var scalingExits = await CheckScalingExitsAsync(symbol, posData, currentPrice, ct);
+                    foreach (var (signal, _) in scalingExits)
+                    {
+                        signals.Add(signal);
+                    }
+                }
+
                 // Rules 3 & 5 (fixed-% stop/profit) intentionally omitted when ATR is valid.
             }
             catch (Exception ex)
@@ -331,5 +344,99 @@ public class ExitManager(
         {
             logger.LogError(ex, "Failed to record exit failure for {symbol}", symbol);
         }
+    }
+
+    /// <summary>
+    /// Checks for scaling exit conditions (partial profit-taking at multiple tiers).
+    /// Only runs if ScalingExits is configured and not empty.
+    /// Returns list of scaling exit signals (each with quantity to close).
+    /// </summary>
+    private async ValueTask<List<(ExitSignalEvent Signal, decimal Quantity)>> CheckScalingExitsAsync(
+        string symbol,
+        PositionData posData,
+        decimal currentPrice,
+        CancellationToken ct)
+    {
+        var results = new List<(ExitSignalEvent, decimal)>();
+
+        if (_options.ScalingExits.Count == 0)
+            return results;
+
+        try
+        {
+            // Update high water mark for this symbol
+            if (!_highWaterMarks.TryGetValue(symbol, out var hwm) || currentPrice > hwm)
+            {
+                _highWaterMarks[symbol] = currentPrice;
+            }
+
+            var atrDistanceMultiplier = 1.0m;
+            if (volatilityRegimeDetector is { Enabled: true })
+            {
+                var volRegime = await volatilityRegimeDetector.GetRegimeAsync(symbol, ct);
+                atrDistanceMultiplier = volRegime.StopMultiplier;
+            }
+
+            foreach (var tier in _options.ScalingExits.OrderBy(t => t.DistanceMultiplier))
+            {
+                if (tier.Trigger.Equals("ProfitTarget", StringComparison.OrdinalIgnoreCase))
+                {
+                    var targetPrice = posData.EntryPrice + (posData.AtrValue * tier.DistanceMultiplier * atrDistanceMultiplier);
+                    if (currentPrice >= targetPrice)
+                    {
+                        var qtyToClose = _symbolClassifier.IsCrypto(symbol)
+                            ? Math.Max(0.0001m, Math.Round(posData.CurrentQuantity * tier.PercentageToClose, 8))
+                            : Math.Max(1m, Math.Floor(posData.CurrentQuantity * tier.PercentageToClose));
+
+                        if (qtyToClose > 0)
+                        {
+                            var signal = new ExitSignalEvent(
+                                symbol,
+                                $"SCALING_PROFIT_TIER_{tier.DistanceMultiplier:F1}x",
+                                currentPrice,
+                                DateTimeOffset.UtcNow);
+                            results.Add((signal, qtyToClose));
+
+                            logger.LogInformation(
+                                "Scaling exit triggered: {symbol} SELL {qty} shares @ {price:F2} (tier {mult}x ATR, profit target)",
+                                symbol, qtyToClose, currentPrice, tier.DistanceMultiplier);
+                        }
+                    }
+                }
+                else if (tier.Trigger.Equals("TrailingStop", StringComparison.OrdinalIgnoreCase))
+                {
+                    var hwPrice = _highWaterMarks.GetValueOrDefault(symbol, posData.EntryPrice);
+                    var trailDistance = posData.AtrValue * tier.DistanceMultiplier * atrDistanceMultiplier;
+                    var trailPrice = hwPrice - trailDistance;
+
+                    if (currentPrice <= trailPrice)
+                    {
+                        var qtyToClose = _symbolClassifier.IsCrypto(symbol)
+                            ? Math.Max(0.0001m, Math.Round(posData.CurrentQuantity * tier.PercentageToClose, 8))
+                            : Math.Max(1m, Math.Floor(posData.CurrentQuantity * tier.PercentageToClose));
+
+                        if (qtyToClose > 0)
+                        {
+                            var signal = new ExitSignalEvent(
+                                symbol,
+                                $"SCALING_TRAIL_TIER_{tier.DistanceMultiplier:F1}x",
+                                currentPrice,
+                                DateTimeOffset.UtcNow);
+                            results.Add((signal, qtyToClose));
+
+                            logger.LogInformation(
+                                "Scaling exit triggered: {symbol} SELL {qty} shares @ {price:F2} (tier {mult}x ATR, trailing stop)",
+                                symbol, qtyToClose, currentPrice, tier.DistanceMultiplier);
+                        }
+                    }
+                }
+            }
+        }
+        catch (Exception ex)
+        {
+            logger.LogError(ex, "Error checking scaling exits for {symbol}", symbol);
+        }
+
+        return results;
     }
 }
