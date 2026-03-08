@@ -64,6 +64,16 @@ public sealed class TradingOptions
     /// Gets or sets volatility-regime options used for adaptive sizing and exit distances.
     /// </summary>
     public VolatilityRegimeOptions VolatilityRegime { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets strategy selection configuration (which strategies are active and in which mode).
+    /// </summary>
+    public StrategySelectionOptions StrategySelection { get; set; } = new();
+
+    /// <summary>
+    /// Gets or sets configuration for the RSI Momentum mean-reversion strategy.
+    /// </summary>
+    public RsiMomentumOptions RsiMomentum { get; set; } = new();
 }
 
 /// <summary>
@@ -616,4 +626,66 @@ public sealed class VolatilityRegimeProfileOptions
     /// Applies to both ATR stop-loss and ATR profit-target distances.
     /// </summary>
     public decimal? ExtremeStopMultiplier { get; set; }
+}
+
+/// <summary>
+/// Configuration for the RSI Momentum mean-reversion strategy.
+/// </summary>
+public sealed class RsiMomentumOptions
+{
+    /// <summary>
+    /// RSI look-back period (default: 14).
+    /// </summary>
+    public int Period { get; set; } = 14;
+
+    /// <summary>
+    /// RSI level below which a symbol is considered oversold (default: 30).
+    /// A BUY signal is emitted when RSI crosses below this threshold.
+    /// </summary>
+    public decimal OversoldThreshold { get; set; } = 30m;
+
+    /// <summary>
+    /// RSI level above which a symbol is considered overbought (default: 70).
+    /// Reserved for future SELL signal use; exits are handled by ExitManager.
+    /// </summary>
+    public decimal OverboughtThreshold { get; set; } = 70m;
+}
+
+/// <summary>
+/// Controls which strategies are loaded and how they are selected at runtime.
+/// </summary>
+public sealed class StrategySelectionOptions
+{
+    /// <summary>
+    /// Gets or sets the selection mode.
+    /// <list type="bullet">
+    ///   <item><term>Single</term><description>Run exactly one strategy (first in Active list). Default.</description></item>
+    ///   <item><term>Multi</term><description>Run all strategies in Active list concurrently on every bar.</description></item>
+    ///   <item><term>Regime</term><description>Select strategies automatically based on current market regime.</description></item>
+    /// </list>
+    /// </summary>
+    public string Mode { get; set; } = "Single";
+
+    /// <summary>
+    /// Gets or sets the list of strategy names to activate.
+    /// Each name must exactly match a registered strategy's <c>StrategyName</c> property.
+    /// Defaults to the SMA crossover strategy.
+    /// </summary>
+    public List<string> Active { get; set; } = ["SMA_5x15_10x30_20x50"];
+
+    /// <summary>
+    /// Gets or sets the regime-to-strategy mapping used when <see cref="Mode"/> is <c>Regime</c>.
+    /// Keys are regime strings (<c>TRENDING_UP</c>, <c>TRENDING_DOWN</c>, <c>RANGING</c>) plus
+    /// the special key <c>DEFAULT</c> used before enough bars accumulate for regime detection.
+    /// Values are lists of strategy names active for that regime.
+    /// A strategy not listed in <see cref="Active"/> is never dispatched even if mapped here.
+    /// </summary>
+    public Dictionary<string, List<string>> RegimeMappings { get; set; } =
+        new(StringComparer.OrdinalIgnoreCase)
+        {
+            ["TRENDING_UP"]   = ["SMA_5x15_10x30_20x50"],
+            ["TRENDING_DOWN"] = ["SMA_5x15_10x30_20x50"],
+            ["RANGING"]       = ["RSI_Momentum_14"],
+            ["DEFAULT"]       = ["SMA_5x15_10x30_20x50"],
+        };
 }

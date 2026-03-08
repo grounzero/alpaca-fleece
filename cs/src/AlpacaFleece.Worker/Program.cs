@@ -98,12 +98,46 @@ var hostBuilder = Host.CreateDefaultBuilder(args)
             tradingOptions,
             sp.GetRequiredService<ILogger<VolumeFilter>>()));
 
-        services.AddSingleton<IStrategy>(sp => new SmaCrossoverStrategy(
+        // Register concrete strategy type so StrategyRegistry can retrieve it as IStrategyMetadata too.
+        services.AddSingleton(sp => new SmaCrossoverStrategy(
             sp.GetRequiredService<IEventBus>(),
             sp.GetRequiredService<ILogger<SmaCrossoverStrategy>>(),
             trendFilter: sp.GetRequiredService<TrendFilter>(),
             volumeFilter: sp.GetRequiredService<VolumeFilter>(),
             executionOptions: tradingOptions.Execution));
+
+        services.AddSingleton(sp => new RsiMomentumStrategy(
+            sp.GetRequiredService<IEventBus>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<RsiMomentumStrategy>>(),
+            executionOptions: tradingOptions.Execution));
+
+        // Build registry from all available strategies, filtered by config.
+        services.AddSingleton<StrategyFactory>();
+        services.AddSingleton(sp =>
+        {
+            var sma = sp.GetRequiredService<SmaCrossoverStrategy>();
+            var rsi = sp.GetRequiredService<RsiMomentumStrategy>();
+            var factory = sp.GetRequiredService<StrategyFactory>();
+            return factory.Build([(sma, sma), (rsi, rsi)], tradingOptions.StrategySelection);
+        });
+
+        // IStrategy resolves to the first (and in single mode, only) registered strategy.
+        // Existing services that inject IStrategy continue to work without modification.
+        services.AddSingleton<IStrategy>(sp =>
+            sp.GetRequiredService<StrategyRegistry>().GetAll()[0].Strategy);
+
+        // Regime router: maintains per-symbol regime estimates for Regime-mode dispatch.
+        // Registered unconditionally — zero overhead in Single/Multi modes (only used when _isRegimeMode).
+        services.AddSingleton<RegimeRouter>();
+
+        // Orchestrator dispatches bars to all active strategies (single or parallel).
+        services.AddSingleton(sp => new StrategyOrchestrator(
+            sp.GetRequiredService<StrategyRegistry>(),
+            tradingOptions,
+            sp.GetRequiredService<ILogger<StrategyOrchestrator>>(),
+            regimeRouter: sp.GetRequiredService<RegimeRouter>()));
+
         services.AddSingleton<PositionTracker>();
         services.AddSingleton<IPositionTracker>(sp => sp.GetRequiredService<PositionTracker>());
 

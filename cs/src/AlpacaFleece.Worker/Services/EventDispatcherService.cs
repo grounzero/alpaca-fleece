@@ -3,13 +3,15 @@ namespace AlpacaFleece.Worker.Services;
 /// <summary>
 /// Event dispatcher service: reads from event bus and dispatches to handlers.
 /// Priority drain: ExitSignalEvent (never dropped) → OrderUpdateEvent → SignalEvent → Others.
-/// Signal flow: BarEvent → BarsHandler (persistence) → Strategy.OnBarAsync() → SignalEvent
+/// Signal flow: BarEvent → BarsHandler (persistence) → StrategyOrchestrator.DispatchBarAsync()
+///           → Strategy.OnBarAsync() [×N, parallel in Multi mode] → SignalEvent
 ///           → RiskManager.CheckSignalAsync() → OrderManager.SubmitSignalAsync()
 /// </summary>
 public sealed class EventDispatcherService(
     IEventBus eventBus,
     IServiceProvider serviceProvider,
     IOptions<TradingOptions> tradingOptions,
+    StrategyOrchestrator strategyOrchestrator,
     ILogger<EventDispatcherService> logger) : BackgroundService
 {
     protected override async Task ExecuteAsync(CancellationToken stoppingToken)
@@ -303,8 +305,9 @@ public sealed class EventDispatcherService(
     }
 
     /// <summary>
-    /// Handles bar events: persists to BarsHandler and forwards to Strategy for signal generation.
-    /// Signal flow: BarEvent → BarsHandler (persistence) → Strategy.OnBarAsync() → SignalEvent
+    /// Handles bar events: persists to BarsHandler then dispatches to all active strategies
+    /// via <see cref="StrategyOrchestrator"/> (single or parallel, depending on configured mode).
+    /// Signal flow: BarEvent → BarsHandler → StrategyOrchestrator → Strategy[×N] → SignalEvent
     /// </summary>
     private async ValueTask HandleBarEventAsync(BarEvent barEvent)
     {
@@ -319,11 +322,9 @@ public sealed class EventDispatcherService(
             await barsHandler.HandleBarEventAsync(barEvent, CancellationToken.None);
             logger.LogDebug("Bar persisted for {symbol}", barEvent.Symbol);
 
-            // Forward to strategy for signal generation (strategy handles readiness internally)
-            using var scope = serviceProvider.CreateScope();
-            var strategy = scope.ServiceProvider.GetRequiredService<IStrategy>();
-            logger.LogDebug("Forwarding bar to strategy for {symbol}", barEvent.Symbol);
-            await strategy.OnBarAsync(barEvent, CancellationToken.None);
+            // Dispatch to all active strategies (single or parallel depending on Mode).
+            // Per-strategy isolation is handled inside StrategyOrchestrator.
+            await strategyOrchestrator.DispatchBarAsync(barEvent, CancellationToken.None);
         }
         catch (Exception ex)
         {
