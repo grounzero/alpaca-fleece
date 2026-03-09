@@ -34,7 +34,8 @@ public sealed class OrderManager(
     /// <summary>
     /// Submits a signal as an order (persist first, then submit).
     /// Returns the generated clientOrderId, or empty string if the order was gated/filtered.
-    /// Pass quantity=0 to auto-size using the dual-formula PositionSizer (equity cap + risk cap).
+    /// Pass quantity=0 to auto-size using the dual-formula PositionSizer (equity cap + risk cap) for BUYs,
+    /// or the current broker position quantity for SELL exits.
     /// </summary>
     public async ValueTask<string> SubmitSignalAsync(
         SignalEvent signal,
@@ -47,6 +48,9 @@ public sealed class OrderManager(
             // Step 1: Determine side (already in signal.Side as "BUY" or "SELL")
             var side = signal.Side;
 
+            // Step 1a: Determine action early so sizing can differ for entries vs exits.
+            var action = DetermineAction(side);
+
             // Crypto symbols allow fractional quantities (no floor to 1; minimum 0.0001).
             var isCrypto = options.Symbols.CryptoSymbols.Contains(
                 signal.Symbol, StringComparer.OrdinalIgnoreCase);
@@ -56,22 +60,46 @@ public sealed class OrderManager(
             var autoSized = false;
             var accountEquity = 0m;
 
-            // Step 1c: Auto-size quantity when caller passes 0 (sentinel = "use PositionSizer")
+            // Step 1c: Auto-size quantity when caller passes 0.
+            // BUY entries use PositionSizer. SELL exits use the current broker position quantity.
             if (quantity == 0m)
             {
-                var account = await broker.GetAccountAsync(ct);
-                accountEquity = account.PortfolioValue;
                 autoSized = true;
-                quantity = PositionSizer.CalculateQuantity(
-                    signal,
-                    accountEquity: account.PortfolioValue,
-                    maxPositionPct: options.RiskLimits.MaxPositionSizePct,
-                    maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
-                    stopLossPct: options.RiskLimits.StopLossPct,
-                    allowFractional: isCrypto);
-                logger.LogInformation(
-                    "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0}, fractional={isCrypto})",
-                    signal.Symbol, quantity, account.PortfolioValue, isCrypto);
+
+                if (action.StartsWith("EXIT", StringComparison.OrdinalIgnoreCase))
+                {
+                    var positions = await broker.GetPositionsAsync(ct);
+                    var existingPosition = positions.FirstOrDefault(p =>
+                        p.Symbol.Equals(signal.Symbol, StringComparison.OrdinalIgnoreCase));
+
+                    if (existingPosition == null || existingPosition.Quantity == 0m)
+                    {
+                        logger.LogWarning(
+                            "Auto-sized SELL rejected for {symbol}: no open broker position found",
+                            signal.Symbol);
+                        return string.Empty;
+                    }
+
+                    quantity = Math.Abs(existingPosition.Quantity);
+                    logger.LogInformation(
+                        "Auto-sized exit quantity for {symbol}: {qty} from current broker position",
+                        signal.Symbol, quantity);
+                }
+                else
+                {
+                    var account = await broker.GetAccountAsync(ct);
+                    accountEquity = account.PortfolioValue;
+                    quantity = PositionSizer.CalculateQuantity(
+                        signal,
+                        accountEquity: account.PortfolioValue,
+                        maxPositionPct: options.RiskLimits.MaxPositionSizePct,
+                        maxRiskPerTradePct: options.RiskLimits.MaxRiskPerTradePct,
+                        stopLossPct: options.RiskLimits.StopLossPct,
+                        allowFractional: isCrypto);
+                    logger.LogInformation(
+                        "Auto-sized quantity for {symbol}: {qty} (equity={equity:F0}, fractional={isCrypto})",
+                        signal.Symbol, quantity, account.PortfolioValue, isCrypto);
+                }
             }
 
             // Step 1d: Volatility regime sizing multiplier (entries only).
@@ -167,8 +195,7 @@ public sealed class OrderManager(
                 return string.Empty;
             }
 
-            // Step 3: Determine action (simplified long-only: BUY→ENTER_LONG, SELL→EXIT_LONG)
-            var action = DetermineAction(signal.Side);
+            // Step 3: Action already determined above so exit sizing can use current position quantity.
 
             // Step 4: Generate deterministic clientOrderId before gating so duplicate check works first
             var clientOrderId = OrderIdGenerator.GenerateClientOrderId(
