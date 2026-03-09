@@ -281,6 +281,79 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
     }
 
     [Fact]
+    public async Task SubmitSignalAsync_AutoSizesSellQuantity_FromCurrentPositionInsteadOfEquity()
+    {
+        const string symbol = "AAPL";
+        const decimal expectedQty = 7m;
+
+        var options = new TradingOptions
+        {
+            RiskLimits = new RiskLimits { MaxPositionSizePct = 0.05m, MaxRiskPerTradePct = 0.01m, StopLossPct = 0.02m },
+            Execution = new ExecutionOptions { DryRun = false },
+        };
+
+        var riskManager = Substitute.For<IRiskManager>();
+        riskManager.CheckSignalAsync(Arg.Any<SignalEvent>(), Arg.Any<CancellationToken>())
+            .Returns(new RiskCheckResult(AllowsSignal: true, Reason: "", RiskTier: "FILTERS"));
+
+        var orderManager = new OrderManager(
+            _brokerMock, riskManager, fixture.StateRepository, fixture.EventBus, options, _logger);
+
+        var signal = new SignalEvent(
+            Symbol: symbol,
+            Side: "SELL",
+            Timeframe: "1m",
+            SignalTimestamp: DateTimeOffset.Parse("2023-06-01T10:31:00Z"),
+            Metadata: new SignalMetadata(
+                SmaPeriod: (5, 15),
+                FastSma: 149m,
+                MediumSma: 150m,
+                SlowSma: 155m,
+                Atr: 2m,
+                Confidence: 0.8m,
+                Regime: "TRENDING_DOWN",
+                RegimeStrength: 0.7m,
+                CurrentPrice: 150m));
+
+        _brokerMock.GetPositionsAsync(Arg.Any<CancellationToken>())
+            .Returns(new List<PositionInfo>
+            {
+                new(symbol, expectedQty, 140m, 150m, 70m, 0.07m, DateTimeOffset.UtcNow)
+            }.AsReadOnly() as IReadOnlyList<PositionInfo>);
+
+        _brokerMock.SubmitOrderAsync(
+            Arg.Any<string>(),
+            Arg.Any<string>(),
+            Arg.Any<decimal>(),
+            Arg.Any<decimal>(),
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>())
+            .Returns(new OrderInfo(
+                AlpacaOrderId: "alpaca_auto_sell",
+                ClientOrderId: "test",
+                Symbol: symbol,
+                Side: "SELL",
+                Quantity: expectedQty,
+                FilledQuantity: 0,
+                AverageFilledPrice: 0m,
+                Status: OrderState.PendingNew,
+                CreatedAt: DateTimeOffset.UtcNow,
+                UpdatedAt: null));
+
+        await orderManager.SubmitSignalAsync(signal, 0m, 150m);
+
+        await _brokerMock.DidNotReceive().GetAccountAsync(Arg.Any<CancellationToken>());
+        await _brokerMock.Received(1).GetPositionsAsync(Arg.Any<CancellationToken>());
+        await _brokerMock.Received(1).SubmitOrderAsync(
+            symbol,
+            "SELL",
+            expectedQty,
+            150m,
+            Arg.Any<string>(),
+            Arg.Any<CancellationToken>());
+    }
+
+    [Fact]
     public async Task SubmitExitAsync_SubmitsExitOrder()
     {
         var options = new TradingOptions();
@@ -317,7 +390,7 @@ public sealed class OrderManagerTests(TradingFixture fixture) : IAsyncLifetime
             Arg.Any<CancellationToken>());
     }
 
-    // ── Issue 3: AllowFractionalOrders gate ───────────────────────────────────
+    // ── Issue 3: AllowFractionalOrders gate ────────────────────────────────────
 
     [Fact]
     public async Task AllowFractionalOrders_False_FloorsQuantity()
