@@ -67,6 +67,39 @@ public sealed class BarHistory(int maxSize)
     }
 
     /// <summary>
+    /// Calculates RSI (Relative Strength Index) using a simple average of gains and losses
+    /// over the last <paramref name="period"/> price changes (requires period+1 bars).
+    /// Returns 0 when insufficient history; returns 100 when there are no losses in the window.
+    /// </summary>
+    public decimal CalculateRsi(int period)
+    {
+        if (_bars.Count < period + 1)
+            return 0m;
+
+        var gains = 0m;
+        var losses = 0m;
+        var start = _bars.Count - period;
+
+        for (var i = start; i < _bars.Count; i++)
+        {
+            var change = _bars[i].Item4 - _bars[i - 1].Item4; // close[i] - close[i-1]
+            if (change > 0)
+                gains += change;
+            else
+                losses -= change; // losses is sum of absolute negative changes
+        }
+
+        var avgGain = gains / period;
+        var avgLoss = losses / period;
+
+        if (avgLoss == 0m)
+            return 100m; // no losses in window — fully overbought, no division by zero
+
+        var rs = avgGain / avgLoss;
+        return 100m - (100m / (1m + rs));
+    }
+
+    /// <summary>
     /// Calculates Average True Range (ATR) for volatility.
     /// </summary>
     public decimal CalculateAtr(int period)

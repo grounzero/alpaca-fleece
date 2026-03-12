@@ -54,7 +54,8 @@ public interface IStateRepository
         decimal limitPrice,
         DateTimeOffset createdAt,
         CancellationToken ct = default,
-        decimal? atrSeed = null);
+        decimal? atrSeed = null,
+        string? strategyName = null);
 
     /// <summary>
     /// Updates an existing order intent status.
@@ -198,6 +199,12 @@ public interface IStateRepository
         DateTimeOffset lastPeakResetTime,
         bool manualRecoveryRequested,
         CancellationToken ct = default);
+
+    /// <summary>
+    /// Returns per-strategy realised PnL and fill count, aggregated from completed trades.
+    /// Strategies with no completed SELL fills are excluded from the result.
+    /// </summary>
+    ValueTask<IReadOnlyList<StrategyStatsDto>> GetStrategyStatsAsync(CancellationToken ct = default);
 }
 
 /// <summary>
@@ -224,4 +231,13 @@ public record OrderIntentDto(
     OrderState Status,
     DateTimeOffset CreatedAt,
     DateTimeOffset? UpdatedAt,
-    decimal? AtrSeed = null);
+    decimal? AtrSeed = null,
+    string? StrategyName = null);
+
+/// <summary>
+/// Per-strategy performance summary: realised PnL and completed fill count.
+/// </summary>
+public record StrategyStatsDto(
+    string StrategyName,
+    int FillCount,
+    decimal RealizedPnl);

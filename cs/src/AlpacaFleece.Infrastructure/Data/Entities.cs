@@ -95,6 +95,11 @@ public sealed class OrderIntentEntity
     /// Gets or sets the timestamp when the order was cancelled (first transition only).
     /// </summary>
     public DateTimeOffset? CanceledAt { get; set; }
+
+    /// <summary>
+    /// Gets or sets the name of the strategy that generated this order intent.
+    /// </summary>
+    public string? StrategyName { get; set; }
 }
 
 /// <summary>

@@ -11,7 +11,7 @@ public sealed class SmaCrossoverStrategy(
     ILogger<SmaCrossoverStrategy> logger,
     TrendFilter? trendFilter = null,
     VolumeFilter? volumeFilter = null,
-    ExecutionOptions? executionOptions = null) : IStrategy
+    ExecutionOptions? executionOptions = null) : IStrategy, IStrategyMetadata
 {
     private readonly RegimeDetector _regimeDetector = new();
     private readonly Dictionary<string, BarHistory> _barHistories = new();
@@ -19,6 +19,11 @@ public sealed class SmaCrossoverStrategy(
     private readonly int _maxBarAgeMinutes = executionOptions?.MaxBarAgeMinutes ?? 3;
     // Tracks which symbols have already logged the "strategy ready" transition.
     private readonly HashSet<string> _readySymbols = new();
+
+    // IStrategyMetadata
+    public string StrategyName => "SMA_5x15_10x30_20x50";
+    public string Version => "2.0.0";
+    public string? Description => "Multi-timeframe SMA crossover: pairs (5,15), (10,30), (20,50) with ATR-based confidence scoring and regime detection.";
 
     // SMA periods: 3 pairs for multi-timeframe analysis
     private const int FastPeriod1 = 5;
@@ -275,7 +280,8 @@ public sealed class SmaCrossoverStrategy(
             Side: side,
             Timeframe: bar.Timeframe,
             SignalTimestamp: bar.Timestamp,
-            Metadata: metadata);
+            Metadata: metadata,
+            StrategyName: StrategyName);
 
         signals.Add(signal);
     }

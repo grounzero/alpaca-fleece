@@ -2,9 +2,9 @@ namespace AlpacaFleece.Worker.Metrics;
 
 /// <summary>
 /// Bot metrics: in-memory counters (thread-safe), persisted to data/metrics.json.
-/// Tracks signals, orders, exits, dropped events, positions, P&L.
+/// Tracks signals, orders, exits, dropped events, positions, P&amp;L, and per-strategy attribution.
 /// </summary>
-public sealed class BotMetrics(ILogger<BotMetrics> logger)
+public sealed class BotMetrics(IStateRepository stateRepository, ILogger<BotMetrics> logger)
 {
     private long _signalsGenerated;
     private long _signalsFiltered;
@@ -92,7 +92,7 @@ public sealed class BotMetrics(ILogger<BotMetrics> logger)
     #endregion
 
     /// <summary>
-    /// Writes metrics to data/metrics.json with session duration.
+    /// Writes metrics to data/metrics.json with session duration and per-strategy attribution.
     /// </summary>
     public async ValueTask WriteToFileAsync(
         string? filePath = null,
@@ -105,6 +105,8 @@ public sealed class BotMetrics(ILogger<BotMetrics> logger)
 
             var outputPath = filePath ?? Path.Combine(dataDir, "metrics.json");
             var duration = DateTimeOffset.UtcNow - _sessionStartTime;
+
+            var strategyStats = await stateRepository.GetStrategyStatsAsync(ct);
 
             var metrics = new
             {
@@ -126,6 +128,12 @@ public sealed class BotMetrics(ILogger<BotMetrics> logger)
                     DailyTradeCount,
                     EquityValue
                 },
+                StrategyAttribution = strategyStats.Select(s => new
+                {
+                    s.StrategyName,
+                    s.FillCount,
+                    RealizedPnl = s.RealizedPnl
+                }),
                 SessionStart = _sessionStartTime,
                 SignalSuccessRate = SignalsGenerated > 0
                     ? (double)(SignalsGenerated - SignalsFiltered) / SignalsGenerated

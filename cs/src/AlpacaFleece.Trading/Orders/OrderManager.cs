@@ -242,7 +242,8 @@ public sealed class OrderManager(
                 limitPrice,
                 DateTimeOffset.UtcNow,
                 ct,
-                atrSeed: signal.Metadata.Atr ?? signal.Metadata.AtrValue);
+                atrSeed: signal.Metadata.Atr ?? signal.Metadata.AtrValue,
+                strategyName: signal.StrategyName);
 
             logger.LogInformation("Order intent persisted: {id}", clientOrderId);
 
@@ -297,7 +298,8 @@ public sealed class OrderManager(
                 Side: signal.Side,
                 Quantity: quantity,
                 ClientOrderId: clientOrderId,
-                CreatedAt: DateTimeOffset.UtcNow);
+                CreatedAt: DateTimeOffset.UtcNow,
+                StrategyName: signal.StrategyName);
 
             await eventBus.PublishAsync(intentEvent, ct);
 

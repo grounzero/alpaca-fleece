@@ -27,6 +27,8 @@ public sealed class OrderIntentEntityConfiguration : IEntityTypeConfiguration<Or
         builder.Property(x => x.AcceptedAt).HasColumnName("accepted_at").IsRequired(false);
         builder.Property(x => x.FilledAt).HasColumnName("filled_at").IsRequired(false);
         builder.Property(x => x.CanceledAt).HasColumnName("canceled_at").IsRequired(false);
+        // P1: Strategy attribution
+        builder.Property(x => x.StrategyName).HasMaxLength(100).IsRequired(false);
 
         // Indexes for GetNonTerminalOrderIntentsAsync filter and HasPendingOrderAsync gate
         builder.HasIndex(x => x.Status);

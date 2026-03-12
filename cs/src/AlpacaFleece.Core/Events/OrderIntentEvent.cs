@@ -8,4 +8,5 @@ public sealed record OrderIntentEvent(
     string Side, // "BUY" or "SELL"
     decimal Quantity,
     string ClientOrderId,
-    DateTimeOffset CreatedAt) : IEvent;
+    DateTimeOffset CreatedAt,
+    string? StrategyName = null) : IEvent;
